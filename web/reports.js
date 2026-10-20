@@ -555,6 +555,7 @@
           var d = decisions[id], isNeg = /^Негатив/.test(refsOut[id]);
           isNeg ? added.neg++ : added.pos++;
           if (site && reg[id]) { site.adding--; site.inRep++; var b1 = site.by[reg[id].platform]; if (b1) b1.inRep++; }
+          if (isNeg) { var nb0 = neg.filter(function (x) { return x.id === id; })[0]; if (nb0) regWrites.push([id, { negWritten: nb0.answer }]); }
           regWrites.push([id, { report: isNeg ? "negative" : "positive", reportRef: refsOut[id], reportWeek: st.start, tone: d.tone, dept: d.dept, doctor: d.doctor, removedRow: false,
             reason: isNeg && d.draftAnswer ? "Ответ в «Негативе»: проект, сверить после отправки" : "", suggest: null }]);
         });
@@ -616,9 +617,18 @@
     var a = cut(rowText), b = norm(clean(full));
     return a.length >= 20 && b.length > a.length + 3 && b.indexOf(a.slice(0, Math.max(20, a.length - 5))) === 0;
   }
+  // текст ответа без приветствия: «Здравствуйте, Борис!» и «Здравствуйте.» — один и тот же черновик
+  function body(t) { return norm(clean(t).replace(/^\s*(Добрый день|Здравствуйте)[^.!\n]{0,40}[.!]?\s*/i, "")).slice(0, 100); }
+  // все тексты, которые писал генератор (по всем отзывам и письмам): так черновик узнаётся, даже если его потом переписали
+  function genBodies() {
+    var out = {}, A = window.__otvAll("answers") || {}, M = window.__otvAll("mail") || {};
+    Object.keys(A).forEach(function (k) { var a = A[k] || {}; [a.draft, a.status === "approved" || a.status === "published" ? "" : a.answer].forEach(function (t) { var b = body(t); if (b.length > 30) out[b] = 1; }); });
+    Object.keys(M).forEach(function (k) { var b = body((M[k] || {}).draft); if (b.length > 30) out[b] = 1; });
+    return out;
+  }
   function syncCells(reg, refOf) {
     if (ver < 4 && !runner) return Promise.resolve();
-    var items = [], pos = {}, neg = {};
+    var items = [], pos = {}, neg = {}, gen = null, written = {};
     (st.positive || []).forEach(function (x) { pos["Позитив · " + x.platform + " №" + x.num] = x; });
     (st.negative || []).forEach(function (b) { neg["Негатив · блок " + b.n] = b; });
     Object.keys(reg).forEach(function (id) {
@@ -632,16 +642,19 @@
       if (truncatedOf(b.full, full)) { it.text = clean(full); ch = true; }
       var na = negAnswer(r), want = clean(na.text) || "—", have = norm(b.fullAnswer).slice(0, 100);
       if (have !== norm(want).slice(0, 100)) {
-        // одобренного ответа нет: стираем только черновик генератора, вписанный вами ответ не трогаем
-        var isDraft = !have || have === "—" || na.drafts.some(function (d) { return norm(clean(d)).slice(0, 100) === have; });
-        if (want !== "—" || isDraft) { it.answer = want; ch = true; }
+        // одобренного ответа нет: стираем только то, что записала сама программа (или текст генератора); вписанный вами ответ не трогаем
+        var hb = body(b.fullAnswer), mine = s(r.negWritten) && body(r.negWritten) === hb;
+        var isDraft = !have || have === "—" || mine || (hb.length > 30 && !!(gen || (gen = genBodies()))[hb]) || na.drafts.some(function (d) { return body(d) === hb; });
+        if (want !== "—" || isDraft) { it.answer = want; ch = true; written[id] = want; }
       }
       var lk = linkFor(r, reg);
       if (s(b.link).trim() !== lk) { it.link = lk; ch = true; }
       if (ch) items.push(it);
     });
     if (!items.length) return Promise.resolve();
-    return call("patch", { items: items });
+    return call("patch", { items: items }).then(function () {
+      return Object.keys(written).reduce(function (p, id) { return p.then(function () { return regUpdate(id, { negWritten: written[id] }); }); }, Promise.resolve());
+    });
   }
   // границы недели по поступлению: закрытие в четверг (последний день отчёта) в 15:00 по Москве
   function weekBounds() {
