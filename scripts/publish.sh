@@ -13,6 +13,10 @@ for b in ci-status-macOS ci-status-Windows; do
   git show "origin/$b:status.txt" | grep -q "job success" || { echo "Сборка $b не прошла: выпуск остановлен" >&2; exit 1; }
 done
 git fetch -q origin dist
+# в сборке должна быть ровно проверенная версия (сборка выкладывает файлы последним шагом — раньше времени не выпускаем)
+WANT=$(python3 -c 'import json;print(json.load(open("package.json"))["version"])')
+GOT=$(git show FETCH_HEAD:latest.json | python3 -c 'import json,sys;print(json.load(sys.stdin)["version"])')
+[ "$WANT" = "$GOT" ] || { echo "В сборке версия $GOT, а проверена $WANT: сборка ещё не выложила файлы, выпуск остановлен" >&2; exit 1; }
 # без программы для Mac не выпускаем: иначе на Mac пропадёт и обновление, и установщик
 if ! git show FETCH_HEAD:latest.json | grep -q '"darwin-aarch64"' && [ "${ALLOW_NO_MAC:-}" != "1" ]; then
   echo "В сборке нет программы для Mac, выпуск остановлен (ALLOW_NO_MAC=1, чтобы выпустить всё равно)" >&2
