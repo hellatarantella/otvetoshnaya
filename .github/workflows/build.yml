@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write
 
+# новая отправка отменяет незаконченную старую сборку: две сборки не перезаписывают друг другу файлы
+concurrency:
+  group: release
+  cancel-in-progress: true
+
 env:
   RAW: https://raw.githubusercontent.com/hellatarantella/otvetoshnaya-releases/main
   LLAMA_TAG: b11500
@@ -169,6 +174,7 @@ jobs:
                      "platforms": plat}, open("dist/latest.json", "w"), ensure_ascii=False, indent=2)
           print("платформы:", ", ".join(plat))
           PY
+          echo "${GITHUB_SHA}" > dist/source.txt   # из какой версии кода собрано: выпуск сверяет с проверенной
           cd dist
           git init -q -b dist
           git add -A

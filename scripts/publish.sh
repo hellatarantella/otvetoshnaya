@@ -17,6 +17,8 @@ git fetch -q origin dist
 WANT=$(python3 -c 'import json;print(json.load(open("package.json"))["version"])')
 GOT=$(git show FETCH_HEAD:latest.json | python3 -c 'import json,sys;print(json.load(sys.stdin)["version"])')
 [ "$WANT" = "$GOT" ] || { echo "В сборке версия $GOT, а проверена $WANT: сборка ещё не выложила файлы, выпуск остановлен" >&2; exit 1; }
+SRC=$(git show FETCH_HEAD:source.txt 2>/dev/null | tr -d '[:space:]')
+[ "$SRC" = "$(git rev-parse HEAD)" ] || { echo "Файлы в сборке из другой версии кода (${SRC:-неизвестно}), а проверена $(git rev-parse --short HEAD): выпуск остановлен" >&2; exit 1; }
 # без программы для Mac не выпускаем: иначе на Mac пропадёт и обновление, и установщик
 if ! git show FETCH_HEAD:latest.json | grep -q '"darwin-aarch64"' && [ "${ALLOW_NO_MAC:-}" != "1" ]; then
   echo "В сборке нет программы для Mac, выпуск остановлен (ALLOW_NO_MAC=1, чтобы выпустить всё равно)" >&2
@@ -26,7 +28,7 @@ cd "$REL"
 git checkout -q --orphan "pub-$$"
 git rm -rq --cached . >/dev/null 2>&1 || true
 find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-for f in $(git -C "$OLDPWD" ls-tree --name-only FETCH_HEAD); do git -C "$OLDPWD" show "FETCH_HEAD:$f" > "$f"; done
+for f in $(git -C "$OLDPWD" ls-tree --name-only FETCH_HEAD); do [ "$f" = source.txt ] && continue; git -C "$OLDPWD" show "FETCH_HEAD:$f" > "$f"; done
 git -C "$OLDPWD" show HEAD:scripts/releases-readme.md > README.md
 # подпись обновлений настоящим ключом (он только здесь, не в репозитории и не на сборочных машинах)
 KEY="${UPDATER_KEY:-/home/claude/keys/otvetoshnaya-updater.key}"
