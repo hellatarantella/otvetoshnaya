@@ -12,7 +12,7 @@
  * Скрипт работает от вашего имени и правит только эти файлы. Программа связывается с ним
  * по секретному ключу, который знает только она (первое подключение запоминает ключ).
  */
-var VERSION = 4;
+var VERSION = 5;
 var POS_ID = '1PnkJU3cjl6LlZxe1E9fHfmW7-E5kLi8Nkyr2G4dkw1A';   // «Позитив»
 var NEG_ID = '1Sp8sJv90_bUDYoo-4jPVQrHqLQU-E33s2MLJx0lrlpg';   // «Негатив»
 var REF_ID = '1s-0vfTvZeqVOrrreu9YY5fM3BycOfBtChuIu2wO8pdI';   // «[ГКБ24] Сбор отзывов — справочник»
@@ -60,12 +60,12 @@ function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setM
 var ACTIONS = {
   state: function () { return { state: state() }; },
   refs: function () { return { refs: refs() }; },
-  add: function (req) { var r = add(req.positive || [], req.negative || []); r.numbers = numbers('color'); r.state = state(); return r; },
-  numbers: function (req) { return { numbers: numbers(req.mode || 'color') }; },
+  add: function (req) { var r = add(req.positive || [], req.negative || []); renumber(); r.numbers = numbers('color'); r.state = state(); return r; },
+  numbers: function (req) { renumber(); return { numbers: numbers(req.mode || 'color') }; },
   answers: function (req) { return { updated: negAnswers(req.items || []) }; },
   export: function () { return { files: exportBoth() }; },
   newweek: function (req) { return newWeek(req); },
-  patch: function (req) { return { patched: patch(req.items || []) }; }
+  patch: function (req) { var n = patch(req.items || []); renumber(); return { patched: n, state: state() }; }
 };
 
 /* ---------------- даты и период ---------------- */
@@ -354,6 +354,16 @@ function patch(items) {
     });
     doc.saveAndClose();
   }
+  return n;
+}
+
+/* номера в «Позитиве» идут подряд 1, 2, 3… в каждом разделе площадки — по факту строк, а не как были записаны.
+   Удалили строку — номера ниже сдвигаются сами */
+function renumber() {
+  var ss = SpreadsheetApp.openById(POS_ID), sh = detailSheet(ss), rows = readPositive(sh), sec = sections(rows), n = 0;
+  sec.order.forEach(function (pl) {
+    sec.by[pl].forEach(function (r, i) { if (String(r.num) !== String(i + 1)) { sh.getRange(r.row, 1).setValue(i + 1); n++; } });
+  });
   return n;
 }
 
