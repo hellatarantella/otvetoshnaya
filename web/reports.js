@@ -21,10 +21,12 @@
   function ready() { return !!(cfg && cfg.url && cfg.token && cfg.paired); }
   function call(action, extra) {
     if (!cfg || !cfg.url) return Promise.reject(new Error("Google не подключён"));
-    var body = JSON.stringify(Object.assign({ action: action, token: cfg.token }, extra || {}));
+    // логику отчётов программа шлёт сама: постоянный скрипт в Google её выполняет и никогда не требует обновления
+    var body = JSON.stringify(Object.assign({ action: action, token: cfg.token, code: window.__otvGsLib || "" }, extra || {}));
     return invoke("gs_call", { url: cfg.url, body: body }).then(function (txt) {
       var r; try { r = JSON.parse(txt); } catch (e) { throw new Error("скрипт ответил непонятно"); }
       if (r.version) ver = +r.version;
+      runner = +(r.runner || 0);
       if (!r.ok) throw new Error(r.error || "ошибка скрипта");
       if (r.state) st = r.state;
       return r;
@@ -52,7 +54,9 @@
       return refs;
     });
   }
-  function oldScript() { return ready() && ver > 0 && ver < NEED_VER; }
+  var runner = 0;
+  // старый скрипт без постоянной связи: нужна одна последняя установка, дальше обновлять ничего не надо
+  function oldScript() { return ready() && ver > 0 && !runner; }
   function shortOf(fio) {
     var p = s(fio).trim().split(/\s+/);
     return p[0] + (p[1] ? " " + p[1].charAt(0) + "." : "") + (p[2] ? p[2].charAt(0) + "." : "");
@@ -634,7 +638,7 @@
   }
   function newWeek() {
     if (!ready()) { setRun("err", "Сначала подключите Google."); return; }
-    if (oldScript()) { setRun("err", "Сначала обновите скрипт в Google. Шаги выше."); render(); return; }
+    if (oldScript()) { setRun("err", "Нужно последнее обновление скрипта в Google. Шаги выше."); render(); return; }
     if (busy) return;
     busy = true; setRun("", "Сохраняю старые отчёты в «Загрузки»…");
     var expect = "";
@@ -705,7 +709,7 @@
   }
   function updateBox() {
     var box = el("div", "gs-setup gs-upd");
-    box.append(el("p", null, "Обновите скрипт в Google. Один раз, 2 минуты. Без этого «Негатив» на новой неделе не очистится."));
+    box.append(el("p", null, "Последнее обновление скрипта в Google: 2 минуты, и больше его трогать не нужно никогда. Дальше программа обновляет всё сама."));
     var ol = el("ol");
     ["Нажмите «Скопировать скрипт».",
      "Откройте ваш проект на script.google.com. Удалите всё в окне, вставьте скопированное, сохраните (⌘S).",
