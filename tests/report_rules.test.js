@@ -15,7 +15,7 @@ const head=t=>String(t).replace(/\s+/g,' ').trim().slice(0,120);
 function run(name, tableRows, registry, mail, expect, o){
   tableRows=tableRows.map(r=>r.slice()); o=o||{}; const today=(o.today||'2026-10-15T12:00:00')+'+03:00';
   const calls=[]; const reg=JSON.parse(JSON.stringify(registry));
-  let state=o.state0?JSON.parse(JSON.stringify(o.state0)):{posTitle:'Позитив',negTitle:'Негатив',tab:'x',period:'09.10–15.10.2026',start:'2026-10-09',end:'2026-10-15',
+  let state=o.state0?(x=>{ (x.negative||[]).concat(x.positive||[]).forEach(b=>{ if(b.full) b.text=head(b.full); }); return x; })(JSON.parse(JSON.stringify(o.state0))):{posTitle:'Позитив',negTitle:'Негатив',tab:'x',period:'09.10–15.10.2026',start:'2026-10-09',end:'2026-10-15',
     positive:tableRows.map((r,i)=>({platform:r[0],num:String(r[1]),date:r[2],dept:r[3]||'',doctor:'',text:head(r[4]),full:r[4]})),negative:[]};
   const bodies=[]; const invoke=(cmd,args)=>{ const b=JSON.parse(args.body); calls.push(b.action); bodies.push(b);
     if(b.action==='state') return Promise.resolve(JSON.stringify({ok:true,version:3,runner:(o.v?0:1),state}));
@@ -138,12 +138,12 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
              {n:2,platform:'Яндекс',date:'16.10.2026',text:head(regI['ya-b'].fullText),answer:'Ответили сами',full:regI['ya-b'].fullText,fullAnswer:'Здравствуйте. Ответ, который вписала сама в документ.',link:regI['ya-a'].link}]};
  const regI2={'pd-long':R('ПроДокторов','2026-10-18','','Мария',longPD,{report:'positive',reportRef:'Позитив · ПроДокторов №4',reportWeek:'2026-10-16',arrivedAt:A2('2026-10-18')}),
    'ya-a':Object.assign({},regI['ya-a'],{report:'negative',reportRef:'Негатив · блок 1',reportWeek:'2026-10-16'}),'ya-b':Object.assign({},regI['ya-b'],{report:'negative',reportRef:'Негатив · блок 2',reportWeek:'2026-10-16'})};
- all&=await run('21. уже записанное само исправляется: обрезанный текст дописан, черновик стёрт, вписанный вами ответ не тронут, чужая ссылка заменена', [], regI2, {}, {}, {today:'2026-10-20T12:00:00', state0:stI,
+ all&=await run('21. уже записанное само исправляется: обрезанный текст дописан, неподтверждённые ответы стёрты, чужая ссылка заменена', [], regI2, {}, {}, {today:'2026-10-20T12:00:00', state0:stI,
    answers:{'ya-a':{answer:drafty,draft:drafty,status:'pending'},'ya-b':{answer:drafty,draft:drafty,status:'pending'}}, inspect:(B)=>{ const p=B.find(b=>b.action==='patch'); if(!p) return 'ничего не исправлено';
      const pos=p.items.find(i=>i.kind==='pos'), n1=p.items.find(i=>i.n===1), n2=p.items.find(i=>i.n===2);
      if(!pos||!/всем рекомендую/.test(pos.text)) return 'обрезанный текст не дописан';
      if(!n1||n1.answer!=='—') return 'черновик в блоке 1 не стёрт';
-     if(n2&&n2.answer!=null) return 'вписанный вручную ответ перезаписан';
+     if(!n2||n2.answer!=='—') return 'ответ без подтверждения не заменён на «—»';
      if(!n1.link||/publicId/.test(n1.link)||!n2||/publicId/.test(n2.link||'')) return 'общая ссылка не заменена';
      if(B.some(b=>b.action==='add'&&((b.negative||[]).length||(b.positive||[]).length))) return 'внесено второй раз'; }});
  all&=await run('22. опубликованный ответ заменяет черновик в «Негативе»', [], regI2, {}, {}, {today:'2026-10-20T12:00:00', state0:stI,
@@ -162,10 +162,10 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
  const regG={'site-k':R('Сайт','2026-10-20','19:00','Б','Прошу удалить приём из медкарты, врач перепутал пациентов и не исправляет.',{report:'negative',reportRef:'Негатив · блок 1',reportWeek:'2026-10-16',arrivedAt:A2('2026-10-20')}),
    'site-m':R('Сайт','2026-10-20','19:10','В','Второе письмо с жалобой на ожидание в приёмном отделении.',{report:'negative',reportRef:'Негатив · блок 2',reportWeek:'2026-10-16',arrivedAt:A2('2026-10-20')}),
    'site-w':R('Сайт','2026-10-20','19:20','Г','Третье письмо, жалоба на грубость на посту.',{report:'negative',reportRef:'Негатив · блок 3',reportWeek:'2026-10-16',arrivedAt:A2('2026-10-20'),negWritten:'Здравствуйте. Записанный программой ответ, который теперь не одобрен.'})};
- all&=await run('24. черновик генератора узнаётся по тексту без приветствия и по записи программы; ваш ответ остаётся', [], regG, {'site-k':{kind:'complaint',status:'todo',draft:''},'site-m':{kind:'complaint',status:'todo'},'site-w':{kind:'complaint',status:'todo'}}, {}, {today:'2026-10-20T22:00:00', state0:stG,
+ all&=await run('24. в «Негативе» остаётся только настоящий ответ, остальное стирается', [], regG, {'site-k':{kind:'complaint',status:'todo',draft:''},'site-m':{kind:'complaint',status:'todo'},'site-w':{kind:'complaint',status:'todo'}}, {}, {today:'2026-10-20T22:00:00', state0:stG,
    answers:{'ya-other':{draft:'Здравствуйте. Спасибо за подробный отзыв и тёплые слова о работе хирурга. Обязательно передадим их Татьяне Ильиничне и команде отделения.',status:'pending'}},
    inspect:(B,out,reg)=>{ const p=B.find(b=>b.action==='patch'); if(!p) return 'ничего не исправлено'; const n=k=>p.items.find(i=>i.n===k);
-     if(!n(1)||n(1).answer!=='—') return 'черновик с другим приветствием не стёрт'; if(n(2)&&n(2).answer!=null) return 'ваш ответ перезаписан'; if(!n(3)||n(3).answer!=='—') return 'записанное программой не стёрто';
+     if(!n(1)||n(1).answer!=='—') return 'черновик с другим приветствием не стёрт'; if(!n(2)||n(2).answer!=='—') return 'неподтверждённый ответ остался'; if(!n(3)||n(3).answer!=='—') return 'записанное программой не стёрто';
      if(reg['site-k'].negWritten!=='—') return 'программа не запомнила, что записала'; }});
 
  // только настоящие ответы: с площадки, из «Отправленных», опубликованный программой, отметка об обжаловании
@@ -182,5 +182,18 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
      if(g('ya-ok')!=='—') return 'неопубликованный ответ попал в отчёт';
      if(g('ya-ap')!=='Отзыв отправлен на дополнительную проверку.') return 'обжалование не отмечено';
      if(g('pd-n')!=='—') return 'ПроДокторов без обжалования: '+g('pd-n'); }});
+
+ // номера блоков сдвинулись: в реестре стоит старый номер, программа правит только блок с текстом этого отзыва
+ const stS={posTitle:'Позитив',negTitle:'Негатив',tab:'x',period:'16.10–22.10.2026',start:'2026-10-16',end:'2026-10-22',positive:[],
+   negative:[{n:1,platform:'Яндекс',date:'16.10.2026',text:'Отношение просто жесть',answer:'—',full:'Отношение просто жесть, выгнали ночью на улицу одного, мата не хватит.',fullAnswer:'—',link:'https://ya/A'},
+             {n:2,platform:'ПроДокторов',date:'16.10.2026',text:'Врач нагрубил',answer:'—',full:'Врач нагрубил на приёме и ничего не объяснил про назначения.',fullAnswer:'—',link:'https://pd/2'}]};
+ const regS={'ya-A':R('Яндекс','2026-10-16','','А','Отношение просто жесть, выгнали ночью на улицу одного, мата не хватит.',{rating:1,report:'negative',reportRef:'Негатив · блок 2',reportWeek:'2026-10-16',arrivedAt:A2('2026-10-16'),link:'https://ya/A'}),
+   'pd-old':R('ПроДокторов','2026-10-12','','С','Прошлая неделя: долго ждала в коридоре, никто не подошёл.',{rating:2,report:'negative',reportRef:'Негатив · блок 1',reportWeek:'2026-10-09',arrivedAt:A2('2026-10-12'),reply:'Ответ на отзыв прошлой недели',link:'https://pd/old'}),
+   'pd-2':R('ПроДокторов','2026-10-16','','Б','Врач нагрубил на приёме и ничего не объяснил про назначения.',{rating:2,report:'negative',reportRef:'Негатив · блок 1',reportWeek:'2026-10-16',arrivedAt:A2('2026-10-16'),reply:'Здравствуйте. Настоящий ответ на ПроДокторов.'})};
+ all&=await run('26. отзыв прошлой недели с тем же номером блока и перепутанные номера: ответ и ссылка встают только в блок со своим текстом', [], regS, {}, {}, {today:'2026-10-20T22:00:00', state0:stS,
+   inspect:(B)=>{ const p=B.find(b=>b.action==='patch'); if(!p) return 'ничего не исправлено'; const n=k=>p.items.find(i=>i.n===k);
+     if(n(1)&&n(1).answer&&n(1).answer!=='—') return 'чужой ответ ушёл в блок Яндекса: '+n(1).answer;
+     if(!n(2)||n(2).answer!=='Здравствуйте. Настоящий ответ на ПроДокторов.') return 'ответ не встал в свой блок';
+     if(n(1)&&n(1).link&&n(1).link!=='https://ya/A') return 'ссылка Яндекса заменена чужой'; }});
  console.log(all?'ALL OK':'SOME FAILED');
 })();

@@ -629,27 +629,31 @@
     Object.keys(M).forEach(function (k) { var b = body((M[k] || {}).draft); if (b.length > 30) out[b] = 1; });
     return out;
   }
+  // блок или строка отчёта принадлежит этому отзыву, только если совпадают площадка и текст. Номер блока не доказательство: блоки сдвигаются
+  function sameRow(rowPl, rowText, r) {
+    var pl = s(rowPl).replace(/^Сайт больницы$/, "Сайт"), a = norm(s(rowText).replace(/(\.{3,}|…)\s*$/, "")), b = norm(s(r.fullText || r.text));
+    if (pl !== s(r.platform).replace(/^Сайт больницы$/, "Сайт") || a.length < 15 || b.length < 15) return false;
+    var k = Math.min(60, a.length, b.length);
+    return a.slice(0, k) === b.slice(0, k) || sim(a.slice(0, 200), b.slice(0, 200)) >= 0.6;
+  }
+  /* ---------- сверка уже записанных строк с программой ----------
+     ПРАВИЛО: отчёт = настоящие данные. Ответ и ссылка в «Негативе» всегда такие, как в программе (настоящий ответ или «—», ссылка этого отзыва);
+     обрезанный текст дописывается. Правится только строка, текст которой совпадает с текстом этого отзыва */
   function syncCells(reg, refOf) {
     if (ver < 4 && !runner) return Promise.resolve();
-    var items = [], pos = {}, neg = {}, gen = null, written = {};
+    var items = [], pos = {}, neg = {}, written = {};
     (st.positive || []).forEach(function (x) { pos["Позитив · " + x.platform + " №" + x.num] = x; });
     (st.negative || []).forEach(function (b) { neg["Негатив · блок " + b.n] = b; });
-    Object.keys(reg).forEach(function (id) {
-      var r = reg[id]; if (!r) return;
-      var ref = (refOf && refOf[id]) || ((r.report === "negative" || r.report === "positive") ? s(r.reportRef) : "");
+    Object.keys(refOf || {}).forEach(function (id) {
+      var r = reg[id], ref = refOf[id]; if (!r || !ref) return;
       var full = s(r.fullText || r.text);
       var p = pos[ref];
-      if (p) { if (truncatedOf(p.full, full)) items.push({ kind: "pos", platform: p.platform, num: p.num, key: p.full, text: clean(full) }); return; }
-      var b = neg[ref]; if (!b) return;
+      if (p) { if (sameRow(p.platform, p.full, r) && truncatedOf(p.full, full)) items.push({ kind: "pos", platform: p.platform, num: p.num, key: p.full, text: clean(full) }); return; }
+      var b = neg[ref]; if (!b || !sameRow(b.platform, b.full, r)) return;
       var it = { kind: "neg", n: b.n, key: b.full }, ch = false;
       if (truncatedOf(b.full, full)) { it.text = clean(full); ch = true; }
-      var na = negAnswer(r), want = clean(na.text) || "—", have = norm(b.fullAnswer).slice(0, 100);
-      if (have !== norm(want).slice(0, 100)) {
-        // одобренного ответа нет: стираем только то, что записала сама программа (или текст генератора); вписанный вами ответ не трогаем
-        var hb = body(b.fullAnswer), mine = s(r.negWritten) && body(r.negWritten) === hb;
-        var isDraft = !have || have === "—" || mine || (hb.length > 30 && !!(gen || (gen = genBodies()))[hb]) || na.drafts.some(function (d) { return body(d) === hb; });
-        if (want !== "—" || isDraft) { it.answer = want; ch = true; written[id] = want; }
-      }
+      var want = clean(negAnswer(r).text) || "—";
+      if (norm(b.fullAnswer) !== norm(want)) { it.answer = want; ch = true; written[id] = want; }
       var lk = linkFor(r, reg);
       if (s(b.link).trim() !== lk) { it.link = lk; ch = true; }
       if (ch) items.push(it);
