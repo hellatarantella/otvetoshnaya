@@ -1,0 +1,58 @@
+name: Проверка встроенной модели
+
+# Отправка в ветку modelcheck → модель отвечает на выдуманные отзывы из tools/model_check_cases.json,
+# результат — в ветке modelcheck-out (results.md). Настоящие отзывы сюда не попадают.
+on:
+  push:
+    branches: [modelcheck]
+
+permissions:
+  contents: write
+
+env:
+  LLAMA_TAG: b11500
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Сервер модели — из кэша
+        id: llama
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/bin
+          key: llama-${{ runner.os }}-${{ env.LLAMA_TAG }}-${{ hashFiles('scripts/build-llama.sh') }}
+      - name: Сервер модели — сборка llama.cpp
+        if: steps.llama.outputs.cache-hit != 'true'
+        run: bash scripts/build-llama.sh
+      - name: Модель — из кэша
+        id: gguf
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: gguf-qwen3-4b-instruct-2507-q4km
+      - name: Модель — скачать
+        if: steps.gguf.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p models
+          curl -fL --retry 3 -o models/m.gguf "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf" \
+            || curl -fL --retry 3 -o models/m.gguf "https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+          ls -la models
+      - name: Проверка
+        run: |
+          BIN=$(ls src-tauri/bin/llama-server-*linux* | head -1)
+          "$BIN" -m models/m.gguf --host 127.0.0.1 --port 8080 -c 4096 -np 1 -t 4 > server.log 2>&1 &
+          for i in $(seq 1 120); do curl -sf http://127.0.0.1:8080/health && break; sleep 2; done
+          node tools/model_check.mjs 8080 > results.md
+          tail -5 server.log
+      - name: Результат в ветку modelcheck-out
+        run: |
+          mkdir out && cp results.md out/ && cd out
+          git init -q -b modelcheck-out && git add -A
+          git -c user.name="check" -c user.email="check@localhost" commit -q -m "Проверка модели $(date -u +%F\ %H:%M)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" modelcheck-out

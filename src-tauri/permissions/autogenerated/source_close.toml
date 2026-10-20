@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-source-close"
+description = "Enables the source_close command without any pre-configured scope."
+commands.allow = ["source_close"]
+
+[[permission]]
+identifier = "deny-source-close"
+description = "Denies the source_close command without any pre-configured scope."
+commands.deny = ["source_close"]

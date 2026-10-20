@@ -1,0 +1,39 @@
+[package]
+name = "otvetoshnaya"
+version = "0.1.0"
+description = "Ответошная — отзывы ГКБ №24"
+edition = "2021"
+
+[lib]
+name = "otvetoshnaya_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
+dirs = "5"
+tauri-plugin-opener = "2"
+url = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["time"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
+[profile.release]
+# лёгкая сборка: полная оптимизация связывания съедала память и диск сборочного Mac, и сборка падала
+codegen-units = 8
+lto = "thin"
+opt-level = "s"
+panic = "abort"
+strip = true

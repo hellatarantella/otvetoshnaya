@@ -1,0 +1,25 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "sources",
+  "description": "Скрытые окна сбора: страницы кабинетов могут только вернуть собранные отзывы",
+  "windows": [
+    "src-*"
+  ],
+  "remote": {
+    "urls": [
+      "https://prodoctorov.ru/*",
+      "https://yandex.ru/*",
+      "https://account.2gis.com/*",
+      "https://manager.doctu.ru/*",
+      "https://www.google.com/*",
+      "https://owa.mos.ru/*",
+      "https://napopravku.ru/*",
+      "https://doctu.ru/*",
+      "http://manager.doctu.ru/*",
+      "https://profile.napopravku.ru/*"
+    ]
+  },
+  "permissions": [
+    "allow-source-result"
+  ]
+}

@@ -1,0 +1,173 @@
+name: Сборка «Ответошной»
+
+# Отправка в ветку release → программа для Mac (процессор Apple) и Windows, подписанная ключом обновлений.
+# Готовые файлы и latest.json складываются в ветку dist этого репозитория;
+# оттуда их переносят в открытый otvetoshnaya-releases, откуда программы и обновляются.
+on:
+  push:
+    branches: [release]
+
+permissions:
+  contents: write
+
+env:
+  RAW: https://raw.githubusercontent.com/hellatarantella/otvetoshnaya-releases/main
+  LLAMA_TAG: b11500
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-15
+            args: --target aarch64-apple-darwin
+          - platform: windows-latest
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ startsWith(matrix.platform, 'macos') && 'aarch64-apple-darwin' || '' }}
+      - name: Место на диске (Mac)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          df -h /
+          # на сборочном Mac около 14 ГБ свободно, сборки сразу под два процессора его съедают: убираем ненужное
+          sudo rm -rf ~/Library/Android /usr/local/share/dotnet ~/.dotnet /usr/local/lib/android 2>/dev/null || true
+          df -h /
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+      - run: npm ci
+      - name: Сервер модели — из кэша
+        id: llama
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/bin
+          key: llama-${{ runner.os }}-${{ env.LLAMA_TAG }}-${{ hashFiles('scripts/build-llama.sh') }}
+      - name: Сервер модели — сборка llama.cpp
+        if: steps.llama.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          mkdir -p ci-log
+          set -o pipefail
+          bash scripts/build-llama.sh 2>&1 | tee ci-log/llama.log | tail -60
+      - name: Сборка
+        id: build
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ci-log
+          set -o pipefail
+          # ход сборки на Mac раз в 2 минуты — в ветку ci-progress-macOS (видно, где сборка остановилась, даже если сборочный Mac упал)
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            ( while true; do sleep 120; d=$(mktemp -d)
+                { date -u; df -h /; vm_stat | head -10; tail -40 "$GITHUB_WORKSPACE/ci-log/tauri.log"; } > "$d/progress.txt" 2>&1
+                git -C "$d" init -q -b ci-progress-macOS && git -C "$d" add -A && git -C "$d" -c user.name=build -c user.email=build@localhost commit -q -m progress \
+                  && git -C "$d" push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-progress-macOS >/dev/null 2>&1
+                rm -rf "$d"; done ) &
+          fi
+          # настоящий ключ подписи обновлений в репозитории не хранится: сборка подписывает временным,
+          # перед выпуском файлы переподписываются настоящим ключом (scripts/publish.sh)
+          npx tauri signer generate --ci -p '' -f -w "$RUNNER_TEMP/tmp-updater.key" >/dev/null
+          export TAURI_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/tmp-updater.key")"
+          npx tauri build ${{ matrix.args }} 2>&1 | tee ci-log/tauri.log | tail -80
+      - name: Журнал сборки при ошибке — в ветку ci-log-${{ runner.os }}
+        if: failure() || cancelled()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ci-log && cd ci-log
+          { echo "run ${{ github.run_id }} sha ${{ github.sha }}"; echo "job ${{ job.status }}"; echo "llama ${{ steps.llama.outcome }} build ${{ steps.build.outcome }}"; date -u; } > status.log
+          df -h . > disk.log 2>&1 || true
+          for f in *.log; do [ -f "$f" ] && tail -400 "$f" > "$f.tail" && mv "$f.tail" "$f"; done
+          git init -q -b "ci-log-$RUNNER_OS" && git add -A
+          git -c user.name="build" -c user.email="build@localhost" commit -q -m "Журнал сборки $RUNNER_OS" --allow-empty
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "ci-log-$RUNNER_OS"
+      - name: Файлы с понятными именами
+        id: files
+        shell: bash
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          mkdir -p out
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            B=src-tauri/target/aarch64-apple-darwin/release/bundle
+            cp "$B"/dmg/*.dmg out/Otvetoshnaya.dmg
+            cp "$B"/macos/*.app.tar.gz "out/otvetoshnaya_${VER}_mac.app.tar.gz"
+            cp "$B"/macos/*.app.tar.gz.sig "out/otvetoshnaya_${VER}_mac.app.tar.gz.sig"
+          else
+            B=src-tauri/target/release/bundle/nsis
+            cp "$B"/*-setup.exe out/Otvetoshnaya_setup.exe
+            cp "$B"/*-setup.exe "out/otvetoshnaya_${VER}_windows_setup.exe"
+            cp "$B"/*-setup.exe.sig "out/otvetoshnaya_${VER}_windows_setup.exe.sig"
+          fi
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ runner.os }}
+          path: out/
+      - name: Итог сборки — в ветку ci-status-${{ runner.os }}
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ci-status && cd ci-status
+          { echo "run ${{ github.run_id }} sha ${{ github.sha }}"; echo "job ${{ job.status }}";
+            echo "llama ${{ steps.llama.outcome }} build ${{ steps.build.outcome }} files ${{ steps.files.outcome }}"; date -u; df -h / 2>&1; } > status.txt
+          [ -f ../ci-log/tauri.log ] && tail -120 ../ci-log/tauri.log > tauri-tail.log || true
+          ls -la ../out > out.txt 2>&1 || true
+          git init -q -b "ci-status-$RUNNER_OS" && git add -A
+          git -c user.name="build" -c user.email="build@localhost" commit -q -m "Итог сборки $RUNNER_OS"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "ci-status-$RUNNER_OS"
+
+  dist:
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+          merge-multiple: true
+      - name: latest.json и ветка dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          mkdir dist && cp art/* dist/
+          VER="$VER" python3 - <<'PY'
+          import json, os, datetime
+          ver, raw = os.environ["VER"], os.environ["RAW"]
+          plat = {}
+          mac = f"otvetoshnaya_{ver}_mac.app.tar.gz"
+          win = f"otvetoshnaya_{ver}_windows_setup.exe"
+          if os.path.exists(f"dist/{mac}.sig"):
+              s = open(f"dist/{mac}.sig").read().strip()
+              plat["darwin-aarch64"] = {"signature": s, "url": f"{raw}/{mac}"}   # Mac на процессоре Apple
+          if os.path.exists(f"dist/{win}.sig"):
+              plat["windows-x86_64"] = {"signature": open(f"dist/{win}.sig").read().strip(), "url": f"{raw}/{win}"}
+          if not plat:
+              raise SystemExit("Нет ни одной сборки")
+          json.dump({"version": ver, "notes": f"Ответошная {ver}",
+                     "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                     "platforms": plat}, open("dist/latest.json", "w"), ensure_ascii=False, indent=2)
+          print("платформы:", ", ".join(plat))
+          PY
+          cd dist
+          git init -q -b dist
+          git add -A
+          git -c user.name="build" -c user.email="build@localhost" commit -q -m "Ответошная $VER"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" dist

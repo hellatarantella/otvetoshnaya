@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-gs-call"
+description = "Enables the gs_call command without any pre-configured scope."
+commands.allow = ["gs_call"]
+
+[[permission]]
+identifier = "deny-gs-call"
+description = "Denies the gs_call command without any pre-configured scope."
+commands.deny = ["gs_call"]

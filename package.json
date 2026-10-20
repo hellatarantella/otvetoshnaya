@@ -1,0 +1,12 @@
+{
+  "name": "otvetoshnaya",
+  "private": true,
+  "version": "0.2.36",
+  "scripts": {
+    "tauri": "tauri",
+    "build:page": "node scripts/build-page.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

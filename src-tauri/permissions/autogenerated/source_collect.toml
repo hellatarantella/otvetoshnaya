@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-source-collect"
+description = "Enables the source_collect command without any pre-configured scope."
+commands.allow = ["source_collect"]
+
+[[permission]]
+identifier = "deny-source-collect"
+description = "Denies the source_collect command without any pre-configured scope."
+commands.deny = ["source_collect"]

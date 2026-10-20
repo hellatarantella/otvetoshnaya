@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-source-allow"
+description = "Enables the source_allow command without any pre-configured scope."
+commands.allow = ["source_allow"]
+
+[[permission]]
+identifier = "deny-source-allow"
+description = "Denies the source_allow command without any pre-configured scope."
+commands.deny = ["source_allow"]
