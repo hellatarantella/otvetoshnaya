@@ -16,15 +16,16 @@ function run(name, tableRows, registry, mail, expect, o){
   tableRows=tableRows.map(r=>r.slice()); o=o||{}; const today=(o.today||'2026-10-15T12:00:00')+'+03:00';
   const calls=[]; const reg=JSON.parse(JSON.stringify(registry));
   let state=o.state0?JSON.parse(JSON.stringify(o.state0)):{posTitle:'Позитив',negTitle:'Негатив',tab:'x',period:'09.10–15.10.2026',start:'2026-10-09',end:'2026-10-15',
-    positive:tableRows.map((r,i)=>({platform:r[0],num:String(r[1]),date:r[2],dept:r[3]||'',doctor:'',text:head(r[4])})),negative:[]};
+    positive:tableRows.map((r,i)=>({platform:r[0],num:String(r[1]),date:r[2],dept:r[3]||'',doctor:'',text:head(r[4]),full:r[4]})),negative:[]};
   const bodies=[]; const invoke=(cmd,args)=>{ const b=JSON.parse(args.body); calls.push(b.action); bodies.push(b);
     if(b.action==='state') return Promise.resolve(JSON.stringify({ok:true,version:3,runner:(o.v?0:1),state}));
     if(b.action==='refs') return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),refs:{departments:[],exceptions:[],staff:[],categories:['ГКБ 24','Хирургия','Приёмное отделение','Терапия']}}));
-    if(b.action==='add'){ const refs={}; let n=tableRows.filter(r=>r[0]==='Сайт').length; (b.negative||[]).forEach((x,i)=>{ const n=state.negative.length+1; state.negative.push({n,platform:x.platform,date:x.date,text:head(x.text),answer:head(x.answer)}); refs[x.id]='Негатив · блок '+n; }); (b.positive||[]).forEach(p=>{ const k=Math.max(0,...tableRows.filter(r=>r[0]===p.platform).map(r=>+r[1]))+1; refs[p.id]='Позитив · '+p.platform+' №'+k; tableRows.push([p.platform,k,p.date,p.dept,p.text]); state.positive.push({platform:p.platform,num:String(k),date:p.date,dept:p.dept,doctor:'',text:head(p.text)}); }); calls.push({add:b.positive.map(p=>p.id+':'+p.dept)}); return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),refs,state})); }
+    if(b.action==='add'){ const refs={}; let n=tableRows.filter(r=>r[0]==='Сайт').length; (b.negative||[]).forEach((x,i)=>{ const n=state.negative.length+1; state.negative.push({n,platform:x.platform,date:x.date,text:head(x.text),answer:head(x.answer),full:x.text,fullAnswer:x.answer,link:x.link}); refs[x.id]='Негатив · блок '+n; }); (b.positive||[]).forEach(p=>{ const k=Math.max(0,...tableRows.filter(r=>r[0]===p.platform).map(r=>+r[1]))+1; refs[p.id]='Позитив · '+p.platform+' №'+k; tableRows.push([p.platform,k,p.date,p.dept,p.text]); state.positive.push({platform:p.platform,num:String(k),date:p.date,dept:p.dept,doctor:'',text:head(p.text),full:p.text}); }); calls.push({add:b.positive.map(p=>p.id+':'+p.dept)}); return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),refs,state})); }
     if(b.action==='export'){ if(o.exportFail) return Promise.resolve(JSON.stringify({ok:false,error:'нет доступа к файлу'})); return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),files:[{name:'Позитив.xlsx',data:'AA=='},{name:'Негатив.docx',data:'AA=='}]})); }
     if(b.action==='newweek'){ const e=new Date(state.end+'T00:00:00Z'); const a=new Date(e.getTime()+864e5), z=new Date(e.getTime()+7*864e5); const f=d=>d.toISOString().slice(0,10), dm=d=>f(d).slice(8,10)+'.'+f(d).slice(5,7);
       if(b.expect!==dm(a)+'–'+dm(z)) return Promise.resolve(JSON.stringify({ok:false,error:'Отчёт уже сменился'}));
       state=Object.assign({},state,{start:f(a),end:f(z),period:dm(a)+'–'+dm(z)+'.'+z.getUTCFullYear(),positive:[],negative:[]}); tableRows=[]; return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),period:state.period,state})); }
+    if(b.action==='patch'){ (b.items||[]).forEach(it=>{ if(it.kind==='neg'){ const x=state.negative.find(q=>q.n===it.n); if(x){ if(it.text!=null)x.full=it.text; if(it.answer!=null)x.fullAnswer=it.answer; if(it.link!=null)x.link=it.link; } } else { const x=state.positive.find(q=>q.platform===it.platform&&q.num===String(it.num)); if(x) x.full=it.text; } }); return Promise.resolve(JSON.stringify({ok:true,version:4,runner:(o.v?0:1),patched:(b.items||[]).length})); }
     if(b.action==='numbers'||b.action==='answers') return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1)}));
     return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1)}));
   };
@@ -94,14 +95,14 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
  // ---- «Негатив»: пустые строки и ответы ----
  const negT='ОТНОШЕНИЕ ПРОСТО ЖЕСТЬ!\n\nВыгнали ночью на улицу.\n\n  \nМата не хватит.';
  const regN=Object.assign({},regBase,{'ya-neg':R('Яндекс','2026-10-15','','Злой',negT,{rating:1})});
- const ansN={'ya-neg':{answer:'Здравствуйте.\n\nНам очень жаль.\n\nРазберёмся.',status:'pending'}};
+ const ansN={'ya-neg':{answer:'Здравствуйте.\n\nНам очень жаль.\n\nРазберёмся.',status:'approved'}};
  all&=await run('13. негатив с пустыми строками: в Google уходит без пустых строк, ответ целиком', tbl, regN, mail, {}, {inspect:(B)=>{
    const a=B.find(b=>b.action==='add'); if(!a||!a.negative||!a.negative.length) return 'нет негатива';
    const x=a.negative[0]; if(/\n\s*\n/.test(x.text)||/\n\s*\n/.test(x.answer)) return 'пустые строки остались';
    if(!/Разберёмся/.test(x.answer)) return 'ответ обрезан: '+x.answer; }, answers:ansN});
- const st13={posTitle:'Позитив',negTitle:'Негатив',tab:'x',period:'09.10–15.10.2026',start:'2026-10-09',end:'2026-10-15',positive:[],negative:[{n:1,platform:'Яндекс',date:'15.10.2026',text:'ОТНОШЕНИЕ ПРОСТО ЖЕСТЬ! Выгнали ночью на улицу. Мата не хватит.',answer:'Здравствуйте.'}]};
+ const st13={posTitle:'Позитив',negTitle:'Негатив',tab:'x',period:'09.10–15.10.2026',start:'2026-10-09',end:'2026-10-15',positive:[],negative:[{n:1,platform:'Яндекс',date:'15.10.2026',text:'ОТНОШЕНИЕ ПРОСТО ЖЕСТЬ! Выгнали ночью на улицу. Мата не хватит.',answer:'Здравствуйте.',full:'ОТНОШЕНИЕ ПРОСТО ЖЕСТЬ!\nВыгнали ночью на улицу.\nМата не хватит.',fullAnswer:'Здравствуйте.',link:''}]};
  all&=await run('14. в «Негативе» ответ обрезан: программа сама дописывает его целиком', [], {'ya-neg':R('Яндекс','2026-10-15','','Злой',negT,{rating:1,report:'negative',reportRef:'Негатив · блок 1'})}, {}, {}, {state0:st13, answers:ansN, inspect:(B)=>{
-   const a=B.find(b=>b.action==='answers'); if(!a) return 'ответ не обновлён'; if(!/Разберёмся/.test(a.items[0].answer)||/\n\s*\n/.test(a.items[0].answer)) return 'плохой ответ'; if(B.some(b=>b.action==='add'&&b.negative&&b.negative.length)) return 'внесён второй раз'; }});
+   const a=B.find(b=>b.action==='patch'); if(!a) return 'ответ не обновлён'; if(!/Разберёмся/.test(a.items[0].answer)||/\n\s*\n/.test(a.items[0].answer)) return 'плохой ответ'; if(B.some(b=>b.action==='add'&&b.negative&&b.negative.length)) return 'внесён второй раз'; }});
  all&=await run('15. скрипт в Google старый: новую неделю не начинать, попросить обновить скрипт', tbl, regL, mailL,
    {noCalls:['export','newweek'], period:'09.10–15.10.2026', adds:[]}, {today:'2026-10-20T09:05:00', press:true, v:2});
  // ---- неделя по поступлению ----
@@ -120,5 +121,36 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
  all&=await run('18. пятница, новый отчёт: пришедшее после закрытия и не успевшее до него внесены в новую неделю, сданное не повторено', [], regB, {'site-1430':{kind:'thanks'}},
    {calls:['newweek'], period:'23.10–29.10.2026', adds:[['site-1430:ГКБ 24','ya-thu1530:ГКБ 24']]}, {today:'2026-10-23T10:00:00', state0:W16, press:true});
  all&=await run('19. почта не прочитана: отчёт предупреждает, что он неполный', tbl, regBase, mail, {msg:/Отчёт может быть неполным: не прочитаны Почта сайта \(нужен вход\)/}, {health:[{name:'Почта сайта',ok:false,okAt:'2026-10-14T06:00:00Z',needLogin:true},{name:'ПроДокторов',ok:true,okAt:'2026-10-15T08:00:00Z'}]});
+
+ // ---- целостность отчёта: только одобренные ответы, полные тексты, свои ссылки ----
+ const W=W16, A2=(d)=>A(d,'10:00');
+ const drafty='Здравствуйте. Спасибо за подробный отзыв и тёплые слова о работе хирурга. Обязательно передадим их Татьяне Ильиничне.';
+ const regI={'ya-a':R('Яндекс','2026-10-16','','А','Отношение просто жесть, выгнали ночью на улицу, это ужасно и недопустимо.',{rating:1,arrivedAt:A2('2026-10-16'),link:'https://yandex.ru/maps/org/1/reviews?reviews%5BpublicId%5D=AAA&utm_source=review'}),
+   'ya-b':R('Яндекс','2026-10-16','','Б','Хирурга заменили без консультации, осмотра перед операцией не было, это плохо.',{rating:2,arrivedAt:A2('2026-10-16'),link:'https://yandex.ru/maps/org/1/reviews?reviews%5BpublicId%5D=AAA&utm_source=review'})};
+ all&=await run('20. жалобы без одобренного ответа: в «Негатив» ответ «—», черновик генератора не идёт; одинаковая ссылка у двух отзывов не ставится', [], regI, {}, {}, {today:'2026-10-20T12:00:00', state0:W,
+   answers:{'ya-a':{answer:drafty,draft:drafty,status:'pending'}}, inspect:(B)=>{ const a=B.find(b=>b.action==='add'); if(!a||a.negative.length!==2) return 'нет двух блоков';
+     if(a.negative.some(x=>x.answer!=='—')) return 'в отчёт ушёл черновик: '+a.negative.map(x=>x.answer).join(' / ');
+     if(a.negative.some(x=>/publicId/.test(x.link))) return 'одинаковая ссылка у двух отзывов осталась'; }});
+ const longPD='Добрый день! Меня зовут Мария. '+'Очень благодарна доктору за внимание и заботу, всё объяснила и успокоила. '.repeat(25)+'Сама больница чистая и уютная, всем рекомендую.';
+ const stI={posTitle:'Позитив',negTitle:'Негатив',tab:'x',period:'16.10–22.10.2026',start:'2026-10-16',end:'2026-10-22',
+   positive:[{platform:'ПроДокторов',num:'4',date:'18.10.2026',dept:'Гинекология',doctor:'',text:head(longPD),full:longPD.slice(0,1500)}],
+   negative:[{n:1,platform:'Яндекс',date:'16.10.2026',text:head(regI['ya-a'].fullText),answer:head(drafty),full:regI['ya-a'].fullText,fullAnswer:drafty,link:regI['ya-a'].link},
+             {n:2,platform:'Яндекс',date:'16.10.2026',text:head(regI['ya-b'].fullText),answer:'Ответили сами',full:regI['ya-b'].fullText,fullAnswer:'Здравствуйте. Ответ, который вписала сама в документ.',link:regI['ya-a'].link}]};
+ const regI2={'pd-long':R('ПроДокторов','2026-10-18','','Мария',longPD,{report:'positive',reportRef:'Позитив · ПроДокторов №4',reportWeek:'2026-10-16',arrivedAt:A2('2026-10-18')}),
+   'ya-a':Object.assign({},regI['ya-a'],{report:'negative',reportRef:'Негатив · блок 1',reportWeek:'2026-10-16'}),'ya-b':Object.assign({},regI['ya-b'],{report:'negative',reportRef:'Негатив · блок 2',reportWeek:'2026-10-16'})};
+ all&=await run('21. уже записанное само исправляется: обрезанный текст дописан, черновик стёрт, вписанный вами ответ не тронут, чужая ссылка заменена', [], regI2, {}, {}, {today:'2026-10-20T12:00:00', state0:stI,
+   answers:{'ya-a':{answer:drafty,draft:drafty,status:'pending'},'ya-b':{answer:drafty,draft:drafty,status:'pending'}}, inspect:(B)=>{ const p=B.find(b=>b.action==='patch'); if(!p) return 'ничего не исправлено';
+     const pos=p.items.find(i=>i.kind==='pos'), n1=p.items.find(i=>i.n===1), n2=p.items.find(i=>i.n===2);
+     if(!pos||!/всем рекомендую/.test(pos.text)) return 'обрезанный текст не дописан';
+     if(!n1||n1.answer!=='—') return 'черновик в блоке 1 не стёрт';
+     if(n2&&n2.answer!=null) return 'вписанный вручную ответ перезаписан';
+     if(!n1.link||/publicId/.test(n1.link)||!n2||/publicId/.test(n2.link||'')) return 'общая ссылка не заменена';
+     if(B.some(b=>b.action==='add'&&((b.negative||[]).length||(b.positive||[]).length))) return 'внесено второй раз'; }});
+ all&=await run('22. одобренный ответ заменяет черновик в «Негативе»', [], regI2, {}, {}, {today:'2026-10-20T12:00:00', state0:stI,
+   answers:{'ya-a':{answer:'Здравствуйте. Одобренный ответ.',draft:drafty,status:'approved'}}, inspect:(B)=>{ const p=B.find(b=>b.action==='patch'); const n1=p&&p.items.find(i=>i.n===1); if(!n1||n1.answer!=='Здравствуйте. Одобренный ответ.') return 'одобренный ответ не встал'; }});
+ const regTC={'go-cut':R('Google','2026-10-16','','К','Здравствуйте! Лежала в гинекологии у Карапетян. Операцию делали три часа. На третий день уже поехала домой....',{rating:5,arrivedAt:A2('2026-10-16')}),
+   'site-subj':R('Сайт','2026-10-19','10:00','Л','Жалоба на действия сотрудников ГКБ № 24',{arrivedAt:A2('2026-10-19')})};
+ all&=await run('23. обрезанный отзыв Google и письмо без текста (одна тема) не идут в отчёт, а ждут проверки', [], regTC, {'site-subj':{kind:'complaint',subject:'Жалоба на действия сотрудников ГКБ № 24'}},
+   {adds:[], reg:{'go-cut':'pending | Нужна проверка: текст отзыва обрезан','site-subj':'pending | Нужна проверка: прочиталась только тема'}}, {today:'2026-10-20T12:00:00', state0:W});
  console.log(all?'ALL OK':'SOME FAILED');
 })();

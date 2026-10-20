@@ -47,6 +47,9 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
       - run: npm ci
+      - name: Проверки (без них не собираем)
+        shell: bash
+        run: NO_BROWSER=1 bash tests/run-all.sh
       - name: Сервер модели — из кэша
         id: llama
         uses: actions/cache@v4

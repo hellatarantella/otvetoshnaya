@@ -30,7 +30,7 @@
           page: it.rate_type === 'ratelpu' ? 'Страница больницы' : it.name,
           date: it.dt_created.slice(0, 10), time: it.dt_created.slice(11, 16), rating: r5, threshold: 4,
           low: published && r5 < 4, author: '',
-          text: [it.comment, it.comment_plus, it.comment_minus].filter(Boolean).join('\n').slice(0, 1500),
+          text: [it.comment, it.comment_plus, it.comment_minus].filter(Boolean).join('\n').slice(0, 20000),
           answered: !!it.answer_moderation_status,
           link: `https://prodoctorov.ru/cabinet/lpu-rates/${it.rate_type}/${it.id}/?lpu=21011`
         });
@@ -69,7 +69,7 @@
       id: id, platform: 'Яндекс', published: true,
       page: 'Карточка больницы', date: msk(x.time_created).slice(0, 10), time: msk(x.time_created).slice(11, 16),
       rating: x.rating, threshold: 4, low: x.rating < 4,
-      author: x.author && x.author.user || '', text: (x.full_text || '').slice(0, 1500),
+      author: x.author && x.author.user || '', text: (x.full_text || '').slice(0, 20000),
       answered: !!(x.owner_comment && x.owner_comment.text),
       link: x.author && x.author.public_id ? 'https://yandex.ru/maps/org/1022361531/reviews?reviews%5BpublicId%5D=' + x.author.public_id + '&utm_source=review' : 'https://yandex.ru/maps/org/1022361531/reviews/'
     }); });
@@ -93,7 +93,7 @@
       const text = lines.slice(i0 + 1).filter(l => !/^(Писцовая|Планетная|Отзыв (не )?подтверждён)/.test(l)).join(' ').split('Больница №24')[0].trim();
       const iso = `${m[3]}-${String(M[m[2]] + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
       out.push({ id: '2gis-' + iso + '-' + h((lines[0] || '') + text), platform: '2ГИС', published: true, page: 'Карточка больницы',
-        date: iso, time: '', rating, threshold: 4.5, low: rating < 4.5, author: lines[0] || '', text: text.slice(0, 1500),
+        date: iso, time: '', rating, threshold: 4.5, low: rating < 4.5, author: lines[0] || '', text: text.slice(0, 20000),
         answered: /С уважением|Здравствуйте/.test(c.innerText), link: location.href });
     }
     return out;
@@ -122,7 +122,7 @@
       const ans = q('.review-teaser__answer_answer');
       out.push({ id: 'doctu-' + iso + '-' + (doctor ? href.split('/').pop() : 'clinic-' + h(text)), platform: 'ДокТу', published: true,
         page: doctor ? 'Карточка врача: ' + short(doctor) : 'Карточка больницы', date: iso, time: '', rating, threshold: 4, low: rating < 4,
-        author: ((q('.review-teaser__name') || {}).innerText || 'Пациент').trim(), text: text.slice(0, 1500),
+        author: ((q('.review-teaser__name') || {}).innerText || 'Пациент').trim(), text: text.slice(0, 20000),
         answered: !!(ans && ans.innerText.trim()), link: doctor ? href + '#feedback' : href });
     }
     return { items: out, seen: all.length };
@@ -172,12 +172,15 @@
       let c = e;
       for (let i = 0; i < 10 && c; i++) { c = c.parentElement; if (c && /open_in_new|Владелец|Посмотреть весь отзыв/.test(c.innerText) && c.innerText.length > 40) break; }
       if (!c) continue;
+      // длинный отзыв Google показывает началом с кнопкой «Ещё»: раскрываем, чтобы прочитать целиком
+      const more = [...c.querySelectorAll('a,button,[role="button"],span')].filter(x => x.children.length === 0 && /^(Ещё|Читать (далее|полностью)|More|Read more)$/i.test((x.textContent || '').trim()));
+      if (more.length) { more.forEach(x => { try { x.click(); } catch (er) {} }); await sleep(700); }
       const t = c.innerText;
       const author = (t.split('open_in_new')[0].trim().split('\n').pop() || '').trim();
       const text = (t.split(rel)[1] || '').split(/24 Московская больница|Владелец/)[0].replace('НОВЫЙ ФИЛИАЛ', '').replace(/Посмотреть весь отзыв/g, '').trim();
       const dt = new Date(Date.now() + 3 * 3600e3 - age * 864e5).toISOString().slice(0, 10);
       out.push({ id: 'google-' + h(author + text), platform: 'Google', published: true, page: 'Карточка больницы',
-        date: dt, dateApprox: age > 1, time: '', rating, threshold: 4.5, low: rating < 4.5, author, text: text.slice(0, 1500),
+        date: dt, dateApprox: age > 1, time: '', rating, threshold: 4.5, low: rating < 4.5, author, text: text.slice(0, 20000),
         answered: /Владелец/.test(t), link: location.href });
     }
     return { items: out, seen: stars.length };
@@ -205,7 +208,7 @@
       const text = ((r.querySelector('.review__text') || {}).innerText || '').trim();
       out.push({ id: 'np-' + r.id.replace(/\D/g, ''), platform: 'НаПоправку', published: true,
         page: doc ? 'Страница врача: ' + short(doc) : 'Страница больницы', date: iso, time: '', rating, threshold: 4.5,
-        low: rating != null && rating < 4.5, author, text: text.slice(0, 1500),
+        low: rating != null && rating < 4.5, author, text: text.slice(0, 20000),
         answered: !!r.querySelector('.review-comment__wrapper--answer'), link: location.origin + location.pathname + '#' + r.id });
     }
     return { items: out, seen: document.querySelectorAll('.review').length };
@@ -253,7 +256,7 @@
       const cid = (c.id || '').replace(/[^A-Za-z0-9_-]/g, '');
       out.push({ id: cfg.prefix + '-' + (cid || iso + '-' + h(text)), platform: cfg.name, published: true, page: cfg.page || 'Страница',
         date: iso, time: '', rating: r, threshold: cfg.threshold, low: r != null && r < cfg.threshold,
-        author: aEl ? (aEl.innerText || '').split('\n')[0].trim().slice(0, 80) : '', text: text.slice(0, 1500), answered: false,
+        author: aEl ? (aEl.innerText || '').split('\n')[0].trim().slice(0, 80) : '', text: text.slice(0, 20000), answered: false,
         link: location.href.split('#')[0] + (cid ? '#' + cid : '') });
     }
     return out;
@@ -895,6 +898,8 @@
   function arrIso(d, t) { d = s0(d); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return nowIso(); var x = Date.parse(d + "T" + (/^\d{2}:\d{2}$/.test(s0(t)) ? s0(t) : "12:00") + ":00+03:00"); return isNaN(x) ? nowIso() : new Date(x).toISOString(); }
   function getDoc(coll, id) { return db.collection(coll).doc(id).get(); }
 
+  // для проверок: занесение собранных отзывов в реестр
+  window.__otvIngest = function (items) { return ingest(items); };
   function ingest(items) {
     var added = 0, alerts = 0;
     return items.reduce(function (pr, it) {
@@ -908,6 +913,9 @@
           };
           if (it.dateApprox) base.dateApprox = true;
           if (snap.exists) {
+            // площадка иногда отдаёт обрезанное начало: полный текст, прочитанный раньше, не заменяем его началом
+            var was = String((snap.data() || {}).fullText || ""), nw = base.fullText.replace(/(\.{3,}|…|Ещё)\s*$/, "").replace(/\s+/g, " ").trim();
+            if (was.length > base.fullText.length && nw.length >= 20 && was.replace(/\s+/g, " ").indexOf(nw.slice(0, Math.max(20, nw.length - 5))) === 0) { delete base.text; delete base.fullText; }
             // отзыв был на исправлении у пациента, теперь опубликован: в отчёт и к ответу как новый
             if (it.published !== false && (snap.data() || {}).report === "unpublished") { base.report = "pending"; base.arrivedAt = nowIso(); added++; }   // опубликован только сейчас: поступил сейчас
             return db.collection("registry").doc(it.id).update(base);

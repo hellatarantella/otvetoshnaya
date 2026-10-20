@@ -4,6 +4,14 @@
 # Запуск: scripts/publish.sh /путь/к/клону/otvetoshnaya-releases
 set -euo pipefail
 REL="${1:?укажите путь к клону otvetoshnaya-releases}"
+# ПРАВИЛО: без пройденных проверок не выпускаем. И выпускаем ровно ту версию, которую проверили
+[ -z "$(git status --porcelain)" ] || { echo "Есть незафиксированные изменения: выпуск остановлен" >&2; exit 1; }
+bash tests/run-all.sh || exit 1
+git fetch -q origin dist ci-status-macOS ci-status-Windows
+for b in ci-status-macOS ci-status-Windows; do
+  git show "origin/$b:status.txt" | grep -q "sha $(git rev-parse HEAD)" || { echo "Сборка $b не из проверенной версии $(git rev-parse --short HEAD): выпуск остановлен" >&2; exit 1; }
+  git show "origin/$b:status.txt" | grep -q "job success" || { echo "Сборка $b не прошла: выпуск остановлен" >&2; exit 1; }
+done
 git fetch -q origin dist
 # без программы для Mac не выпускаем: иначе на Mac пропадёт и обновление, и установщик
 if ! git show FETCH_HEAD:latest.json | grep -q '"darwin-aarch64"' && [ "${ALLOW_NO_MAC:-}" != "1" ]; then

@@ -12,7 +12,7 @@
  * Скрипт работает от вашего имени и правит только эти файлы. Программа связывается с ним
  * по секретному ключу, который знает только она (первое подключение запоминает ключ).
  */
-var VERSION = 3;
+var VERSION = 4;
 var POS_ID = '1PnkJU3cjl6LlZxe1E9fHfmW7-E5kLi8Nkyr2G4dkw1A';   // «Позитив»
 var NEG_ID = '1Sp8sJv90_bUDYoo-4jPVQrHqLQU-E33s2MLJx0lrlpg';   // «Негатив»
 var REF_ID = '1s-0vfTvZeqVOrrreu9YY5fM3BycOfBtChuIu2wO8pdI';   // «[ГКБ24] Сбор отзывов — справочник»
@@ -64,7 +64,8 @@ var ACTIONS = {
   numbers: function (req) { return { numbers: numbers(req.mode || 'color') }; },
   answers: function (req) { return { updated: negAnswers(req.items || []) }; },
   export: function () { return { files: exportBoth() }; },
-  newweek: function (req) { return newWeek(req); }
+  newweek: function (req) { return newWeek(req); },
+  patch: function (req) { return { patched: patch(req.items || []) }; }
 };
 
 /* ---------------- даты и период ---------------- */
@@ -163,11 +164,12 @@ function state() {
     posTitle: posTitle, negTitle: negTitle, tab: sh.getName(),
     period: ddmm(per.start) + '–' + ddmm(per.end) + '.' + per.end.getFullYear(), start: iso(per.start), end: iso(per.end),
     positive: rows.filter(function (r) { return r.filled; }).map(function (r) {
-      return { platform: r.platform, num: r.num, date: r.date, dept: r.dept, doctor: r.doctor, text: head(r.text) };
+      return { platform: r.platform, num: r.num, date: r.date, dept: r.dept, doctor: r.doctor, text: head(r.text), full: String(r.text || '') };
     }),
     negative: blocks.filter(function (b) { return !b.empty; }).map(function (b) {
       var d = parseRuDate(b.date);
-      return { n: b.n, platform: b.platform, date: d ? ddmmyyyy(d) : b.date, text: head(b.text), answer: head(b.answer) };
+      return { n: b.n, platform: b.platform, date: d ? ddmmyyyy(d) : b.date, text: head(b.text), answer: head(b.answer),
+        full: String(b.text || ''), fullAnswer: String(b.answer || ''), link: b.link };
     })
   };
 }
@@ -324,6 +326,34 @@ function negAnswers(items) {
     n++;
   });
   doc.saveAndClose();
+  return n;
+}
+
+/* исправление уже записанных ячеек. Что и где править, решает программа; скрипт только пишет.
+   Каждая правка проверяет «ключ» (начало текста, который сейчас стоит в строке): если строку успели поменять или сдвинуть, правка пропускается.
+   items: { kind: 'pos', platform, num, key, text } | { kind: 'neg', n, key, text?, answer?, link? } */
+function patch(items) {
+  var n = 0, pos = items.filter(function (x) { return x.kind === 'pos'; }), neg = items.filter(function (x) { return x.kind === 'neg'; });
+  if (pos.length) {
+    var ss = SpreadsheetApp.openById(POS_ID), sh = detailSheet(ss), rows = readPositive(sh);
+    pos.forEach(function (it) {
+      var r = rows.filter(function (x) { return x.platform === normPlat(it.platform) && String(x.num) === String(it.num); })[0];
+      if (!r || head(r.text).slice(0, 60) !== head(it.key).slice(0, 60) || !String(it.text || '').trim()) return;
+      sh.getRange(r.row, 5).setValue(String(it.text)); n++;
+    });
+  }
+  if (neg.length) {
+    var doc = DocumentApp.openById(NEG_ID), t = negTable(doc), blocks = readNegative(t);
+    neg.forEach(function (it) {
+      var b = blocks.filter(function (x) { return x.n === it.n && !x.empty; })[0];
+      if (!b || head(b.text).slice(0, 60) !== head(it.key).slice(0, 60)) return;
+      if (it.text != null && String(it.text).trim()) setCell(t.getRow(b.start + 2).getCell(1), String(it.text), null);
+      if (it.answer != null) setCell(t.getRow(b.start + 3).getCell(1), String(it.answer || '—'), null);
+      if (it.link != null) setCell(t.getRow(b.start + 4).getCell(1), String(it.link || '—'), /^https?:\/\//.test(String(it.link)) ? String(it.link) : null);
+      n++;
+    });
+    doc.saveAndClose();
+  }
   return n;
 }
 

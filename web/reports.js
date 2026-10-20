@@ -17,7 +17,7 @@
 
   /* ---------- связь со скриптом ---------- */
   var db = null, cfg = null, refs = null, idx = null, st = null, busy = false, line = null, ver = 0;
-  var NEED_VER = 3; // версия google/Code.gs, нужная программе
+  var NEED_VER = 4; // версия google/Code.gs, нужная программе
   function ready() { return !!(cfg && cfg.url && cfg.token && cfg.paired); }
   function call(action, extra) {
     if (!cfg || !cfg.url) return Promise.reject(new Error("Google не подключён"));
@@ -230,6 +230,13 @@
     var text = s(r.fullText || r.text).trim(), plat = s(r.platform);
     var res = { id: r.id, platform: plat, date: r.date, text: text, tone: "", dept: "", doctor: "—", status: "ok", why: [] };
     if (!text) { res.status = "wait"; res.why.push("текста ещё нет"); return res; }
+    // ПРАВИЛО: в отчёт идёт только полный текст. Обрезанный площадкой текст или одна тема письма — на проверку, а не в отчёт
+    if (/(^|\s)(Ещё|Читать (далее|полностью)|Посмотреть весь отзыв)\s*$/i.test(text) || (plat === "Google" && /(\.{3,}|…)\s*$/.test(text))) {
+      res.status = "check"; res.why.push("текст отзыва обрезан площадкой: откройте отзыв и вставьте полный текст"); return res;
+    }
+    if (plat === "Сайт" && text.length < 90 && ((mail && norm(text) === norm(mail.subject)) || /^(жалоба|благодарность|обращение|предложение|отзыв|вопрос)\b/i.test(text))) {
+      res.status = "check"; res.why.push("прочиталась только тема письма, текста нет: откройте письмо в почте"); return res;
+    }
     // тон
     if (plat === "Сайт" && mail) {
       if (mail.kind === "thanks") res.tone = "positive";
@@ -337,17 +344,21 @@
     return hit ? hit.ref : "";
   }
 
-  /* ---------- ответ для «Негатива» ---------- */
+  /* ---------- ответ для «Негатива» ----------
+     ПРАВИЛО: в отчёт идёт только ответ, который вы одобрили или опубликовали. Черновик генератора в отчёт не попадает никогда:
+     пока ответа нет, в блоке стоит «—». drafts — все черновики отзыва, чтобы стереть их из отчёта, если они туда уже попали */
   function negAnswer(r) {
-    if (r.platform === "ПроДокторов") return { text: "Отзыв отправлен на дополнительную проверку.", draft: false };
-    var a = (window.__otvAll("answers") || {})[r.id];
+    var a = (window.__otvAll("answers") || {})[r.id], m = (window.__otvAll("mail") || {})[r.id], drafts = [];
+    if (a) drafts.push(s(a.draft), a.status === "approved" || a.status === "published" ? "" : s(a.answer));
+    if (m) drafts.push(s(m.draft));
+    drafts = drafts.map(function (x) { return x.trim(); }).filter(Boolean);
+    if (r.platform === "ПроДокторов") return { text: "Отзыв отправлен на дополнительную проверку.", draft: false, drafts: drafts };
     if (r.platform === "Сайт") {
-      var m = (window.__otvAll("mail") || {})[r.id];
-      var t = m && s(m.answer || m.draft).trim();
-      return { text: t || "—", draft: !(m && m.status === "done") };
+      var t = m && m.status === "done" && s(m.answer).trim();
+      return { text: t || "—", draft: !t, drafts: drafts };
     }
-    if (a && s(a.answer).trim()) return { text: s(a.answer).trim(), draft: a.status !== "published" };
-    return { text: "—", draft: true };
+    if (a && (a.status === "approved" || a.status === "published") && s(a.answer).trim()) return { text: s(a.answer).trim(), draft: false, drafts: drafts };
+    return { text: "—", draft: true, drafts: drafts };
   }
   function linkOf(r) {
     var l = s(r.link);
@@ -356,7 +367,13 @@
       return /Страница больницы/i.test(s(r.page)) ? "https://prodoctorov.ru/moskva/lpu/21011-gorodskaya-klinicheskaya-bolnica-24/otzivi/#" + id : (l || "—");
     }
     return r.platform === "Сайт" ? "—" : (l || "—");
+  }  // ссылка принадлежит одному отзыву: если такая же стоит у другого отзыва, она ненадёжна — ставим общую страницу отзывов площадки
+  function linkFor(r, reg) {
+    var l = linkOf(r); if (!/^https?:/.test(l)) return l;
+    var clash = Object.keys(reg).some(function (id) { var o = reg[id]; return o && id !== r.id && o.platform === r.platform && linkOf(o) === l; });
+    return clash ? l.split(/[?#]/)[0] : l;
   }
+
 
   /* ---------- повторы: один и тот же отзыв пришёл дважды (письмо отправили ещё раз, дополнили, переслали) ---------- */
   function stems(t) { var w = {}, n = 0; norm(t).split(" ").forEach(function (x) { if (x.length > 3 && !w[x.slice(0, 6)]) { w[x.slice(0, 6)] = 1; n++; } }); return { w: w, n: n }; }
@@ -511,7 +528,7 @@
         else {
           var a = negAnswer(r);
           d.draftAnswer = a.draft && a.text !== "—" && r.platform !== "ПроДокторов";
-          neg.push({ id: id, platform: NEG_PLAT[r.platform] || r.platform, date: ruDate(r.date), text: clean(d.text), answer: clean(a.text) || "—", link: linkOf(r) });
+          neg.push({ id: id, platform: NEG_PLAT[r.platform] || r.platform, date: ruDate(r.date), text: clean(d.text), answer: clean(a.text) || "—", link: linkFor(r, reg) });
         }
       });
       // сверка: всё, что собрано за неделю, и где каждый отзыв (по площадкам)
@@ -541,7 +558,7 @@
           regWrites.push([id, { report: isNeg ? "negative" : "positive", reportRef: refsOut[id], reportWeek: st.start, tone: d.tone, dept: d.dept, doctor: d.doctor, removedRow: false,
             reason: isNeg && d.draftAnswer ? "Ответ в «Негативе»: проект, сверить после отправки" : "", suggest: null }]);
         });
-        return syncAnswers(reg, refOf);
+        return syncCells(reg, refOf);
       }).then(function () {
         return regWrites.reduce(function (p, w) { return p.then(function () { return regUpdate(w[0], w[1]); }); }, Promise.resolve());
       });
@@ -588,26 +605,43 @@
       if (window.__otvBar) window.__otvBar.show("⚠ Отчёт не обновился: " + em.slice(0, 300), "err", [["Повторить", function () { window.__otvBar.hide(); updateReport(); }], ["Закрыть", window.__otvBar.hide]]);
     }).then(function () { busy = false; render(); });
   }
-  // в «Негативе» стоял проект ответа, а ответ уже опубликован — ставим опубликованный текст
   // текст для Google: без пустых строк (Google не даёт вставить пустой абзац) и без лишних пробелов в концах строк
   function clean(t) { return s(t).replace(/\r/g, "").split("\n").map(function (x) { return x.replace(/\s+$/, ""); }).filter(function (x) { return x.trim(); }).join("\n").trim(); }
-  // ответы в «Негативе»: в блоке должен стоять ответ из программы (опубликованный, а пока нет — проект). Расходится — переписываем
-  function syncAnswers(reg, refOf) {
-    var items = [], blocks = {};
-    (st.negative || []).forEach(function (b) { blocks["Негатив · блок " + b.n] = b; });
+  /* ---------- сверка уже записанных строк с программой ----------
+     Отчёт должен совпадать с программой: полный текст отзыва, одобренный ответ (или «—»), своя ссылка.
+     Расхождения правятся сами при каждом «Обновить отчёт». Ваши ручные правки в документе не трогаем:
+     текст меняем, только если в отчёте стоит его обрезанное начало; ответ стираем, только если там стоит черновик генератора */
+  function cut(t) { return norm(s(t).replace(/(\.{3,}|…)\s*$/, "")); }
+  function truncatedOf(rowText, full) {
+    var a = cut(rowText), b = norm(clean(full));
+    return a.length >= 20 && b.length > a.length + 3 && b.indexOf(a.slice(0, Math.max(20, a.length - 5))) === 0;
+  }
+  function syncCells(reg, refOf) {
+    if (ver < 4 && !runner) return Promise.resolve();
+    var items = [], pos = {}, neg = {};
+    (st.positive || []).forEach(function (x) { pos["Позитив · " + x.platform + " №" + x.num] = x; });
+    (st.negative || []).forEach(function (b) { neg["Негатив · блок " + b.n] = b; });
     Object.keys(reg).forEach(function (id) {
       var r = reg[id]; if (!r) return;
-      var ref = (refOf && refOf[id]) || (r.report === "negative" ? s(r.reportRef) : "");
-      var b = blocks[ref]; if (!b) return;
-      var want = clean(negAnswer(r).text);
-      if (!want || want === "—") return;
-      if (norm(b.answer).slice(0, 100) === norm(want).slice(0, 100)) return;
-      items.push({ id: id, text: s(b.text), answer: want });
+      var ref = (refOf && refOf[id]) || ((r.report === "negative" || r.report === "positive") ? s(r.reportRef) : "");
+      var full = s(r.fullText || r.text);
+      var p = pos[ref];
+      if (p) { if (truncatedOf(p.full, full)) items.push({ kind: "pos", platform: p.platform, num: p.num, key: p.full, text: clean(full) }); return; }
+      var b = neg[ref]; if (!b) return;
+      var it = { kind: "neg", n: b.n, key: b.full }, ch = false;
+      if (truncatedOf(b.full, full)) { it.text = clean(full); ch = true; }
+      var na = negAnswer(r), want = clean(na.text) || "—", have = norm(b.fullAnswer).slice(0, 100);
+      if (have !== norm(want).slice(0, 100)) {
+        // одобренного ответа нет: стираем только черновик генератора, вписанный вами ответ не трогаем
+        var isDraft = !have || have === "—" || na.drafts.some(function (d) { return norm(clean(d)).slice(0, 100) === have; });
+        if (want !== "—" || isDraft) { it.answer = want; ch = true; }
+      }
+      var lk = linkFor(r, reg);
+      if (s(b.link).trim() !== lk) { it.link = lk; ch = true; }
+      if (ch) items.push(it);
     });
     if (!items.length) return Promise.resolve();
-    return call("answers", { items: items }).then(function () {
-      return items.reduce(function (p, x) { return p.then(function () { return regUpdate(x.id, { reason: "" }); }); }, Promise.resolve());
-    });
+    return call("patch", { items: items });
   }
   // границы недели по поступлению: закрытие в четверг (последний день отчёта) в 15:00 по Москве
   function weekBounds() {
@@ -638,7 +672,7 @@
   }
   function newWeek() {
     if (!ready()) { setRun("err", "Сначала подключите Google."); return; }
-    if (oldScript()) { setRun("err", "Сначала обновите скрипт в Google. Шаги выше."); render(); return; }
+    if (ready() && ver > 0 && ver < 3 && !runner) { setRun("err", "Сначала обновите скрипт в Google. Шаги выше."); render(); return; }
     if (busy) return;
     busy = true; setRun("", "Сохраняю старые отчёты в «Загрузки»…");
     var expect = "";

@@ -47,4 +47,20 @@ ctx.Date=class extends Date{ constructor(...a){ if(a.length) super(...a); else s
 try { vm.runInContext('newWeek({saved:true, expect:"23.10–29.10"})',ctx); } catch(e){ chk(false,'вторая неделя: '+e.message); }
 const b3=vm.runInContext('readNegative(negTable(DocumentApp.openById("x")))',ctx);
 chk(b3.length===1&&b3[0].empty&&negTitle==='Негатив 2026_89_23.10_29.10','вторая неделя: «Негатив» очищен и переименован');
+
+// 5. правка уже записанных блоков: ответ, ссылка, текст; чужая строка (ключ не совпал) не трогается
+try { vm.runInContext('addNegative([{id:"p1",platform:"Яндекс",date:"23 октября 2026",text:"Первый отзыв про замену хирурга без консультации.",answer:"Черновик невпопад",link:"https://y/AAA"},{id:"p2",platform:"Яндекс",date:"23 октября 2026",text:"Второй отзыв, совсем другой.",answer:"Мой ответ",link:"https://y/AAA"}],{})',ctx); } catch(e){ chk(false,'подготовка: '+e.message); }
+let nb=vm.runInContext('readNegative(negTable(DocumentApp.openById("x")))',ctx), i1=nb.find(b=>/Первый/.test(b.text)), i2=nb.find(b=>/Второй/.test(b.text));
+let pn; try { pn=vm.runInContext('patch('+JSON.stringify([{kind:'neg',n:i1.n,key:i1.text,answer:'—',link:'https://y/'},{kind:'neg',n:i2.n,key:'НЕ ТОТ ТЕКСТ',answer:'—'},{kind:'neg',n:i2.n,key:i2.text,text:'Второй отзыв, совсем другой. Дочитан до конца.'}])+')',ctx); } catch(e){ chk(false,'patch: '+e.message); }
+nb=vm.runInContext('readNegative(negTable(DocumentApp.openById("x")))',ctx); i1=nb.find(b=>/Первый/.test(b.text)); i2=nb.find(b=>/Второй/.test(b.text));
+chk(pn===2,'исправлено ровно 2 блока: '+pn);
+chk(i1.answer==='—'&&i1.link==='https://y/','черновик стёрт, ссылка заменена');
+chk(i2.answer==='Мой ответ'&&/Дочитан/.test(i2.text),'чужой ключ не тронул ответ, текст дописан');
+
+// 6. «Позитив»: обрезанный текст строки дописывается по номеру и ключу, чужая строка не трогается
+{ const grid=[['1','18.10.2026','ПроДокторов','Гинекология','Начало длинного отзыва о докторе','Дан ответ',''],['2','18.10.2026','ПроДокторов','Урология','Другой отзыв','Дан ответ','']];
+  const sh={ getName:()=>'16–22 октября подробный', getLastRow:()=>2+grid.length, getRange:(r,c,nr,nc)=> nr ? { getDisplayValues:()=>grid.slice(r-3,r-3+nr).map(x=>x.slice(c-1,c-1+nc)) } : { setValue:v=>{ grid[r-3][c-1]=v; } } };
+  const c2=Object.assign({},ctx,{ SpreadsheetApp:{openById:()=>({getSheets:()=>[sh],getName:()=>posTitle})} }); vm.createContext(c2); vm.runInContext(code,c2);
+  const n=vm.runInContext('patch('+JSON.stringify([{kind:'pos',platform:'ПроДокторов',num:'1',key:'Начало длинного отзыва о докторе',text:'Начало длинного отзыва о докторе и его конец.'},{kind:'pos',platform:'ПроДокторов',num:'2',key:'Не та строка',text:'Подмена'}])+')',c2);
+  chk(n===1&&/и его конец/.test(grid[0][4])&&grid[1][4]==='Другой отзыв','«Позитив»: дописана нужная строка, чужая не тронута'); }
 console.log(ok?'ALL OK':'SOME FAILED');
