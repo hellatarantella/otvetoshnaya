@@ -71,4 +71,18 @@ chk(i2.answer==='Мой ответ'&&/Дочитан/.test(i2.text),'чужой 
   const n=vm.runInContext('renumber()',c3);
   chk(n===2&&grid.map(x=>x[0]).join(',')==='1,2,3,4,5,1,2','нумерация восстановлена после удаления строки: '+grid.map(x=>x[0]).join(','));
   chk(vm.runInContext('renumber()',c3)===0,'повторно ничего не меняется'); }
+
+// 8. порядок по дате: от ранней к поздней в каждом разделе «Позитива» и в «Негативе», номера подряд
+{ const grid=[['1','19.10.2026','Сайт','КДО','в','Дан ответ',''],['2','17.10.2026','Сайт','ГКБ 24','а','Дан ответ',''],['3','18.10.2026','Сайт','КДО','б','Дан ответ',''],['4','','Сайт','','','Дан ответ',''],['1','18.10.2026','Яндекс','ГКБ 24','д','Дан ответ',''],['2','16.10.2026','Яндекс','ГКБ 24','г','Дан ответ','']];
+  const R=(r,c,nr,nc)=>({ getDisplayValues:()=>grid.slice(r-3,r-3+(nr||1)).map(x=>x.slice(c-1,c-1+(nc||1))), getValues:()=>grid.slice(r-3,r-3+(nr||1)).map(x=>x.slice(c-1,c-1+(nc||1))),
+    setValues:v=>{ v.forEach((row,i)=>row.forEach((x,j)=>{ grid[r-3+i][c-1+j]=x; })); }, setValue:v=>{ grid[r-3][c-1]=String(v); } });
+  const sh={ getName:()=>'16–22 октября подробный', getLastRow:()=>2+grid.length, getRange:R };
+  negTitle='Негатив 2026_89_23.10_29.10';
+  table=mkTable([['Сайт больницы','20 октября 2026','Позднее письмо','—','—'],['Яндекс','16 октября 2026','Ранний отзыв','Ответ 1','https://y/1'],['Яндекс','18 октября 2026','Средний отзыв','—','https://y/2']]);
+  const c4=Object.assign({},ctx,{ SpreadsheetApp:{openById:()=>({getSheets:()=>[sh],getName:()=>posTitle})} }); vm.createContext(c4); vm.runInContext(code,c4);
+  vm.runInContext('tidy()',c4);
+  chk(grid.map(x=>x[0]+':'+x[4]).join(',')==='1:а,2:б,3:в,4:,1:г,2:д','«Позитив»: по дате вверх→вниз, пустые внизу, номера подряд: '+grid.map(x=>x[0]+':'+x[4]).join(','));
+  const nb=vm.runInContext('readNegative(negTable(DocumentApp.openById("x")))',c4);
+  chk(nb.map(b=>b.text).join('|')==='Ранний отзыв|Средний отзыв|Позднее письмо'&&nb[0].link==='https://y/1'&&nb[0].answer==='Ответ 1','«Негатив»: блоки по дате, ответ и ссылка едут вместе с отзывом');
+  const before=JSON.stringify(grid); vm.runInContext('tidy()',c4); chk(JSON.stringify(grid)===before,'повторный порядок ничего не меняет'); }
 console.log(ok?'ALL OK':'SOME FAILED');

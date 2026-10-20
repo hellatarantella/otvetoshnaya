@@ -12,7 +12,7 @@
  * Скрипт работает от вашего имени и правит только эти файлы. Программа связывается с ним
  * по секретному ключу, который знает только она (первое подключение запоминает ключ).
  */
-var VERSION = 5;
+var VERSION = 6;
 var POS_ID = '1PnkJU3cjl6LlZxe1E9fHfmW7-E5kLi8Nkyr2G4dkw1A';   // «Позитив»
 var NEG_ID = '1Sp8sJv90_bUDYoo-4jPVQrHqLQU-E33s2MLJx0lrlpg';   // «Негатив»
 var REF_ID = '1s-0vfTvZeqVOrrreu9YY5fM3BycOfBtChuIu2wO8pdI';   // «[ГКБ24] Сбор отзывов — справочник»
@@ -60,12 +60,12 @@ function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setM
 var ACTIONS = {
   state: function () { return { state: state() }; },
   refs: function () { return { refs: refs() }; },
-  add: function (req) { var r = add(req.positive || [], req.negative || []); renumber(); r.numbers = numbers('color'); r.state = state(); return r; },
-  numbers: function (req) { renumber(); return { numbers: numbers(req.mode || 'color') }; },
+  add: function (req) { var r = add(req.positive || [], req.negative || []); tidy(); r.numbers = numbers('color'); r.state = state(); return r; },
+  numbers: function (req) { tidy(); return { numbers: numbers(req.mode || 'color') }; },
   answers: function (req) { return { updated: negAnswers(req.items || []) }; },
   export: function () { return { files: exportBoth() }; },
   newweek: function (req) { return newWeek(req); },
-  patch: function (req) { var n = patch(req.items || []); renumber(); return { patched: n, state: state() }; }
+  patch: function (req) { var n = patch(req.items || []); tidy(); return { patched: n, state: state() }; }
 };
 
 /* ---------------- даты и период ---------------- */
@@ -355,6 +355,34 @@ function patch(items) {
     doc.saveAndClose();
   }
   return n;
+}
+
+/* порядок в отчётах: по дате размещения, от ранней (вверху) к поздней (внизу); потом номера подряд */
+function tidy() { sortPositive(); sortNegative(); renumber(); }
+function dkey_(s) { var d = parseDmy(s) || parseRuDate(s); return d ? d.getTime() : 9e15; }
+function sortPositive() {
+  var ss = SpreadsheetApp.openById(POS_ID), sh = detailSheet(ss), rows = readPositive(sh), sec = sections(rows), n = 0;
+  sec.order.forEach(function (pl) {
+    var list = sec.by[pl], filled = list.filter(function (r) { return r.filled; });
+    var sorted = filled.map(function (r, i) { return { r: r, i: i }; }).sort(function (a, b) { return (dkey_(a.r.date) - dkey_(b.r.date)) || (a.i - b.i); }).map(function (x) { return x.r; });
+    var want = sorted.concat(list.filter(function (r) { return !r.filled; }));
+    if (want.every(function (r, i) { return r.row === list[i].row; })) return;
+    var vals = want.map(function (r) { return sh.getRange(r.row, 2, 1, 6).getValues()[0]; });
+    list.forEach(function (r, i) { sh.getRange(r.row, 2, 1, 6).setValues([vals[i]]); });
+    n++;
+  });
+  return n;
+}
+function sortNegative() {
+  var doc = DocumentApp.openById(NEG_ID), t = negTable(doc), blocks = readNegative(t).filter(function (b) { return !b.empty; });
+  var sorted = blocks.map(function (b, i) { return { b: b, i: i }; }).sort(function (a, c) { return (dkey_(a.b.date) - dkey_(c.b.date)) || (a.i - c.i); }).map(function (x) { return x.b; });
+  if (sorted.every(function (b, i) { return b === blocks[i]; })) return 0;
+  var data = sorted.map(function (b) { return [b.platform, b.date, b.text, b.answer, b.link]; });
+  blocks.forEach(function (b, i) {
+    for (var j = 0; j < 5; j++) setCell(t.getRow(b.start + j).getCell(1), data[i][j], j === 4 && /^https?:\/\//.test(data[i][j]) ? data[i][j] : null);
+  });
+  doc.saveAndClose();
+  return 1;
 }
 
 /* номера в «Позитиве» идут подряд 1, 2, 3… в каждом разделе площадки — по факту строк, а не как были записаны.

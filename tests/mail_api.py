@@ -45,6 +45,8 @@ MOCK = r"""
     { id: 'o5', ts: '2026-10-12T10:00:00', to: ['petr@ya.ru'], disp: 'petr@ya.ru' },   // раньше письма Петрова: не считается
     { id: 'o6', ts: '2026-10-01T10:00:00', to: ['sid@x.ru'], disp: 'sid@x.ru' }
   ];
+  // ответ Кузнецовой ушёл из личного ящика (не общего): найти по той же переписке, на другой адрес
+  const sentOwn = [ { id: 'p1', ts: '2026-10-13T15:00:00', to: ['other@box.ru'], disp: 'other@box.ru', cid: 'SUBINconv01=', body: 'Здравствуйте! Спасибо за ваш отзыв, передали персоналу.\r\n\r\nОт: Сайт ГКБ 24\r\nХочу поблагодарить' } ];
   const byId = {}; Object.values(items).flat().forEach(x => byId[x.ItemId.Id] = x);
   window.__calls = [];
   window.fetch = async (url, o) => {
@@ -61,7 +63,8 @@ MOCK = r"""
     if (action === 'FindItem') {
       const p = b.ParentFolderIds[0]; const key = p.__type.startsWith('Distinguished') ? { inbox: 'INBOX', junkemail: 'JUNK', deleteditems: 'DEL', sentitems: 'SENT' }[p.Id] : p.Id;
       if (key === 'SENT') {
-        const all = sent.slice().sort((a, c) => c.ts.localeCompare(a.ts)).map(x => ({ ItemId: { Id: x.id }, DateTimeSent: msk(x.ts), DisplayTo: x.disp }));
+        const own = /^\/owa\/service\.svc/.test(url);
+        const all = (own ? sentOwn : sent).slice().sort((a, c) => c.ts.localeCompare(a.ts)).map(x => ({ ItemId: { Id: x.id }, DateTimeSent: msk(x.ts), DisplayTo: x.disp, ConversationId: { Id: x.cid || ('c-' + x.id) } }));
         const pg = all.slice(b.Paging.Offset, b.Paging.Offset + 2);          // маленькие страницы: проверяем листание
         return ok([{ ResponseClass: 'Success', RootFolder: { Items: pg, IncludesLastItemInRange: b.Paging.Offset + 2 >= all.length, TotalItemsInView: all.length } }]);
       }
@@ -71,7 +74,7 @@ MOCK = r"""
     }
     if (action === 'GetItem') {
       return ok(b.ItemIds.map(r => {
-        const s = sent.find(x => x.id === r.Id);
+        const s = sent.concat(sentOwn).find(x => x.id === r.Id);
         if (s) return { ResponseClass: 'Success', Items: [Object.assign({ ToRecipients: s.to.map(e => ({ EmailAddress: e, RoutingType: 'SMTP' })) }, s.body && JSON.stringify(b.ItemShape).indexOf('Body') >= 0 ? { Body: { BodyType: 'Text', Value: s.body } } : {})] };
         const x = byId[r.Id]; return { ResponseClass: 'Success', Items: [{ Body: { BodyType: 'Text', Value: x._body } }] };
       }));
@@ -132,6 +135,9 @@ async def main():
         rep = res.get("replies", {}).get(a0["id"], "")
         check(rep.startswith("Здравствуйте, Анна!") and "передадим врачам" in rep and "От:" not in rep and "Спасибо врачам" not in rep, "текст настоящего ответа Ивановой взят из «Отправленных» без цитаты")
         check("[телефон]" in rep and "gkb24@zdrav.mos.ru" in rep and "anna@" not in rep, "в ответе телефон скрыт, адрес больницы оставлен")
+        kuz = [x for x in res["items"] if x["name"] == "Кузнецова"][0]
+        krep = res.get("replies", {}).get(kuz["id"], "")
+        check(kuz.get("replied") is True and krep.startswith("Здравствуйте! Спасибо") and "Хочу поблагодарить" not in krep, "ответ из личного ящика найден по переписке, текст без цитаты")
         # вход: без ключа сеанса
         pg2 = await b.new_page(); await pg2.set_content("<html><body><input type=password style='width:100px'></body></html>")
         err = await pg2.evaluate("async () => { " + API + " ; try { await MAIL_API([], {}); return 'нет ошибки'; } catch (e) { return e.message; } }")

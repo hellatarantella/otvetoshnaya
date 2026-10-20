@@ -359,14 +359,15 @@
     const FID = id => ({ "__type": "FolderId:#Exchange", "Id": id });
     const PG = (off, n) => ({ "__type": "IndexedPageView:#Exchange", "BasePoint": "Beginning", "Offset": off, "MaxEntriesReturned": n });
     const SORT = f => [{ "__type": "SortResults:#Exchange", "Order": "Descending", "Path": P(f) }];
-    const call = async (action, body) => {
+    const call = async (action, body, own) => {
       let last = '';
       for (let attempt = 0; attempt < 3; attempt++) {
         if (window.__otvStop) throw new Error('остановлено');
         let r;
         try {
-          r = await fetch(base + 'service.svc?action=' + action, { method: 'POST', credentials: 'include',
-            headers: { 'Action': action, 'X-OWA-CANARY': canary(), 'Content-Type': 'application/json; charset=utf-8', 'X-Requested-With': 'XMLHttpRequest', 'X-AnchorMailbox': mbox },
+          const hd = { 'Action': action, 'X-OWA-CANARY': canary(), 'Content-Type': 'application/json; charset=utf-8', 'X-Requested-With': 'XMLHttpRequest' };
+          if (!own) hd['X-AnchorMailbox'] = mbox;
+          r = await fetch((own ? '/owa/' : base) + 'service.svc?action=' + action, { method: 'POST', credentials: 'include', headers: hd,
             body: JSON.stringify({ "__type": action + "JsonRequest:#Exchange", "Header": HDR, "Body": body }) });
         } catch (e) { last = 'сеть: ' + (e && e.message || e); await sleep(1500 * (attempt + 1)); continue; }
         if (r.status === 440 || r.status === 401 || (r.redirected && /logon|\/auth\//i.test(r.url))) throw new Error('нужен вход в почту');
@@ -490,7 +491,7 @@
       const w = x._w;
       return { id: idOf(x.ConversationId && x.ConversationId.Id || x.ItemId.Id), date: w.date, time: w.time, ts: w.ts, subject: subj.slice(0, 200), type, typeRaw: rawType.slice(0, 40),
         landing: (g('Лендинг|Страница') || (subj.match(/\(Страница: ([^)]*)\)/) || [])[1] || '').slice(0, 300), name: g('Имя|ФИО').slice(0, 120), doctor: g('Врач').slice(0, 160),
-        message: msg, email: em, emailHash: em ? h(em) : '', read: !!msg, api: true, folder: x._folder, verb: verb(x), itemId: x.ItemId.Id };
+        message: msg, email: em, emailHash: em ? h(em) : '', read: !!msg, api: true, folder: x._folder, verb: verb(x), itemId: x.ItemId.Id, cid: x.ConversationId && x.ConversationId.Id || '' };
     };
     const letters = [], gone = [];
     for (const x of cands) { const p = parse(x); if (!p) continue; (x._folder === 'deleted' ? gone : letters).push(p); }
@@ -527,22 +528,32 @@
     /* 5. кому уже ответили: письма в «Отправленных» на адрес автора, отправленные после получения письма */
     const answered = [], replies = {};
     try {
+      // ответ мог уйти из общего ящика сайта или из вашего личного: смотрим «Отправленные» обоих
       const sentList = [];
-      for (let off = 0, pg = 0; pg < 20; pg++) {
-        const r = await call('FindItem', { "__type": "FindItemRequest:#Exchange", "ItemShape": { "__type": "ItemResponseShape:#Exchange", "BaseShape": "IdOnly", "AdditionalProperties": [P("DateTimeSent"), P("DisplayTo"), P("DisplayCc")] },
-          "ParentFolderIds": [DF('sentitems')], "Traversal": "Shallow", "Paging": PG(off, 100), "SortOrder": SORT("DateTimeSent") });
-        const rf = r[0] && r[0].RootFolder; if (!rf) throw new Error('api: Отправленные ' + String(r[0] && r[0].MessageText || '').slice(0, 60));
-        const its = rf.Items || []; let older = false;
-        for (const x of its) { const w = msk(x.DateTimeSent); if (!w) continue; if (w.ts < sinceTs - 864e5) { older = true; continue; } sentList.push({ id: x.ItemId.Id, ts: w.ts, disp: (String(x.DisplayTo || '') + ' ' + String(x.DisplayCc || '')).toLowerCase().replace(/ё/g, 'е'), mails: new Set() }); }
-        off += its.length; if (older || rf.IncludesLastItemInRange || !its.length) break;
-      }
-      for (let i = 0; i < sentList.length; i += 20) {
-        const part = sentList.slice(i, i + 20);
+      for (const own of [false, true]) {
         try {
-          const g = await call('GetItem', { "__type": "GetItemRequest:#Exchange", "ItemShape": { "__type": "ItemResponseShape:#Exchange", "BaseShape": "IdOnly", "AdditionalProperties": [P("ToRecipients"), P("CcRecipients"), P("BccRecipients")] },
-            "ItemIds": part.map(x => ({ "__type": "ItemId:#Exchange", "Id": x.id })) });
-          part.forEach((x, k) => { const it = g[k] && g[k].Items && g[k].Items[0]; if (!it) return; [].concat(it.ToRecipients || [], it.CcRecipients || [], it.BccRecipients || []).forEach(m => { if (m && m.EmailAddress) x.mails.add(String(m.EmailAddress).toLowerCase()); }); });
-        } catch (e) { if (/нужен вход/.test(e.message)) throw e; diag.rcptErr = String(e.message).slice(0, 60); }
+          const part0 = [];
+          for (let off = 0, pg = 0; pg < 20; pg++) {
+            const r = await call('FindItem', { "__type": "FindItemRequest:#Exchange", "ItemShape": { "__type": "ItemResponseShape:#Exchange", "BaseShape": "IdOnly", "AdditionalProperties": [P("DateTimeSent"), P("DisplayTo"), P("DisplayCc"), P("ConversationId")] },
+              "ParentFolderIds": [DF('sentitems')], "Traversal": "Shallow", "Paging": PG(off, 100), "SortOrder": SORT("DateTimeSent") }, own);
+            const rf = r[0] && r[0].RootFolder; if (!rf) throw new Error('api: Отправленные ' + String(r[0] && r[0].MessageText || '').slice(0, 60));
+            const its = rf.Items || []; let older = false;
+            for (const x of its) { const w = msk(x.DateTimeSent); if (!w) continue; if (w.ts < sinceTs - 864e5) { older = true; continue; }
+              part0.push({ id: x.ItemId.Id, own, ts: w.ts, cid: x.ConversationId && x.ConversationId.Id || '', disp: (String(x.DisplayTo || '') + ' ' + String(x.DisplayCc || '')).toLowerCase().replace(/ё/g, 'е'), mails: new Set() }); }
+            off += its.length; if (older || rf.IncludesLastItemInRange || !its.length) break;
+          }
+          for (let i = 0; i < part0.length; i += 20) {
+            const part = part0.slice(i, i + 20);
+            try {
+              const g = await call('GetItem', { "__type": "GetItemRequest:#Exchange", "ItemShape": { "__type": "ItemResponseShape:#Exchange", "BaseShape": "IdOnly", "AdditionalProperties": [P("ToRecipients"), P("CcRecipients"), P("BccRecipients")] },
+                "ItemIds": part.map(x => ({ "__type": "ItemId:#Exchange", "Id": x.id })) }, own);
+              part.forEach((x, k) => { const it = g[k] && g[k].Items && g[k].Items[0]; if (!it) return; [].concat(it.ToRecipients || [], it.CcRecipients || [], it.BccRecipients || []).forEach(m => { if (m && m.EmailAddress) x.mails.add(String(m.EmailAddress).toLowerCase()); }); });
+            } catch (e) { if (/нужен вход/.test(e.message)) throw e; diag.rcptErr = String(e.message).slice(0, 60); }
+          }
+          // одно и то же письмо в обоих ящиках не считаем дважды
+          part0.forEach(x => { if (!sentList.some(y => y.cid && y.cid === x.cid && Math.abs(y.ts - x.ts) < 60e3)) sentList.push(x); });
+          diag[own ? 'sentOwn' : 'sentBox'] = part0.length;
+        } catch (e) { if (/нужен вход/.test(e.message) && !own) throw e; diag[own ? 'sentOwnErr' : 'sentErr'] = String(e.message).slice(0, 80); if (!own) throw e; }
       }
       sentList.forEach(x => { (x.disp.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) || []).forEach(m => x.mails.add(m)); x.hashes = new Set([...x.mails].map(h)); });
       sentList.sort((a, b) => a.ts - b.ts);
@@ -552,7 +563,10 @@
       // один ответ закрывает одно письмо: два письма одного человека и один ответ = второе остаётся «к ответу»
       const take = (l, eh, name) => {
         const ws = words(name);
-        const s = sentList.find(x => !used.has(x.id) && x.ts >= l.ts - 120e3 && ((eh && x.hashes.has(eh)) || (!eh && ws.length >= 2 && ws.every(w => x.disp.indexOf(w) >= 0))));
+        const ok = x => !used.has(x.id) && x.ts >= l.ts - 120e3;
+        const s = (l.cid && sentList.find(x => ok(x) && x.cid === l.cid))                    // ответ в той же переписке
+          || (eh && sentList.find(x => ok(x) && x.hashes.has(eh)))                            // на адрес автора
+          || (ws.length >= 2 && sentList.find(x => ok(x) && ws.every(w => x.disp.indexOf(w) >= 0)));   // по имени автора
         if (s) { used.add(s.id); return s.id; }
         return false;
       };
@@ -562,14 +576,20 @@
         if (sid) replyOf[l.id] = sid;
         if (l.verb === 102 || l.verb === 103 || sid) { l.replied = true; answered.push(l.id); }
       });
-      (opts.todo || []).forEach(x => { if (answered.indexOf(x.id) >= 0 || out.some(l => l.id === x.id)) return; const sid = take({ ts: Date.parse((x.date || since) + 'T00:00:00+03:00') }, x.eh, x.name); if (sid) { replyOf[x.id] = sid; answered.push(x.id); } });
+      (opts.todo || []).forEach(x => { if (answered.indexOf(x.id) >= 0 || out.some(l => l.id === x.id)) return; const sid = take({ ts: Date.parse((x.date || since) + 'T00:00:00+03:00'), cid: x.cid || '' }, x.eh, x.name); if (sid) { replyOf[x.id] = sid; answered.push(x.id); } });
       // текст настоящего ответа из «Отправленных»: без цитаты исходного письма, телефоны и чужие адреса скрыты
       const ids = Object.keys(replyOf), cutQuote = t => String(t || '').replace(/\r\n?/g, '\n').split(/\n\s*(?:-{2,}\s*(?:Original|Исходное)|_{5,}|From:|От:|Отправлено:|Sent:|\d{1,2}[.\/]\d{1,2}[.\/]\d{2,4}.{0,60}(?:пишет|wrote)|.{0,80}(?:пишет|wrote):\s*$)/m)[0];
       for (let i = 0; i < ids.length; i += 10) {
         const part = ids.slice(i, i + 10);
         try {
-          const g = await call('GetItem', { "__type": "GetItemRequest:#Exchange", "ItemShape": { "__type": "ItemResponseShape:#Exchange", "BaseShape": "IdOnly", "BodyType": "Text", "AdditionalProperties": [P("Body")] },
-            "ItemIds": part.map(id => ({ "__type": "ItemId:#Exchange", "Id": replyOf[id] })) });
+          const ownOf = sid => (sentList.find(x => x.id === sid) || {}).own;
+          const g = [];
+          for (const own of [false, true]) {
+            const ps = part.filter(id => !!ownOf(replyOf[id]) === own); if (!ps.length) continue;
+            const gg = await call('GetItem', { "__type": "GetItemRequest:#Exchange", "ItemShape": { "__type": "ItemResponseShape:#Exchange", "BaseShape": "IdOnly", "BodyType": "Text", "AdditionalProperties": [P("Body")] },
+              "ItemIds": ps.map(id => ({ "__type": "ItemId:#Exchange", "Id": replyOf[id] })) }, own);
+            ps.forEach((id, k) => { g[part.indexOf(id)] = gg[k]; });
+          }
           part.forEach((id, k) => { const it = g[k] && g[k].Items && g[k].Items[0]; if (!it || !it.Body || typeof it.Body.Value !== 'string') return;
             const t = cutQuote(it.Body.Value).replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, m => /^gkb24@zdrav\.mos\.ru$/i.test(m) ? m : '[email]').replace(/\+?\d[\d\s()-]{8,}\d/g, '[телефон]').replace(/\n{3,}/g, '\n\n').trim();
             if (t.length >= 20) replies[id] = t.slice(0, 5000); });
@@ -578,7 +598,7 @@
       diag.replies = Object.keys(replies).length;
       diag.answered = answered.length;
     } catch (e) { if (/нужен вход/.test(e.message)) throw e; diag.sentErr = String(e.message).slice(0, 80); diag.sent = -1; }
-    out.forEach(l => { delete l.email; delete l.ts; delete l.verb; delete l.itemId; if (l.folder === 'deleted') l.folder = 'Удаленные'; });
+    out.forEach(l => { delete l.email; delete l.ts; delete l.verb; delete l.itemId; delete l.cid; if (l.folder === 'deleted') l.folder = 'Удаленные'; });
     diag.complete = !diag.ffErr && !diag.wkErr && !diag.bodyErr && diag.folders.every(f => !/ошибка$/.test(f));
     diag.since = since; diag.today = todayMsk;
     return { items: out, seen: out.length, diag, answered, replies };
