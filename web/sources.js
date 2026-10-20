@@ -32,6 +32,8 @@
           low: published && r5 < 4, author: '',
           text: [it.comment, it.comment_plus, it.comment_minus].filter(Boolean).join('\n').slice(0, 20000),
           answered: !!it.answer_moderation_status,
+          // текст ответа больницы, если площадка его отдаёт и он не отклонён модерацией
+          reply: /reject|declin|delet|отклон/i.test(String(it.answer_moderation_status || '')) ? '' : ([it.answer, it.answer_text, it.lpu_answer, it.answer_comment, it.answer && it.answer.text, it.answer && it.answer.comment].find(v => typeof v === 'string' && v.trim().length > 10) || '').trim(),
           link: `https://prodoctorov.ru/cabinet/lpu-rates/${it.rate_type}/${it.id}/?lpu=21011`
         });
       }
@@ -71,6 +73,7 @@
       rating: x.rating, threshold: 4, low: x.rating < 4,
       author: x.author && x.author.user || '', text: (x.full_text || '').slice(0, 20000),
       answered: !!(x.owner_comment && x.owner_comment.text),
+      reply: (x.owner_comment && x.owner_comment.text || '').trim(),
       link: x.author && x.author.public_id ? 'https://yandex.ru/maps/org/1022361531/reviews?reviews%5BpublicId%5D=' + x.author.public_id + '&utm_source=review' : 'https://yandex.ru/maps/org/1022361531/reviews/'
     }); });
   }
@@ -123,7 +126,7 @@
       out.push({ id: 'doctu-' + iso + '-' + (doctor ? href.split('/').pop() : 'clinic-' + h(text)), platform: 'ДокТу', published: true,
         page: doctor ? 'Карточка врача: ' + short(doctor) : 'Карточка больницы', date: iso, time: '', rating, threshold: 4, low: rating < 4,
         author: ((q('.review-teaser__name') || {}).innerText || 'Пациент').trim(), text: text.slice(0, 20000),
-        answered: !!(ans && ans.innerText.trim()), link: doctor ? href + '#feedback' : href });
+        answered: !!(ans && ans.innerText.trim()), reply: ans ? ans.innerText.trim() : '', link: doctor ? href + '#feedback' : href });
     }
     return { items: out, seen: all.length };
   }
@@ -181,7 +184,7 @@
       const dt = new Date(Date.now() + 3 * 3600e3 - age * 864e5).toISOString().slice(0, 10);
       out.push({ id: 'google-' + h(author + text), platform: 'Google', published: true, page: 'Карточка больницы',
         date: dt, dateApprox: age > 1, time: '', rating, threshold: 4.5, low: rating < 4.5, author, text: text.slice(0, 20000),
-        answered: /Владелец/.test(t), link: location.href });
+        answered: /Владелец/.test(t), reply: /Владелец/.test(t) ? (t.split(/Ответ владельца|Владелец/).pop() || '').split('\n').slice(1).join('\n').replace(/Посмотреть весь отзыв|Ещё/g, '').trim() : '', link: location.href });
     }
     return { items: out, seen: stars.length };
   }
@@ -209,7 +212,7 @@
       out.push({ id: 'np-' + r.id.replace(/\D/g, ''), platform: 'НаПоправку', published: true,
         page: doc ? 'Страница врача: ' + short(doc) : 'Страница больницы', date: iso, time: '', rating, threshold: 4.5,
         low: rating != null && rating < 4.5, author, text: text.slice(0, 20000),
-        answered: !!r.querySelector('.review-comment__wrapper--answer'), link: location.origin + location.pathname + '#' + r.id });
+        answered: !!r.querySelector('.review-comment__wrapper--answer'), reply: ((r.querySelector('.review-comment__wrapper--answer') || {}).innerText || '').trim(), link: location.origin + location.pathname + '#' + r.id });
     }
     return { items: out, seen: document.querySelectorAll('.review').length };
   }
@@ -522,7 +525,7 @@
     }
 
     /* 5. кому уже ответили: письма в «Отправленных» на адрес автора, отправленные после получения письма */
-    const answered = [];
+    const answered = [], replies = {};
     try {
       const sentList = [];
       for (let off = 0, pg = 0; pg < 20; pg++) {
@@ -550,19 +553,35 @@
       const take = (l, eh, name) => {
         const ws = words(name);
         const s = sentList.find(x => !used.has(x.id) && x.ts >= l.ts - 120e3 && ((eh && x.hashes.has(eh)) || (!eh && ws.length >= 2 && ws.every(w => x.disp.indexOf(w) >= 0))));
-        if (s) { used.add(s.id); return true; }
+        if (s) { used.add(s.id); return s.id; }
         return false;
       };
+      const replyOf = {};   // письмо → отправленный на него ответ
       out.filter(l => !l.dup).sort((a, b) => a.ts - b.ts).forEach(l => {
-        if (l.verb === 102 || l.verb === 103 || take(l, l.emailHash, l.name)) { l.replied = true; answered.push(l.id); }
+        const sid = take(l, l.emailHash, l.name);
+        if (sid) replyOf[l.id] = sid;
+        if (l.verb === 102 || l.verb === 103 || sid) { l.replied = true; answered.push(l.id); }
       });
-      (opts.todo || []).forEach(x => { if (answered.indexOf(x.id) >= 0 || out.some(l => l.id === x.id)) return; if (take({ ts: Date.parse((x.date || since) + 'T00:00:00+03:00') }, x.eh, x.name)) answered.push(x.id); });
+      (opts.todo || []).forEach(x => { if (answered.indexOf(x.id) >= 0 || out.some(l => l.id === x.id)) return; const sid = take({ ts: Date.parse((x.date || since) + 'T00:00:00+03:00') }, x.eh, x.name); if (sid) { replyOf[x.id] = sid; answered.push(x.id); } });
+      // текст настоящего ответа из «Отправленных»: без цитаты исходного письма, телефоны и чужие адреса скрыты
+      const ids = Object.keys(replyOf), cutQuote = t => String(t || '').replace(/\r\n?/g, '\n').split(/\n\s*(?:-{2,}\s*(?:Original|Исходное)|_{5,}|From:|От:|Отправлено:|Sent:|\d{1,2}[.\/]\d{1,2}[.\/]\d{2,4}.{0,60}(?:пишет|wrote)|.{0,80}(?:пишет|wrote):\s*$)/m)[0];
+      for (let i = 0; i < ids.length; i += 10) {
+        const part = ids.slice(i, i + 10);
+        try {
+          const g = await call('GetItem', { "__type": "GetItemRequest:#Exchange", "ItemShape": { "__type": "ItemResponseShape:#Exchange", "BaseShape": "IdOnly", "BodyType": "Text", "AdditionalProperties": [P("Body")] },
+            "ItemIds": part.map(id => ({ "__type": "ItemId:#Exchange", "Id": replyOf[id] })) });
+          part.forEach((id, k) => { const it = g[k] && g[k].Items && g[k].Items[0]; if (!it || !it.Body || typeof it.Body.Value !== 'string') return;
+            const t = cutQuote(it.Body.Value).replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, m => /^gkb24@zdrav\.mos\.ru$/i.test(m) ? m : '[email]').replace(/\+?\d[\d\s()-]{8,}\d/g, '[телефон]').replace(/\n{3,}/g, '\n\n').trim();
+            if (t.length >= 20) replies[id] = t.slice(0, 5000); });
+        } catch (e) { if (/нужен вход/.test(e.message)) throw e; diag.replyErr = String(e.message).slice(0, 60); }
+      }
+      diag.replies = Object.keys(replies).length;
       diag.answered = answered.length;
     } catch (e) { if (/нужен вход/.test(e.message)) throw e; diag.sentErr = String(e.message).slice(0, 80); diag.sent = -1; }
     out.forEach(l => { delete l.email; delete l.ts; delete l.verb; delete l.itemId; if (l.folder === 'deleted') l.folder = 'Удаленные'; });
     diag.complete = !diag.ffErr && !diag.wkErr && !diag.bodyErr && diag.folders.every(f => !/ошибка$/.test(f));
     diag.since = since; diag.today = todayMsk;
-    return { items: out, seen: out.length, diag, answered };
+    return { items: out, seen: out.length, diag, answered, replies };
   }
   /* сначала сервер почты; если он не ответил, читаем письма с экрана, как раньше */
   async function MAIL_ANY(API, DOM, known, opts) {
@@ -911,6 +930,7 @@
             page: it.page || "", text: String(it.text || "").slice(0, 300), fullText: String(it.text || ""), link: it.link || "",
             answered: !!it.answered, updatedAt: nowIso()
           };
+          if (String(it.reply || "").trim().length >= 10) base.reply = String(it.reply).trim().slice(0, 5000);   // настоящий ответ больницы с площадки
           if (it.dateApprox) base.dateApprox = true;
           if (snap.exists) {
             // площадка иногда отдаёт обрезанное начало: полный текст, прочитанный раньше, не заменяем его началом
@@ -1440,6 +1460,18 @@
   }
   /* письма с формы сайта → «Почта сайта» (к ответу) и реестр (из него строится отчёт).
      mdiag.complete: письма прочитаны прямо с сервера почты полностью, тогда список за период точный */
+  // настоящий ответ на письмо (текст из «Отправленных»): в письмо и в реестр, откуда его берёт отчёт
+  function saveReplies(replies) {
+    return Object.keys(replies || {}).reduce(function (p, id) {
+      if (!/^[A-Za-z0-9_.:@+-]{1,200}$/.test(id)) return p;
+      return p.then(function () {
+        return Promise.all(["mail", "registry"].map(function (c) {
+          return getDoc(c, id).then(function (d) { if (d.exists && s0((d.data() || {}).reply) !== replies[id]) return db.collection(c).doc(id).update({ reply: replies[id], replyAt: nowIso() }); });
+        }));
+      });
+    }, Promise.resolve());
+  }
+  window.__otvSaveReplies = saveReplies;   // для проверок
   function ingestMail(items, answeredIds, mdiag) {
     var added = 0, alerts = 0, unread = 0, replied = 0, fixed = 0, dups = 0, closed = 0, wrongRows = 0, wrongRefs = [];
     answeredIds = answeredIds || [];
@@ -1657,14 +1689,14 @@
           srcState[s.id] = st; render();
           jlog("сбор " + s.name + ": " + (st.ok ? "ок, " + st.count + (p.diag ? " · " + JSON.stringify(p.diag) : "") : (st.needLogin ? "нужен вход" : "не вышло: " + st.error) + (p.url ? " · " + String(p.url).split(/[?#]/)[0] : "")));
           if (!st.ok && !st.down && !stopping && !autoRun) ask(s, st.needLogin);
-          return { s: s, items: st.ok && s.kind !== "mail" ? p.items : [], mail: st.ok && s.kind === "mail" ? p.items : [], answered: st.ok && s.kind === "mail" ? (p.answered || []) : [], mdiag: st.ok && s.kind === "mail" ? p.diag : null };
+          return { s: s, items: st.ok && s.kind !== "mail" ? p.items : [], mail: st.ok && s.kind === "mail" ? p.items : [], answered: st.ok && s.kind === "mail" ? (p.answered || []) : [], replies: st.ok && s.kind === "mail" ? (p.replies || {}) : {}, mdiag: st.ok && s.kind === "mail" ? p.diag : null };
         });
       }));
     }).then(function (results) {
       jlog("сбор закончен за " + Math.round((Date.now() - t0) / 1000) + " с");
-      var all = [], mails = [], answeredMail = [], mdiag = null;
-      results.forEach(function (r) { all = all.concat(r.items); mails = mails.concat(r.mail || []); answeredMail = answeredMail.concat(r.answered || []); if (r.mdiag) mdiag = r.mdiag; });
-      return ingest(all).then(function (sum) { return ingestMail(mails, answeredMail, mdiag).then(function (m) { sum.added += m.added; sum.alerts += m.alerts; sum.mail = m; return sum; }); })
+      var all = [], mails = [], answeredMail = [], mdiag = null, replies = {};
+      results.forEach(function (r) { all = all.concat(r.items); mails = mails.concat(r.mail || []); answeredMail = answeredMail.concat(r.answered || []); Object.assign(replies, r.replies || {}); if (r.mdiag) mdiag = r.mdiag; });
+      return ingest(all).then(function (sum) { return ingestMail(mails, answeredMail, mdiag).then(function (m) { return saveReplies(replies).then(function () { return m; }); }).then(function (m) { sum.added += m.added; sum.alerts += m.alerts; sum.mail = m; return sum; }); })
         .then(function (sum) { return makeAnswers(all).then(function (a) { sum.toAnswer = a.made; sum.closedA = a.closed; return sum; }, function () { return sum; }); }).then(function (sum) {
         var secs = Math.max(1, Math.round((Date.now() - t0) / 1000));
         var badR = results.filter(function (r) { return !r.stopped && !srcState[r.s.id].ok; });

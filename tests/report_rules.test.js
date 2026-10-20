@@ -34,7 +34,7 @@ function run(name, tableRows, registry, mail, expect, o){
   let domReady=null, lastMsg=''; const saved=[];
   const RD=Date; class FD extends RD{constructor(...a){ if(a.length) super(...a); else super(today);} static now(){return new RD(today).getTime();}}
   const win={__OTV_APP:true,addEventListener(){},__TAURI__:{core:{invoke},event:{listen(){}}},claude:{use:n=>Promise.resolve(n==='downloads'?{save:f=>{saved.push(f.filename);return Promise.resolve();}}:db)},
-    __otvAll:n=>n==='registry'?reg:n==='mail'?mail:n==='answers'?(o.answers||{}):{}, __otvLog:m=>{}, __otvSrcHealth:()=>o.health||[], setTimeout, clearTimeout, console};
+    __otvAll:n=>n==='registry'?reg:n==='mail'?mail:n==='answers'?(o.answers||{}):n==='alerts'?(o.alerts||{}):{}, __otvLog:m=>{}, __otvSrcHealth:()=>o.health||[], setTimeout, clearTimeout, console};
   win.window=win; win.document={addEventListener:(e,f)=>{ if(e==='DOMContentLoaded') domReady=f; },getElementById:()=>null,createElement:()=>({append(){},classList:{add(){},remove(){},toggle(){}},setAttribute(){},addEventListener(){},style:{}})}; win.crypto={getRandomValues:a=>a};
   win.Date=FD; win.Blob=class{constructor(p){this.p=p;}}; win.atob=x=>Buffer.from(x,'base64').toString('binary'); win.Uint8Array=Uint8Array; vm.createContext(win); vm.runInContext(fs.readFileSync(require('path').join(__dirname,'..','web','reports.js'),'utf8'),win);
   return Promise.resolve(domReady&&domReady()).then(()=>new Promise(r=>setTimeout(r,50))).then(()=>win.__otvReports.update()).then(()=>o.twice?win.__otvReports.update():0).then(()=>{ if(o.press){ win.__otvReports.newWeek(); return new Promise(r=>setTimeout(r,200)); } }).then(()=>{
@@ -95,7 +95,7 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
  // ---- «Негатив»: пустые строки и ответы ----
  const negT='ОТНОШЕНИЕ ПРОСТО ЖЕСТЬ!\n\nВыгнали ночью на улицу.\n\n  \nМата не хватит.';
  const regN=Object.assign({},regBase,{'ya-neg':R('Яндекс','2026-10-15','','Злой',negT,{rating:1})});
- const ansN={'ya-neg':{answer:'Здравствуйте.\n\nНам очень жаль.\n\nРазберёмся.',status:'approved'}};
+ const ansN={'ya-neg':{answer:'Здравствуйте.\n\nНам очень жаль.\n\nРазберёмся.',status:'published'}};
  all&=await run('13. негатив с пустыми строками: в Google уходит без пустых строк, ответ целиком', tbl, regN, mail, {}, {inspect:(B)=>{
    const a=B.find(b=>b.action==='add'); if(!a||!a.negative||!a.negative.length) return 'нет негатива';
    const x=a.negative[0]; if(/\n\s*\n/.test(x.text)||/\n\s*\n/.test(x.answer)) return 'пустые строки остались';
@@ -146,8 +146,8 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
      if(n2&&n2.answer!=null) return 'вписанный вручную ответ перезаписан';
      if(!n1.link||/publicId/.test(n1.link)||!n2||/publicId/.test(n2.link||'')) return 'общая ссылка не заменена';
      if(B.some(b=>b.action==='add'&&((b.negative||[]).length||(b.positive||[]).length))) return 'внесено второй раз'; }});
- all&=await run('22. одобренный ответ заменяет черновик в «Негативе»', [], regI2, {}, {}, {today:'2026-10-20T12:00:00', state0:stI,
-   answers:{'ya-a':{answer:'Здравствуйте. Одобренный ответ.',draft:drafty,status:'approved'}}, inspect:(B)=>{ const p=B.find(b=>b.action==='patch'); const n1=p&&p.items.find(i=>i.n===1); if(!n1||n1.answer!=='Здравствуйте. Одобренный ответ.') return 'одобренный ответ не встал'; }});
+ all&=await run('22. опубликованный ответ заменяет черновик в «Негативе»', [], regI2, {}, {}, {today:'2026-10-20T12:00:00', state0:stI,
+   answers:{'ya-a':{answer:'Здравствуйте. Одобренный ответ.',draft:drafty,status:'published'}}, inspect:(B)=>{ const p=B.find(b=>b.action==='patch'); const n1=p&&p.items.find(i=>i.n===1); if(!n1||n1.answer!=='Здравствуйте. Одобренный ответ.') return 'одобренный ответ не встал'; }});
  const regTC={'go-cut':R('Google','2026-10-16','','К','Здравствуйте! Лежала в гинекологии у Карапетян. Операцию делали три часа. На третий день уже поехала домой....',{rating:5,arrivedAt:A2('2026-10-16')}),
    'site-subj':R('Сайт','2026-10-19','10:00','Л','Жалоба на действия сотрудников ГКБ № 24',{arrivedAt:A2('2026-10-19')})};
  all&=await run('23. обрезанный отзыв Google и письмо без текста (одна тема) не идут в отчёт, а ждут проверки', [], regTC, {'site-subj':{kind:'complaint',subject:'Жалоба на действия сотрудников ГКБ № 24'}},
@@ -167,5 +167,20 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
    inspect:(B,out,reg)=>{ const p=B.find(b=>b.action==='patch'); if(!p) return 'ничего не исправлено'; const n=k=>p.items.find(i=>i.n===k);
      if(!n(1)||n(1).answer!=='—') return 'черновик с другим приветствием не стёрт'; if(n(2)&&n(2).answer!=null) return 'ваш ответ перезаписан'; if(!n(3)||n(3).answer!=='—') return 'записанное программой не стёрто';
      if(reg['site-k'].negWritten!=='—') return 'программа не запомнила, что записала'; }});
+
+ // только настоящие ответы: с площадки, из «Отправленных», опубликованный программой, отметка об обжаловании
+ const regR={'ya-r':R('Яндекс','2026-10-17','','А','Плохое отношение в приёмном отделении, ждали три часа без объяснений.',{rating:1,arrivedAt:A2('2026-10-17'),reply:'Здравствуйте. Это ответ больницы, прочитанный на Яндексе.'}),
+   'site-r':R('Сайт','2026-10-17','12:00','Б','Жалоба: в отделении нагрубили родственникам при посещении пациента.',{arrivedAt:A2('2026-10-17')}),
+   'ya-ok':R('Яндекс','2026-10-17','','В','Хамство медсестры на посту, никто не извинился и не помог.',{rating:1,arrivedAt:A2('2026-10-17')}),
+   'ya-ap':R('Яндекс','2026-10-17','','Г','Всё ужасно, больше никогда не приду в эту больницу, кошмар.',{rating:1,arrivedAt:A2('2026-10-17')}),
+   'pd-n':R('ПроДокторов','2026-10-17','','Д','Врач не объяснил назначения и был груб, осталась недовольна приёмом.',{rating:2,arrivedAt:A2('2026-10-17')})};
+ all&=await run('25. в «Негатив» идут только настоящие ответы', [], regR, {'site-r':{kind:'complaint',status:'done',reply:'Здравствуйте. Это ваш ответ из «Отправленных».',draft:'Черновик письма'}}, {}, {today:'2026-10-20T12:00:00', state0:W,
+   answers:{'ya-ok':{answer:'Одобрен, но ещё не опубликован',status:'approved'}}, alerts:{'ya-ap':{markAppealed:true}},
+   inspect:(B)=>{ const a=B.find(b=>b.action==='add'); if(!a) return 'нет записи'; const g=id=>(a.negative.find(x=>x.id===id)||{}).answer;
+     if(g('ya-r')!=='Здравствуйте. Это ответ больницы, прочитанный на Яндексе.') return 'ответ с площадки не взят: '+g('ya-r');
+     if(g('site-r')!=='Здравствуйте. Это ваш ответ из «Отправленных».') return 'ответ из почты не взят: '+g('site-r');
+     if(g('ya-ok')!=='—') return 'неопубликованный ответ попал в отчёт';
+     if(g('ya-ap')!=='Отзыв отправлен на дополнительную проверку.') return 'обжалование не отмечено';
+     if(g('pd-n')!=='—') return 'ПроДокторов без обжалования: '+g('pd-n'); }});
  console.log(all?'ALL OK':'SOME FAILED');
 })();

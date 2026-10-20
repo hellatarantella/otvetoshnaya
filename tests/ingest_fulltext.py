@@ -23,7 +23,18 @@ async def main():
           const e = (await get('pd-x3')).fullText;
           return { a, b, c, d, e, full: FULL.length };
         }""", FULL)
-        ok = r['a'] == r['full'] and r['b'] == r['full'] and r['c'] == r['full'] and r['d'] == r['full'] and r['e'] == 'Исправленный'
+        q = await pg.evaluate("""async () => {
+          const db = await window.__otvRt.use('db'); const get = async (c, id) => ((await db.collection(c).doc(id).get()).data() || {});
+          await window.__otvIngest([{ id: 'ya-rep1', platform: 'Яндекс', published: true, date: '2026-10-18', text: 'Плохо обслужили в приёмном отделении', rating: 1, answered: true, reply: 'Здравствуйте. Ответ больницы на Яндексе.' }]);
+          await window.__otvIngest([{ id: 'ya-rep1', platform: 'Яндекс', published: true, date: '2026-10-18', text: 'Плохо обслужили в приёмном отделении', rating: 1, answered: true, reply: '' }]);
+          await db.collection('mail').doc('site-rep1').set({ date: '2026-10-18', text: 'Жалоба', status: 'done' });
+          await db.collection('registry').doc('site-rep1').set({ platform: 'Сайт', date: '2026-10-18', text: 'Жалоба', fullText: 'Жалоба' });
+          await window.__otvSaveReplies({ 'site-rep1': 'Здравствуйте. Ответ из Отправленных.' });
+          return { ya: (await get('registry', 'ya-rep1')).reply, m: (await get('mail', 'site-rep1')).reply, r: (await get('registry', 'site-rep1')).reply };
+        }""")
+        ok2 = q['ya'] == 'Здравствуйте. Ответ больницы на Яндексе.' and q['m'] == q['r'] == 'Здравствуйте. Ответ из Отправленных.'
+        print(('OK  ' if ok2 else 'FAIL') + ' настоящий ответ с площадки и из почты сохраняется и не стирается пустым', q if not ok2 else '')
+        ok = ok2 and r['a'] == r['full'] and r['b'] == r['full'] and r['c'] == r['full'] and r['d'] == r['full'] and r['e'] == 'Исправленный'
         print(('OK  ' if ok else 'FAIL') + ' полный текст сохраняется, обрезанное начало его не заменяет', r if not ok else '')
         await b.close(); print('ALL OK' if ok else 'SOME FAILED')
 asyncio.run(main())

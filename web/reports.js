@@ -345,19 +345,22 @@
   }
 
   /* ---------- ответ для «Негатива» ----------
-     ПРАВИЛО: в отчёт идёт только ответ, который вы одобрили или опубликовали. Черновик генератора в отчёт не попадает никогда:
-     пока ответа нет, в блоке стоит «—». drafts — все черновики отзыва, чтобы стереть их из отчёта, если они туда уже попали */
+     ПРАВИЛО: в отчёте только настоящие данные. Ответ берётся в таком порядке:
+     1) ответ больницы, прочитанный на площадке, или ваше письмо из «Отправленных»;
+     2) ответ, опубликованный программой;
+     3) «Отзыв отправлен на дополнительную проверку», если отзыв обжалован (отмечено в программе);
+     иначе «—». Черновики и одобренные, но не опубликованные ответы в отчёт не идут.
+     drafts — тексты, которые программа могла записать раньше: их можно стереть */
   function negAnswer(r) {
-    var a = (window.__otvAll("answers") || {})[r.id], m = (window.__otvAll("mail") || {})[r.id], drafts = [];
-    if (a) drafts.push(s(a.draft), a.status === "approved" || a.status === "published" ? "" : s(a.answer));
+    var A = window.__otvAll("answers") || {}, a = A[r.id], m = (window.__otvAll("mail") || {})[r.id],
+        al = (window.__otvAll("alerts") || {})[r.id] || {}, ap = A[r.id + "-appeal"], drafts = [];
+    if (a) drafts.push(s(a.draft), a.status === "published" ? "" : s(a.answer));
     if (m) drafts.push(s(m.draft));
     drafts = drafts.map(function (x) { return x.trim(); }).filter(Boolean);
-    if (r.platform === "ПроДокторов") return { text: "Отзыв отправлен на дополнительную проверку.", draft: false, drafts: drafts };
-    if (r.platform === "Сайт") {
-      var t = m && m.status === "done" && s(m.answer).trim();
-      return { text: t || "—", draft: !t, drafts: drafts };
-    }
-    if (a && (a.status === "approved" || a.status === "published") && s(a.answer).trim()) return { text: s(a.answer).trim(), draft: false, drafts: drafts };
+    var real = s(r.reply || (m && m.reply)).trim();
+    if (real) return { text: real, draft: false, drafts: drafts };
+    if (a && a.status === "published" && s(a.answer).trim()) return { text: s(a.answer).trim(), draft: false, drafts: drafts };
+    if (al.markAppealed || (ap && ap.status === "published")) return { text: "Отзыв отправлен на дополнительную проверку.", draft: false, drafts: drafts };
     return { text: "—", draft: true, drafts: drafts };
   }
   function linkOf(r) {
@@ -622,7 +625,7 @@
   // все тексты, которые писал генератор (по всем отзывам и письмам): так черновик узнаётся, даже если его потом переписали
   function genBodies() {
     var out = {}, A = window.__otvAll("answers") || {}, M = window.__otvAll("mail") || {};
-    Object.keys(A).forEach(function (k) { var a = A[k] || {}; [a.draft, a.status === "approved" || a.status === "published" ? "" : a.answer].forEach(function (t) { var b = body(t); if (b.length > 30) out[b] = 1; }); });
+    Object.keys(A).forEach(function (k) { var a = A[k] || {}; [a.draft, a.status === "published" ? "" : a.answer].forEach(function (t) { var b = body(t); if (b.length > 30) out[b] = 1; }); });
     Object.keys(M).forEach(function (k) { var b = body((M[k] || {}).draft); if (b.length > 30) out[b] = 1; });
     return out;
   }
