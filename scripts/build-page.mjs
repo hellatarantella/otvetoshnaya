@@ -13,7 +13,7 @@ page = page.replace("<head>", '<head>\n<link rel="stylesheet" href="runtime.css"
 writeFileSync(join(dist, "index.html"), page);
 // текст Google-скрипта отчётов — для кнопки «Скопировать скрипт»
 // __otvGsCode — постоянный скрипт для установки (кнопка «Скопировать скрипт»), __otvGsLib — логика отчётов, её программа шлёт при каждом обращении
-writeFileSync(join(root, "web", "gscode.js"), "/* сгенерировано из google/Runner.gs и google/Code.gs */\nwindow.__otvGsCode = " + JSON.stringify(readFileSync(join(root, "google", "Runner.gs"), "utf8")) + ";\nwindow.__otvGsLib = " + JSON.stringify(readFileSync(join(root, "google", "Code.gs"), "utf8")) + ";\n");
+writeFileSync(join(root, "web", "gscode.js"), "/* сгенерировано из google/Runner.gs и google/Code.gs */\nwindow.__otvGsCode = " + JSON.stringify(readFileSync(join(root, "google", "Code.gs"), "utf8")) + ";\nwindow.__otvGsLib = " + JSON.stringify(readFileSync(join(root, "google", "Code.gs"), "utf8")) + ";\n");
 copyFileSync(join(root, "web", "gscode.js"), join(dist, "gscode.js"));
 for (const f of ["runtime.js", "runtime.css", "sources.js", "kb.js", "templates.js", "gen.js", "model.js", "reports.js"]) copyFileSync(join(root, "web", f), join(dist, f));
 console.log("dist/index.html готов:", page.length, "символов");

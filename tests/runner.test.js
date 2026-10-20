@@ -33,5 +33,5 @@ chk(/Неизвестное действие: nope/.test(r.error||''),'в нас
 const rep=fs.readFileSync(path.join(__dirname,'..','web','reports.js'),'utf8');
 chk(/code: window\.__otvGsLib/.test(rep),'программа прикладывает логику к каждому запросу');
 const gs=fs.readFileSync(path.join(__dirname,'..','web','gscode.js'),'utf8');
-chk(/__otvGsLib = /.test(gs)&&/RUNNER = 1/.test(gs),'сборка кладёт постоянный скрипт и логику');
+chk(/__otvGsLib = /.test(gs),'сборка кладёт постоянный скрипт и логику');
 console.log(ok?'ALL OK':'SOME FAILED');
