@@ -536,12 +536,12 @@
         try {
           const part0 = [];
           for (let off = 0, pg = 0; pg < 20; pg++) {
-            const r = await call('FindItem', { "__type": "FindItemRequest:#Exchange", "ItemShape": { "__type": "ItemResponseShape:#Exchange", "BaseShape": "IdOnly", "AdditionalProperties": [P("DateTimeSent"), P("DisplayTo"), P("DisplayCc"), P("ConversationId")] },
+            const r = await call('FindItem', { "__type": "FindItemRequest:#Exchange", "ItemShape": { "__type": "ItemResponseShape:#Exchange", "BaseShape": "IdOnly", "AdditionalProperties": [P("DateTimeSent"), P("DisplayTo"), P("DisplayCc"), P("ConversationId"), P("Subject")] },
               "ParentFolderIds": [DF('sentitems')], "Traversal": "Shallow", "Paging": PG(off, 100), "SortOrder": SORT("DateTimeSent") });
             const rf = r[0] && r[0].RootFolder; if (!rf) throw new Error('api: Отправленные ' + String(r[0] && r[0].MessageText || '').slice(0, 60));
             const its = rf.Items || []; let older = false;
             for (const x of its) { const w = msk(x.DateTimeSent); if (!w) continue; if (w.ts < sinceTs - 864e5) { older = true; continue; }
-              part0.push({ id: x.ItemId.Id, ts: w.ts, cid: x.ConversationId && x.ConversationId.Id || '', disp: (String(x.DisplayTo || '') + ' ' + String(x.DisplayCc || '')).toLowerCase().replace(/ё/g, 'е'), mails: new Set() }); }
+              part0.push({ id: x.ItemId.Id, ts: w.ts, cid: x.ConversationId && x.ConversationId.Id || '', subj: String(x.Subject || ''), disp: (String(x.DisplayTo || '') + ' ' + String(x.DisplayCc || '')).toLowerCase().replace(/ё/g, 'е'), mails: new Set() }); }
             off += its.length; if (older || rf.IncludesLastItemInRange || !its.length) break;
           }
           for (let i = 0; i < part0.length; i += 20) {
@@ -563,10 +563,14 @@
       // один ответ закрывает одно письмо: два письма одного человека и один ответ = второе остаётся «к ответу»
       const take = (l, eh, name) => {
         const ws = words(name);
-        const ok = x => !used.has(x.id) && x.ts >= l.ts - 120e3;
-        const s = (l.cid && sentList.find(x => ok(x) && x.cid === l.cid))                    // ответ в той же переписке
-          || (eh && sentList.find(x => ok(x) && (x.hashes.has(eh) || (l.email && x.mails.has(l.email)))))   // на адрес автора
-          || (ws.length >= 2 && sentList.find(x => ok(x) && ws.every(w => x.disp.indexOf(w) >= 0)));   // по имени автора
+        // ответ автору — только письмо автору: пересылка (FW, «Переслано») и письма на адреса больницы ответом не считаются
+        const fwd = x => /^\s*(fw|fwd|пересл\S*)\s*:/i.test(x.subj || '');
+        const inner = x => x.mails.size > 0 && [...x.mails].every(m => /(^|[.@])(mos\.ru|gkb-?24\S*)$/i.test(m));
+        const ok = x => !used.has(x.id) && x.ts >= l.ts - 120e3 && !fwd(x) && !inner(x);
+        const toAuthor = x => !!eh && (x.hashes.has(eh) || (!!l.email && x.mails.has(l.email)));
+        const s = (eh && sentList.find(x => ok(x) && toAuthor(x)))                            // на адрес автора
+          || (l.cid && sentList.find(x => ok(x) && x.cid === l.cid))                          // ответ в той же переписке на внешний адрес
+          || (!eh && ws.length >= 2 && sentList.find(x => ok(x) && ws.every(w => x.disp.indexOf(w) >= 0)));   // адреса нет: по имени
         if (s) { used.add(s.id); return s.id; }
         return false;
       };
@@ -1479,8 +1483,10 @@
   /* письма с формы сайта → «Почта сайта» (к ответу) и реестр (из него строится отчёт).
      mdiag.complete: письма прочитаны прямо с сервера почты полностью, тогда список за период точный */
   // настоящий ответ на письмо (текст из «Отправленных»): в письмо и в реестр, откуда его берёт отчёт
-  function saveReplies(replies) {
-    var ids = Object.keys(replies || {}), miss = 0;
+  function saveReplies(replies, checked) {
+    var ids = Object.keys(replies || {}), miss = 0, cleared = 0;
+    // почта прочитана полностью, а ответа у письма больше нет (раньше за ответ приняли пересылку): старый «ответ» стираем
+    var stale = (checked || []).filter(function (id) { return !replies[id] && /^[A-Za-z0-9_.:@+-]{1,200}$/.test(id); });
     return ids.reduce(function (p, id) {
       if (!/^[A-Za-z0-9_.:@+-]{1,200}$/.test(id)) return p;
       return p.then(function () {
@@ -1499,7 +1505,15 @@
             return db.collection("alerts").doc(id).update({ status: "done", answered: true, markAnswered: true, statusAt: nowIso(), note: "Ответ отправлен из почты пресс-службы" });
         })]));
       });
-    }, Promise.resolve()).then(function () { jlog("почта: ответов из «Отправленных» " + ids.length + ", записано к письмам " + (ids.length - miss) + (miss ? ", письма в программе не найдены: " + miss : "")); });
+    }, Promise.resolve()).then(function () {
+      return stale.reduce(function (p, id) {
+        return p.then(function () {
+          return Promise.all(["mail", "registry"].map(function (c) {
+            return getDoc(c, id).then(function (d) { if (d.exists && s0((d.data() || {}).reply)) { if (c === "registry") cleared++; return db.collection(c).doc(id).update({ reply: "", replyAt: nowIso() }); } });
+          }));
+        });
+      }, Promise.resolve());
+    }).then(function () { jlog("почта: ответов из «Отправленных» " + ids.length + ", записано к письмам " + (ids.length - miss) + (miss ? ", письма в программе не найдены: " + miss : "") + (cleared ? ", неверных ответов стёрто: " + cleared : "")); });
   }
   window.__otvSaveReplies = saveReplies;   // для проверок
   function ingestMail(items, answeredIds, mdiag) {
@@ -1726,7 +1740,7 @@
       jlog("сбор закончен за " + Math.round((Date.now() - t0) / 1000) + " с");
       var all = [], mails = [], answeredMail = [], mdiag = null, replies = {};
       results.forEach(function (r) { all = all.concat(r.items); mails = mails.concat(r.mail || []); answeredMail = answeredMail.concat(r.answered || []); Object.assign(replies, r.replies || {}); if (r.mdiag) mdiag = r.mdiag; });
-      return ingest(all).then(function (sum) { return ingestMail(mails, answeredMail, mdiag).then(function (m) { return saveReplies(replies).then(function () { return m; }); }).then(function (m) { sum.added += m.added; sum.alerts += m.alerts; sum.mail = m; return sum; }); })
+      return ingest(all).then(function (sum) { return ingestMail(mails, answeredMail, mdiag).then(function (m) { return saveReplies(replies, mdiag && mdiag.complete ? mails.map(function (x) { return x && x.id; }).filter(Boolean) : []).then(function () { return m; }); }).then(function (m) { sum.added += m.added; sum.alerts += m.alerts; sum.mail = m; return sum; }); })
         .then(function (sum) { return makeAnswers(all).then(function (a) { sum.toAnswer = a.made; sum.closedA = a.closed; return sum; }, function () { return sum; }); }).then(function (sum) {
         var secs = Math.max(1, Math.round((Date.now() - t0) / 1000));
         var badR = results.filter(function (r) { return !r.stopped && !srcState[r.s.id].ok; });

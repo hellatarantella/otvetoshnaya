@@ -51,6 +51,8 @@ MOCK = r"""
     { id: 'o6', ts: '2026-10-01T10:00:00', to: ['sid@x.ru'], disp: 'sid@x.ru' }
   ];
   // ответ Кузнецовой в ящике пресс-службы на другой адрес: найти по той же переписке
+  // пересылка жалобы Дважды Писавшего на регистрацию (та же переписка, внутренний адрес) раньше настоящего ответа: ответом не считается
+  const sentFwd = [ { id: 'f1', ts: '2026-10-19T10:00:00', to: ['reg@zdrav.mos.ru'], disp: 'Регистрация', cid: 'AAQkTWOconv02=', subj: 'FW: Жалоба', body: 'Здравствуйте! Просим зарегистрировать обращение.' } ];
   const sentMore = [ { id: 'q1', ts: '2026-10-17T12:00:00', to: ['lazareva.test@mail.ru'], disp: 'Лазарева', body: 'Здравствуйте, Алёна! Разберёмся с ситуацией в приёмном отделении.' },
     { id: 'q2', ts: '2026-10-19T11:00:00', to: ['twice@x.ru'], disp: 'twice@x.ru', body: 'Здравствуйте! Перезвоним вам сегодня по поводу записи.' } ];
   const sentConv = [ { id: 'p1', ts: '2026-10-13T15:00:00', to: ['other@box.ru'], disp: 'other@box.ru', cid: 'SUBINconv01=', body: 'Здравствуйте! Спасибо за ваш отзыв, передали персоналу.\r\n\r\nОт: Сайт ГКБ 24\r\nХочу поблагодарить' } ];
@@ -70,7 +72,7 @@ MOCK = r"""
     if (action === 'FindItem') {
       const p = b.ParentFolderIds[0]; const key = p.__type.startsWith('Distinguished') ? { inbox: 'INBOX', junkemail: 'JUNK', deleteditems: 'DEL', sentitems: 'SENT' }[p.Id] : p.Id;
       if (key === 'SENT') {
-        const all = sent.concat(sentConv, sentMore).slice().sort((a, c) => c.ts.localeCompare(a.ts)).map(x => ({ ItemId: { Id: x.id }, DateTimeSent: msk(x.ts), DisplayTo: x.disp, ConversationId: { Id: x.cid || ('c-' + x.id) } }));
+        const all = sent.concat(sentConv, sentMore, sentFwd).slice().sort((a, c) => c.ts.localeCompare(a.ts)).map(x => ({ ItemId: { Id: x.id }, DateTimeSent: msk(x.ts), DisplayTo: x.disp, ConversationId: { Id: x.cid || ('c-' + x.id) }, Subject: x.subj || 'RE: ответ' }));
         const pg = all.slice(b.Paging.Offset, b.Paging.Offset + 2);          // маленькие страницы: проверяем листание
         return ok([{ ResponseClass: 'Success', RootFolder: { Items: pg, IncludesLastItemInRange: b.Paging.Offset + 2 >= all.length, TotalItemsInView: all.length } }]);
       }
@@ -80,7 +82,7 @@ MOCK = r"""
     }
     if (action === 'GetItem') {
       return ok(b.ItemIds.map(r => {
-        const s = sent.concat(sentConv, sentMore).find(x => x.id === r.Id);
+        const s = sent.concat(sentConv, sentMore, sentFwd).find(x => x.id === r.Id);
         if (s) return { ResponseClass: 'Success', Items: [Object.assign({ ToRecipients: s.to.map(e => ({ EmailAddress: e, RoutingType: 'SMTP' })) }, s.body && JSON.stringify(b.ItemShape).indexOf('Body') >= 0 ? { Body: { BodyType: 'Text', Value: s.body } } : {})] };
         const x = byId[r.Id]; return { ResponseClass: 'Success', Items: [{ Body: { BodyType: 'Text', Value: x._body } }] };
       }));
@@ -148,6 +150,7 @@ async def main():
         check(len(laz) == 1 and laz[0].get("replied") and "Разберёмся" in res.get("replies", {}).get(laz[0]["id"], ""), "адрес из поля «Электронная почта», заглавные буквы: ответ найден")
         tw = sorted([x for x in res["items"] if x["name"] == "Дважды Писавший"], key=lambda x: x["date"])
         check(len(tw) == 2 and not tw[0].get("replied") and tw[1].get("replied") and "Перезвоним" in res.get("replies", {}).get(tw[1]["id"], ""), "два письма одного человека: ответ достался второму, после которого он отправлен")
+        check("Просим зарегистрировать" not in json.dumps(res.get("replies", {}), ensure_ascii=False), "пересылка на регистрацию (FW, внутренний адрес) ответом не считается")
         urls = await pg.evaluate("() => window.__urls || []")
         check(len(urls) > 0 and all(u.startswith("/owa/GB24-press2@zdrav.mos.ru/") for u in urls), "читается только ящик пресс-службы, личный ящик не трогается")
         # вход: без ключа сеанса
