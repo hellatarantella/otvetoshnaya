@@ -1480,14 +1480,15 @@
      mdiag.complete: письма прочитаны прямо с сервера почты полностью, тогда список за период точный */
   // настоящий ответ на письмо (текст из «Отправленных»): в письмо и в реестр, откуда его берёт отчёт
   function saveReplies(replies) {
-    return Object.keys(replies || {}).reduce(function (p, id) {
+    var ids = Object.keys(replies || {}), miss = 0;
+    return ids.reduce(function (p, id) {
       if (!/^[A-Za-z0-9_.:@+-]{1,200}$/.test(id)) return p;
       return p.then(function () {
         return Promise.all(["mail", "registry"].map(function (c) {
-          return getDoc(c, id).then(function (d) { if (d.exists && s0((d.data() || {}).reply) !== replies[id]) return db.collection(c).doc(id).update({ reply: replies[id], replyAt: nowIso() }); });
+          return getDoc(c, id).then(function (d) { if (!d.exists) { if (c === "registry") miss++; return; } if (s0((d.data() || {}).reply) !== replies[id]) return db.collection(c).doc(id).update({ reply: replies[id], replyAt: nowIso() }); });
         }));
       });
-    }, Promise.resolve());
+    }, Promise.resolve()).then(function () { jlog("почта: ответов из «Отправленных» " + ids.length + ", записано к письмам " + (ids.length - miss) + (miss ? ", письма в программе не найдены: " + miss : "")); });
   }
   window.__otvSaveReplies = saveReplies;   // для проверок
   function ingestMail(items, answeredIds, mdiag) {

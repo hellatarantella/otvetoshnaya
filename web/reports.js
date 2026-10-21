@@ -644,20 +644,27 @@
     var items = [], pos = {}, neg = {}, written = {};
     (st.positive || []).forEach(function (x) { pos["Позитив · " + x.platform + " №" + x.num] = x; });
     (st.negative || []).forEach(function (b) { neg["Негатив · блок " + b.n] = b; });
+    var L = function (t) { if (window.__otvLog) window.__otvLog("сверка «Негатива»: " + t); };
+    var negSeen = {};
     Object.keys(refOf || {}).forEach(function (id) {
       var r = reg[id], ref = refOf[id]; if (!r || !ref) return;
       var full = s(r.fullText || r.text);
       var p = pos[ref];
       if (p) { if (sameRow(p.platform, p.full, r) && truncatedOf(p.full, full)) items.push({ kind: "pos", platform: p.platform, num: p.num, key: p.full, text: clean(full) }); return; }
-      var b = neg[ref]; if (!b || !sameRow(b.platform, b.full, r)) return;
+      var b = neg[ref]; if (!b) return;
+      if (!sameRow(b.platform, b.full, r)) { L("блок " + b.n + " (" + b.platform + "): текст не совпал с отзывом " + id + ", не трогаю"); return; }
+      negSeen[b.n] = 1;
       var it = { kind: "neg", n: b.n, key: b.full }, ch = false;
       if (truncatedOf(b.full, full)) { it.text = clean(full); ch = true; }
       var want = clean(negAnswer(r).text) || "—";
       if (norm(b.fullAnswer) !== norm(want)) { it.answer = want; ch = true; written[id] = want; }
       var lk = linkFor(r, reg);
       if (s(b.link).trim() !== lk) { it.link = lk; ch = true; }
+      var src = s(r.reply).trim() ? "ответ с площадки/из почты (реестр)" : s(((window.__otvAll("mail") || {})[id] || {}).reply).trim() ? "ответ из почты (письмо)" : want === "—" ? "настоящего ответа нет" : "ответ программы/обжалование";
+      L("блок " + b.n + " (" + b.platform + ", отзыв " + id + "): " + src + (ch ? ", исправляю" : ", без изменений"));
       if (ch) items.push(it);
     });
+    (st.negative || []).forEach(function (b) { if (!negSeen[b.n]) L("блок " + b.n + " (" + b.platform + "): отзыв в программе не найден"); });
     if (!items.length) return Promise.resolve();
     return call("patch", { items: items }).then(function () {
       return Object.keys(written).reduce(function (p, id) { return p.then(function () { return regUpdate(id, { negWritten: written[id] }); }); }, Promise.resolve());
