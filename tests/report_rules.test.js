@@ -195,5 +195,15 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
      if(n(1)&&n(1).answer&&n(1).answer!=='—') return 'чужой ответ ушёл в блок Яндекса: '+n(1).answer;
      if(!n(2)||n(2).answer!=='Здравствуйте. Настоящий ответ на ПроДокторов.') return 'ответ не встал в свой блок';
      if(n(1)&&n(1).link&&n(1).link!=='https://ya/A') return 'ссылка Яндекса заменена чужой'; }});
+
+ // Google: старая запись с обрезанным текстом стоит в строке, пришла новая запись того же отзыва с полным текстом
+ const gCut='Здравствуйте!Лежала в гинекологии у врача Карапетян! Операцию делали три часа.На третий день уже поехала домой....';
+ const gFull='Здравствуйте!Лежала в гинекологии у врача Карапетян! Операцию делали три часа.На третий день уже поехала домой. Самые наилучшие впечатления о больнице, о заботливом персонале. Спасибо медсёстрам!';
+ const stGo={posTitle:'Позитив',negTitle:'Негатив',tab:'x',period:'16.10–22.10.2026',start:'2026-10-16',end:'2026-10-22',negative:[],
+   positive:[{platform:'Google',num:'1',date:'16.10.2026',dept:'Гинекология',doctor:'',full:gCut}]};
+ const regGo={'google-old':R('Google','2026-10-16','','OLGA M',gCut,{rating:5,report:'positive',reportRef:'Позитив · Google №1',reportWeek:'2026-10-16',arrivedAt:A2('2026-10-16')}),
+   'google-new':R('Google','2026-10-16','','OLGA M',gFull,{rating:5,arrivedAt:A('2026-10-21','11:00')})};
+ all&=await run('27. Google: полный текст того же отзыва занимает строку обрезанного и дописывает её, второй строки нет', [], regGo, {}, {adds:[]}, {today:'2026-10-21T14:00:00', state0:stGo,
+   inspect:(B)=>{ const p=B.find(b=>b.action==='patch'); const it=p&&p.items.find(i=>i.kind==='pos'); if(!it||!/Спасибо медсёстрам/.test(it.text)) return 'строка не дописана'; }});
  console.log(all?'ALL OK':'SOME FAILED');
 })();

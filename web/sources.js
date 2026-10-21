@@ -182,7 +182,9 @@
       const author = (t.split('open_in_new')[0].trim().split('\n').pop() || '').trim();
       const text = (t.split(rel)[1] || '').split(/24 Московская больница|Владелец/)[0].replace('НОВЫЙ ФИЛИАЛ', '').replace(/Посмотреть весь отзыв/g, '').trim();
       const dt = new Date(Date.now() + 3 * 3600e3 - age * 864e5).toISOString().slice(0, 10);
-      out.push({ id: 'google-' + h(author + text), platform: 'Google', published: true, page: 'Карточка больницы',
+      // номер отзыва — по автору и началу текста: у обрезанного и полного варианта он один и тот же
+      const head40 = text.toLowerCase().replace(/ё/g, 'е').replace(/[^а-яa-z0-9]+/g, ' ').trim().slice(0, 40);
+      out.push({ id: 'google-' + h(author + '|' + head40), platform: 'Google', published: true, page: 'Карточка больницы',
         date: dt, dateApprox: age > 1, time: '', rating, threshold: 4.5, low: rating < 4.5, author, text: text.slice(0, 20000),
         answered: /Владелец/.test(t), reply: /Владелец/.test(t) ? (t.split(/Ответ владельца|Владелец/).pop() || '').split('\n').slice(1).join('\n').replace(/Посмотреть весь отзыв|Ещё/g, '').trim() : '', link: location.href });
     }

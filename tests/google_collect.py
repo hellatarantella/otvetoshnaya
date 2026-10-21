@@ -21,9 +21,15 @@ async def main():
         b = await p.chromium.launch(); pg = await b.new_page(); await pg.set_content(PAGE)
         res = await pg.evaluate("async () => { " + FN + " ; return await GOOGLE(); }")
         it = (res.get("items") or [{}])[0]
+        # тот же отзыв, но страница не раскрылась (обрезан): номер должен совпасть
+        pg2 = await b.new_page(); await pg2.set_content(PAGE.replace("document.getElementById('m1').addEventListener", "void 0 && document.getElementById('m1').addEventListener"))
+        res2 = await pg2.evaluate("async () => { " + FN + " ; return await GOOGLE(); }")
+        it2 = (res2.get("items") or [{}])[0]
+        ok0 = it.get("id") and it.get("id") == it2.get("id") and it2.get("text") != it.get("text")
+        print(("OK  " if ok0 else "FAIL") + " у обрезанного и полного варианта один номер отзыва", "" if ok0 else (it.get("id"), it2.get("id")))
         ok1 = it.get("text", "").strip() == FULL
         ok2 = "высокую оценку" in it.get("reply", "")
         print(("OK  " if ok1 else "FAIL") + " полный текст отзыва Google без «....» и без «Посмотреть весь отзыв»", "" if ok1 else repr(it.get("text")))
         print(("OK  " if ok2 else "FAIL") + " ответ больницы в Google тоже целиком", "" if ok2 else repr(it.get("reply")))
-        print("ALL OK" if ok1 and ok2 else "SOME FAILED"); await b.close()
+        print("ALL OK" if ok0 and ok1 and ok2 else "SOME FAILED"); await b.close()
 asyncio.run(main())
