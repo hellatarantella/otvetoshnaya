@@ -322,6 +322,24 @@
     list = list.filter(function (c) { var k = norm(c.raw).replace(/^здравствуйте\S*( \S+)? /, "").slice(0, 200); if (uniq[k]) return false; uniq[k] = 1; return true; });
     return { list: list, tone: tone, type: type };
   }
+  /* проверка ответа перед показом: ответ не должен называть людей, которых нет в отзыве,
+     и его тон должен совпадать с отзывом (на жалобу не благодарим за «тёплые слова», на благодарность не «разбираемся в ситуации») */
+  var THANKS_ONLY = /т[её]пл\S* слов|высок\S* оценк|спасибо за (добрые|т[её]плые|высокую)|благодарим за т[её]пл|передадим (ваши )?(слова )?благодарност/i;
+  var COMPLAINT_ONLY = /разобраться в ситуации|разберёмся|сожалеем|прин(осим|ести) извинени|приносим извинения|ответственными подразделениями/i;
+  function stem(w, n) { return norm(w).slice(0, n); }
+  function check(text, it, tone) {
+    var t = s(text), review = norm(s(it && it.review)), why = [];
+    var body = t.replace(/^\s*(Здравствуйте|Добрый день)[^\n.!]*[.!]?/i, "");   // приветствие с именем автора не проверяем
+    var re = /([А-ЯЁ][а-яё]{2,})\s+([А-ЯЁ][а-яё]*(?:вн|вич|ичн)[а-яё]{0,3})(?![а-яё])/g, m;
+    while ((m = re.exec(body))) {
+      if (review.indexOf(stem(m[1], 4)) < 0 || review.indexOf(stem(m[2], 5)) < 0) why.push("в отзыве нет «" + m[1] + " " + m[2] + "»");
+    }
+    var re2 = /([А-ЯЁ][а-яё]{3,})\s+[А-ЯЁ]\.\s?[А-ЯЁ]\./g;
+    while ((m = re2.exec(body))) { if (review.indexOf(stem(m[1], 5)) < 0) why.push("в отзыве нет «" + m[1] + "»"); }
+    if (tone === "negative" && THANKS_ONLY.test(body)) why.push("на жалобу ответ как на благодарность");
+    if (tone === "positive" && COMPLAINT_ONLY.test(body)) why.push("на благодарность ответ как на жалобу");
+    return { ok: !why.length, why: why };
+  }
   function answer(it, opts) {
     opts = opts || {};
     var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform);
@@ -331,6 +349,7 @@
     }).filter(function (c) {
       if (!c.text) return false;
       var body = norm(c.text.replace(/^Здравствуйте[^\n]*\n/, ""));
+      if (!check(c.text, it, p.tone).ok) return false;   // чужие имена и не тот тон не показываем
       return body && body !== cur && !(cur && sim(body, cur) > 0.8) && !recent[body]; // правило 15: подряд одинаковых не публикуем
     }).sort(function (a, b) { return b.score - a.score; });
     var seen = {}, best = null;
@@ -405,7 +424,7 @@
     return { tone: p.tone, type: p.type, list: out };
   }
   function polish(text, it) { return shape(text, it, toneOf(it), typeOf(it)); }
-  window.__otvGen = { answer: answer, appeal: appeal, noteSkip: noteSkip, notePick: notePick, toneOf: toneOf, typeOf: typeOf,
+  window.__otvGen = { check: check, answer: answer, appeal: appeal, noteSkip: noteSkip, notePick: notePick, toneOf: toneOf, typeOf: typeOf,
     examples: examples, polish: polish, NEG_ANS: NEG_ANS, nameOf: nameOf, isGeneric: isGeneric, thanksLine: thanksLine };
 
   /* ---------- связь с карточками: «↻ Ещё вариант» вызывает __otvVariant(req) ---------- */

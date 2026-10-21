@@ -176,7 +176,7 @@
       for (let i = 0; i < 10 && c; i++) { c = c.parentElement; if (c && /open_in_new|Владелец|Посмотреть весь отзыв/.test(c.innerText) && c.innerText.length > 40) break; }
       if (!c) continue;
       // длинный отзыв Google показывает началом с кнопкой «Ещё»: раскрываем, чтобы прочитать целиком
-      const more = [...c.querySelectorAll('a,button,[role="button"],span')].filter(x => x.children.length === 0 && /^(Ещё|Читать (далее|полностью)|More|Read more)$/i.test((x.textContent || '').trim()));
+      const more = [...c.querySelectorAll('a,button,[role="button"],span')].filter(x => x.children.length === 0 && /^(Ещё|Читать (далее|полностью)|Посмотреть весь отзыв|More|Read more|See full review)$/i.test((x.textContent || '').trim()));
       if (more.length) { more.forEach(x => { try { x.click(); } catch (er) {} }); await sleep(700); }
       const t = c.innerText;
       const author = (t.split('open_in_new')[0].trim().split('\n').pop() || '').trim();
