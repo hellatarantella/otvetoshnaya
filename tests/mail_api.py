@@ -25,6 +25,11 @@ MOCK = r"""
       { ItemId: { Id: 'i4' }, ConversationId: { Id: 'ZZZhelp=' }, DateTimeReceived: msk('2026-10-10T03:54:54'), Subject: 'Помощь', ItemClass: 'IPM.Note', From: { Mailbox: { Name: 'Студент', EmailAddress: 'x@rudn.ru' } }, _body: 'Здравствуйте, помогите с практикой.' },
       { ItemId: { Id: 'i5' }, ConversationId: { Id: 'FWDfwd=' }, DateTimeReceived: msk('2026-10-10T09:00:00'), Subject: 'FW: Благодарность (Страница: Главная)', ItemClass: 'IPM.Note', From: { Mailbox: { Name: 'Коллега', EmailAddress: 'c@gkb-24.ru' } }, _body: 'Сообщение: пересланное' },
       form('i6', 'AAQkAGZmNjk+pNemq/ZA4=', '2026-10-10T11:26:16', 'Благодарность (Страница: Хирургия)', B('Быкова Ольга', 'bykova@list.ru', 'thanks', 'Спасибо, очень внимательные.')),
+      // поле адреса называется иначе: «Электронная почта»
+      form('i8', 'AAQkLAZconv01=', '2026-10-17T10:15:00', 'Жалоба (Страница: Приёмное)', 'Имя: Лазарева Алёна\r\nЭлектронная почта: Lazareva.Test@Mail.ru\r\nТип обращения: complaint\r\nСообщение: Медсестра на посте была груба при оформлении в приёмном отделении.'),
+      // один человек написал дважды, ответ после второго письма — достаётся второму
+      form('i9a', 'AAQkTWOconv01=', '2026-10-18T09:00:00', 'Жалоба (Страница: Главная)', B('Дважды Писавший', 'twice@x.ru', 'complaint', 'Первое письмо: долго не могу дозвониться в регистратуру.')),
+      form('i9b', 'AAQkTWOconv02=', '2026-10-19T09:00:00', 'Жалоба (Страница: Главная)', B('Дважды Писавший', 'twice@x.ru', 'complaint', 'Второе письмо: так и не дозвонился, прошу перезвонить по поводу записи.')),
       form('i7', 'AAQkAGZmNjkOLDold=', '2026-10-08T11:34:19', 'Жалоба (Страница: Хирургия)', B('Старый', 'old@x.ru', 'complaint', 'Старое письмо'))
     ],
     JUNK: [ form('j1', 'AAQkJUNKjunk01=', '2026-10-11T10:00:00', 'Жалоба (Страница: Приёмное)', B('Сидоров', 'sid@x.ru', 'complaint', 'Долго ждал в приёмном, никто не подошёл')) ],
@@ -46,6 +51,8 @@ MOCK = r"""
     { id: 'o6', ts: '2026-10-01T10:00:00', to: ['sid@x.ru'], disp: 'sid@x.ru' }
   ];
   // ответ Кузнецовой в ящике пресс-службы на другой адрес: найти по той же переписке
+  const sentMore = [ { id: 'q1', ts: '2026-10-17T12:00:00', to: ['lazareva.test@mail.ru'], disp: 'Лазарева', body: 'Здравствуйте, Алёна! Разберёмся с ситуацией в приёмном отделении.' },
+    { id: 'q2', ts: '2026-10-19T11:00:00', to: ['twice@x.ru'], disp: 'twice@x.ru', body: 'Здравствуйте! Перезвоним вам сегодня по поводу записи.' } ];
   const sentConv = [ { id: 'p1', ts: '2026-10-13T15:00:00', to: ['other@box.ru'], disp: 'other@box.ru', cid: 'SUBINconv01=', body: 'Здравствуйте! Спасибо за ваш отзыв, передали персоналу.\r\n\r\nОт: Сайт ГКБ 24\r\nХочу поблагодарить' } ];
   const byId = {}; Object.values(items).flat().forEach(x => byId[x.ItemId.Id] = x);
   window.__calls = [];
@@ -63,7 +70,7 @@ MOCK = r"""
     if (action === 'FindItem') {
       const p = b.ParentFolderIds[0]; const key = p.__type.startsWith('Distinguished') ? { inbox: 'INBOX', junkemail: 'JUNK', deleteditems: 'DEL', sentitems: 'SENT' }[p.Id] : p.Id;
       if (key === 'SENT') {
-        const all = sent.concat(sentConv).slice().sort((a, c) => c.ts.localeCompare(a.ts)).map(x => ({ ItemId: { Id: x.id }, DateTimeSent: msk(x.ts), DisplayTo: x.disp, ConversationId: { Id: x.cid || ('c-' + x.id) } }));
+        const all = sent.concat(sentConv, sentMore).slice().sort((a, c) => c.ts.localeCompare(a.ts)).map(x => ({ ItemId: { Id: x.id }, DateTimeSent: msk(x.ts), DisplayTo: x.disp, ConversationId: { Id: x.cid || ('c-' + x.id) } }));
         const pg = all.slice(b.Paging.Offset, b.Paging.Offset + 2);          // маленькие страницы: проверяем листание
         return ok([{ ResponseClass: 'Success', RootFolder: { Items: pg, IncludesLastItemInRange: b.Paging.Offset + 2 >= all.length, TotalItemsInView: all.length } }]);
       }
@@ -73,7 +80,7 @@ MOCK = r"""
     }
     if (action === 'GetItem') {
       return ok(b.ItemIds.map(r => {
-        const s = sent.concat(sentConv).find(x => x.id === r.Id);
+        const s = sent.concat(sentConv, sentMore).find(x => x.id === r.Id);
         if (s) return { ResponseClass: 'Success', Items: [Object.assign({ ToRecipients: s.to.map(e => ({ EmailAddress: e, RoutingType: 'SMTP' })) }, s.body && JSON.stringify(b.ItemShape).indexOf('Body') >= 0 ? { Body: { BodyType: 'Text', Value: s.body } } : {})] };
         const x = byId[r.Id]; return { ResponseClass: 'Success', Items: [{ Body: { BodyType: 'Text', Value: x._body } }] };
       }));
@@ -137,6 +144,10 @@ async def main():
         kuz = [x for x in res["items"] if x["name"] == "Кузнецова"][0]
         krep = res.get("replies", {}).get(kuz["id"], "")
         check(kuz.get("replied") is True and krep.startswith("Здравствуйте! Спасибо") and "Хочу поблагодарить" not in krep, "ответ на другой адрес найден по переписке, текст без цитаты")
+        laz = [x for x in res["items"] if x["name"].startswith("Лазарева")]
+        check(len(laz) == 1 and laz[0].get("replied") and "Разберёмся" in res.get("replies", {}).get(laz[0]["id"], ""), "адрес из поля «Электронная почта», заглавные буквы: ответ найден")
+        tw = sorted([x for x in res["items"] if x["name"] == "Дважды Писавший"], key=lambda x: x["date"])
+        check(len(tw) == 2 and not tw[0].get("replied") and tw[1].get("replied") and "Перезвоним" in res.get("replies", {}).get(tw[1]["id"], ""), "два письма одного человека: ответ достался второму, после которого он отправлен")
         urls = await pg.evaluate("() => window.__urls || []")
         check(len(urls) > 0 and all(u.startswith("/owa/GB24-press2@zdrav.mos.ru/") for u in urls), "читается только ящик пресс-службы, личный ящик не трогается")
         # вход: без ключа сеанса

@@ -484,7 +484,10 @@
         msg = (start >= 0 ? t.slice(start) : t).split('\n').map(l => l.trim()).filter(l => l && !new RegExp('^(?:' + LBL + '|От|Кому|Тема|Отправлено)\\s*:', 'i').test(l) && !/^ВНЕШНЯЯ ПОЧТА/i.test(l)).join('\n');
       }
       msg = scrub(msg.replace(/\n{3,}/g, '\n\n').trim()).slice(0, 4000);
-      const em = (g('Email|E-mail|Эл\\. почта').match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/) || [''])[0].toLowerCase();
+      // адрес автора: из поля формы (как бы оно ни называлось), иначе из текста письма, иначе отправитель (если это не служебный адрес)
+      const EMR = /[\w.+-]+@[\w-]+(\.[\w-]+)+/g, svc = a => /noreply|no-reply|gkb-?24|zdrav\.mos\.ru|mos\.ru$/i.test(a);
+      const em = ((g('E-?mail|Эл\\.? ?почта|Электронная почта|Адрес электронной почты|Почта|Mail').match(EMR) || [])
+        .concat(t.match(EMR) || [], [fromOf(x).mail]).map(a => String(a || '').toLowerCase()).find(a => a && !svc(a))) || '';
       const rawType = g('Тип обращения|Тема обращения');
       const type = TY[rawType.toLowerCase()] || rawType || (subj.match(/^([А-Яа-яЁё]+)/) || [])[1] || '';
       const w = x._w;
@@ -562,13 +565,14 @@
         const ws = words(name);
         const ok = x => !used.has(x.id) && x.ts >= l.ts - 120e3;
         const s = (l.cid && sentList.find(x => ok(x) && x.cid === l.cid))                    // ответ в той же переписке
-          || (eh && sentList.find(x => ok(x) && x.hashes.has(eh)))                            // на адрес автора
+          || (eh && sentList.find(x => ok(x) && (x.hashes.has(eh) || (l.email && x.mails.has(l.email)))))   // на адрес автора
           || (ws.length >= 2 && sentList.find(x => ok(x) && ws.every(w => x.disp.indexOf(w) >= 0)));   // по имени автора
         if (s) { used.add(s.id); return s.id; }
         return false;
       };
       const replyOf = {};   // письмо → отправленный на него ответ
-      out.filter(l => !l.dup).sort((a, b) => a.ts - b.ts).forEach(l => {
+      // ответ относится к последнему письму человека до ответа: разбираем письма от поздних к ранним
+      out.filter(l => !l.dup).sort((a, b) => b.ts - a.ts).forEach(l => {
         const sid = take(l, l.emailHash, l.name);
         if (sid) replyOf[l.id] = sid;
         if (l.verb === 102 || l.verb === 103 || sid) { l.replied = true; answered.push(l.id); }
@@ -587,6 +591,9 @@
         } catch (e) { if (/нужен вход/.test(e.message)) throw e; diag.replyErr = String(e.message).slice(0, 60); }
       }
       diag.replies = Object.keys(replies).length;
+      // для проверки: сколько писем без адреса автора и сколько без найденного ответа (без имён и адресов)
+      diag.noEmail = out.filter(l => !l.dup && !l.email).length;
+      diag.noReply = out.filter(l => !l.dup && !replies[l.id]).length;
       diag.answered = answered.length;
     } catch (e) { if (/нужен вход/.test(e.message)) throw e; diag.sentErr = String(e.message).slice(0, 80); diag.sent = -1; }
     out.forEach(l => { delete l.email; delete l.ts; delete l.verb; delete l.itemId; delete l.cid; if (l.folder === 'deleted') l.folder = 'Удаленные'; });
