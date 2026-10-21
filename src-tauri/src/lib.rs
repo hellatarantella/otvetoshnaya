@@ -508,9 +508,11 @@ async fn source_collect(app: tauri::AppHandle, id: String, url: String, script: 
       try {{
         var res = await ({script});
         if (typeof res === 'string') res = JSON.parse(res);
-        var seen = null, diag = null, answered = null;
-        if (res && !Array.isArray(res) && Array.isArray(res.items)) {{ seen = res.seen; diag = res.diag || null; answered = res.answered || null; res = res.items; }}
-        send({{ ok: true, url: location.href, items: res, seen: seen, diag: diag, answered: answered }});
+        // всё, что вернул сборщик, уходит в программу целиком: без списка полей, чтобы новое поле нигде не терялось
+        var out = {{ ok: true, url: location.href }};
+        if (res && !Array.isArray(res) && Array.isArray(res.items)) {{ for (var k in res) if (k !== 'ok' && k !== 'url') out[k] = res[k]; }}
+        else out.items = res;
+        send(out);
       }} catch (e) {{
         send({{ ok: false, url: location.href, error: String((e && e.message) || e) }});
       }}

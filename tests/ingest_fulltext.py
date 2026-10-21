@@ -27,13 +27,20 @@ async def main():
           const db = await window.__otvRt.use('db'); const get = async (c, id) => ((await db.collection(c).doc(id).get()).data() || {});
           await window.__otvIngest([{ id: 'ya-rep1', platform: 'Яндекс', published: true, date: '2026-10-18', text: 'Плохо обслужили в приёмном отделении', rating: 1, answered: true, reply: 'Здравствуйте. Ответ больницы на Яндексе.' }]);
           await window.__otvIngest([{ id: 'ya-rep1', platform: 'Яндекс', published: true, date: '2026-10-18', text: 'Плохо обслужили в приёмном отделении', rating: 1, answered: true, reply: '' }]);
-          await db.collection('mail').doc('site-rep1').set({ date: '2026-10-18', text: 'Жалоба', status: 'done' });
+          await db.collection('mail').doc('site-rep1').set({ date: '2026-10-18', text: 'Жалоба на грубость в приёмном отделении', status: 'todo', kind: 'complaint', name: 'Тест' });
           await db.collection('registry').doc('site-rep1').set({ platform: 'Сайт', date: '2026-10-18', text: 'Жалоба', fullText: 'Жалоба' });
+          await db.collection('alerts').doc('site-rep1').set({ platform: 'Сайт', date: '2026-10-18', text: 'Жалоба на грубость в приёмном отделении', status: 'new', author: 'Тест' });
           await window.__otvSaveReplies({ 'site-rep1': 'Здравствуйте. Ответ из Отправленных.' });
-          return { ya: (await get('registry', 'ya-rep1')).reply, m: (await get('mail', 'site-rep1')).reply, r: (await get('registry', 'site-rep1')).reply };
+          await new Promise(r => setTimeout(r, 1500));
+          const m = await get('mail', 'site-rep1'), al = await get('alerts', 'site-rep1');
+          return { ya: (await get('registry', 'ya-rep1')).reply, m: m.reply, r: (await get('registry', 'site-rep1')).reply, mst: m.status, mans: m.answered, ast: al.status,
+            ui: document.body.innerText.indexOf('Отвечено из почты пресс-службы') >= 0 || document.documentElement.innerHTML.indexOf('Ваш ответ из «Отправленных» пресс-службы') >= 0 };
         }""")
         ok2 = q['ya'] == 'Здравствуйте. Ответ больницы на Яндексе.' and q['m'] == q['r'] == 'Здравствуйте. Ответ из Отправленных.'
         print(('OK  ' if ok2 else 'FAIL') + ' настоящий ответ с площадки и из почты сохраняется и не стирается пустым', q if not ok2 else '')
+        ok3 = q['mst'] == 'done' and q['mans'] is True and q['ast'] == 'done' and q['ui']
+        print(('OK  ' if ok3 else 'FAIL') + ' найденный ответ: письмо «Отвечено», тревога закрыта, карточка показывает ваш ответ', q if not ok3 else '')
+        ok2 = ok2 and ok3
         ok = ok2 and r['a'] == r['full'] and r['b'] == r['full'] and r['c'] == r['full'] and r['d'] == r['full'] and r['e'] == 'Исправленный'
         print(('OK  ' if ok else 'FAIL') + ' полный текст сохраняется, обрезанное начало его не заменяет', r if not ok else '')
         await b.close(); print('ALL OK' if ok else 'SOME FAILED')

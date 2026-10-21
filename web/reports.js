@@ -538,7 +538,7 @@
       site = { total: 0, inRep: 0, dup: 0, notReview: 0, excluded: 0, check: 0, adding: 0, unpub: 0, queued: 0, by: {} };
       all.forEach(function (r) {
         var d = decisions[r.id], k;
-        if (r.report === "unpublished") k = "unpub";
+        if (r.report === "unpublished") return;   // ещё не опубликованные площадкой не считаем и не показываем
         else if (refOf[r.id]) k = "inRep";
         else if (dupOf[r.id] || autoDup(r)) k = "dup";
         else if (d && d.status === "ok") k = "adding";
@@ -578,7 +578,6 @@
         if (site.dup) rest.push("повторы " + site.dup);
         if (site.notReview) rest.push("вопросы, не отзывы " + site.notReview);
         if (site.excluded) rest.push("исключены " + site.excluded);
-        if (site.unpub) rest.push("ещё не опубликованы площадкой " + site.unpub);
         if (site.queued) rest.push("ждут следующей недели " + site.queued);
         if (site.check) rest.push("ждут вашего решения в «Нужна проверка» " + site.check);
         if (site.adding > 0) rest.push("не записались в Google " + site.adding);

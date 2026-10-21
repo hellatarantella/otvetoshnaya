@@ -1485,8 +1485,19 @@
       if (!/^[A-Za-z0-9_.:@+-]{1,200}$/.test(id)) return p;
       return p.then(function () {
         return Promise.all(["mail", "registry"].map(function (c) {
-          return getDoc(c, id).then(function (d) { if (!d.exists) { if (c === "registry") miss++; return; } if (s0((d.data() || {}).reply) !== replies[id]) return db.collection(c).doc(id).update({ reply: replies[id], replyAt: nowIso() }); });
-        }));
+          return getDoc(c, id).then(function (d) {
+            if (!d.exists) { if (c === "registry") miss++; return; }
+            var cur = d.data() || {}, up = {};
+            if (s0(cur.reply) !== replies[id]) { up.reply = replies[id]; up.replyAt = nowIso(); }
+            if (!cur.answered) up.answered = true;
+            // письмо отвечено: карточка сама становится «Отвечено» и уходит из «к ответу»
+            if (c === "mail" && (cur.status || "todo") === "todo") { up.status = "done"; up.doneAt = nowIso(); up.note = "Ответ отправлен из почты пресс-службы"; }
+            if (Object.keys(up).length) return db.collection(c).doc(id).update(up);
+          });
+        }).concat([getDoc("alerts", id).then(function (a) {
+          if (a.exists && ((a.data() || {}).status !== "done" || !(a.data() || {}).markAnswered))
+            return db.collection("alerts").doc(id).update({ status: "done", answered: true, markAnswered: true, statusAt: nowIso(), note: "Ответ отправлен из почты пресс-службы" });
+        })]));
       });
     }, Promise.resolve()).then(function () { jlog("почта: ответов из «Отправленных» " + ids.length + ", записано к письмам " + (ids.length - miss) + (miss ? ", письма в программе не найдены: " + miss : "")); });
   }

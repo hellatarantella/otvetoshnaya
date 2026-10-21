@@ -222,6 +222,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center}
 .rg{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:0 0 10px}
 .rg[data-rep="pending"]{border-left:4px solid var(--err-text)}
 .rg[data-rep="unpublished"]{border-left:4px solid var(--pend)}
+.real{margin:8px 0 0;padding:10px 12px;border-radius:12px;background:var(--ok-bg);color:var(--text, inherit);font-size:14px;white-space:pre-wrap}
+.real b{display:block;color:var(--ok);font-size:12px;margin-bottom:4px}
 .rg[data-rep="excluded"]{border-left:4px solid var(--skip)}
 .rg-text{margin:0;font-size:14px;color:var(--text);overflow-wrap:anywhere}
 .rg-text.muted{color:var(--muted);font-style:italic}
@@ -1226,7 +1228,8 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.backBtn = el("button","link","Вернуть в «Ответить»"); c.backBtn.type = "button";
     act.append(c.doneBtn, c.skipBtn, c.backBtn);
     c.err = el("p","err-line"); c.err.hidden = true;
-    c.el.append(head, c.review, links, c.note, c.det, act, c.err);
+    c.real = el("div","real"); c.real.hidden = true;
+    c.el.append(head, c.review, links, c.note, c.real, c.det, act, c.err);
     c.doneBtn.addEventListener("click", function(){ mbEnqueue(c, {status:"done", statusAt: nowIso(), manual: true}); });
     c.skipBtn.addEventListener("click", function(){ mbEnqueue(c, {status:"skip", statusAt: nowIso(), manual: true}); });
     c.backBtn.addEventListener("click", function(){ mbEnqueue(c, {status:"todo", statusAt: nowIso(), manual: true}); });
@@ -1241,7 +1244,10 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     var dd = s(r.date).match(/^(\d{4})-(\d{2})-(\d{2})$/);
     var when = dd ? dd[3] + "." + dd[2] + (r.time ? ", " + s(r.time) : "") : s(r.date);
     c.meta.textContent = [when, s(r.name), s(r.page)].filter(Boolean).join(" · ");
-    c.status.textContent = st === "done" && r.answered && !r.manual ? "Отвечено (в «Отправленных»)" : MB_ST[st];
+    var rep = s(r.reply).trim();
+    c.status.textContent = rep || (st === "done" && r.answered && !r.manual) ? "Отвечено из почты пресс-службы" : MB_ST[st];
+    c.real.hidden = !rep; c.real.textContent = "";
+    if (rep) c.real.append(el("b", null, "Ваш ответ из «Отправленных» пресс-службы"), document.createTextNode(rep));
     c.status.className = "status " + (st === "todo" ? "st-pending" : st === "done" ? "st-approved" : "st-skip");
     var txt = s(r.text).trim();
     c.txt.textContent = txt || (s(r.subject) + ": текст появится после ближайшего сбора");
@@ -1395,7 +1401,8 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.mApp.addEventListener("click", function(){ alEnqueue(c, {markAppealed: c.mApp.getAttribute("aria-pressed") !== "true", statusAt: nowIso()}); });
     c.goA.addEventListener("click", function(){ if (c.offId) offGo(c.offId); });
     c.err = el("p","err-line"); c.err.hidden = true;
-    c.el.append(head, c.author, c.review, links, c.note, c.lbl, c.ta, c.lblAp, c.taAp, act, c.pubSt, c.err);
+    c.real = el("div","real"); c.real.hidden = true;
+    c.el.append(head, c.author, c.review, links, c.note, c.real, c.lbl, c.ta, c.lblAp, c.taAp, act, c.pubSt, c.err);
     c.done.addEventListener("click", function(){ alEnqueue(c, {status:"done", statusAt: nowIso()}); });
     c.back.addEventListener("click", function(){ alEnqueue(c, {status:"new", statusAt: nowIso()}); });
     return c;
@@ -1454,7 +1461,13 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     var pg = s(r.page); if ((site && /^Страница:/.test(pg)) || pg === c.badge.textContent) pg = "";
     c.meta.textContent = [dd ? dd[3] + "." + dd[2] + "." + dd[1] : s(r.date), nd(pg)].filter(Boolean).join(" · ");
     var f = alFlags(r); c.answer = f.ar; c.appeal = f.ap;
-    c.status.textContent = st === "done" ? "Закрыт" : "Новый"; c.status.className = "status " + (st === "done" ? "st-skip" : "st-pending");
+    // настоящий ответ: ваше письмо из «Отправленных» пресс-службы или ответ больницы на площадке
+    var realRep = "";
+    try { if (window.__otvAll) realRep = s((((site ? window.__otvAll("mail") : window.__otvAll("registry")) || {})[r.id] || {}).reply).trim(); } catch (e) {}
+    c.status.textContent = realRep ? (site ? "Отвечено из почты пресс-службы" : "Ответ на площадке есть") : st === "done" ? "Закрыт" : "Новый";
+    c.status.className = "status " + (realRep ? "st-approved" : st === "done" ? "st-skip" : "st-pending");
+    c.real.hidden = !realRep; c.real.textContent = "";
+    if (realRep) c.real.append(el("b", null, site ? "Ваш ответ из «Отправленных» пресс-службы" : "Ответ больницы на площадке"), document.createTextNode(realRep));
     var au = s(r.author).trim(); c.author.textContent = au && au !== "Пациент" ? "Автор: " + au : ""; c.author.hidden = !c.author.textContent;
     c.txt.textContent = s(r.text); c.more.hidden = s(r.text).length < 280;
     if (r.link) { c.open.href = s(r.link); c.open.hidden = false; } else c.open.hidden = true;
@@ -2649,7 +2662,7 @@ gkb24@zdrav.mos.ru
     pending:{label:"Не в отчёте", cls:"rp-pend"},
     unpublished:{label:"Ещё не опубликован", cls:"rp-unpub"}
   };
-  var FILT = [["all","Все"],["pending","Не в отчёте"],["unpublished","Не опубликованы"],["excluded","Исключены"],["inreport","В отчётах"]];
+  var FILT = [["all","Все"],["pending","Не в отчёте"],["excluded","Исключены"],["inreport","В отчётах"]];
   var MONTHS = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
 
   var rows = [], meta = null, coll = null, loaded = false, failed = false;
@@ -2665,6 +2678,7 @@ gkb24@zdrav.mos.ru
   var weekStart = weekOf(new Date());
 
   function inWeek(r){
+    if (r.report === "unpublished") return false;   // ещё не опубликованные площадкой нигде не показываем: появятся, когда их опубликуют
     var d = parseD(r.date); if (!d) return false;
     var a = key(weekStart), b = key(addDays(weekStart, 6)), k = key(d);
     return k >= a && k <= b;
@@ -2698,13 +2712,12 @@ gkb24@zdrav.mos.ru
     }
     sum.append(main);
     var parts = ["Всего " + wk.length, "в Позитиве " + c.positive, "в Негативе " + c.negative, "исключено " + c.excluded];
-    if (c.unpublished) parts.push("ещё не опубликованы площадкой " + c.unpublished);
     sum.append(el("span", "sub2", parts.join(" · ")));
   }
 
   function renderTable(wk){
     var t = $("ckTbl"); t.textContent = "";
-    var cols = [["all","Всего"],["pending","Не в отчёте"],["positive","Позитив"],["negative","Негатив"],["excluded","Исключено"],["unpublished","Не опубл."]];
+    var cols = [["all","Всего"],["pending","Не в отчёте"],["positive","Позитив"],["negative","Негатив"],["excluded","Исключено"]];
     var thead = el("thead"), hr = el("tr"); hr.append(el("th", null, "Площадка"));
     cols.forEach(function(c){ hr.append(el("th", null, c[1])); }); thead.append(hr); t.append(thead);
     var tb = el("tbody"), tot = {};
@@ -2780,7 +2793,7 @@ gkb24@zdrav.mos.ru
     var box = el("div", "rg-edit");
     var f1 = el("label", "f"); f1.append(el("span", null, "Где этот отзыв"));
     var sel = el("select");
-    [["positive","В Позитиве"],["negative","В Негативе"],["excluded","Исключить из отчёта"],["pending","Решит программа"],["unpublished","Ещё не опубликован"]].forEach(function(o){
+    [["positive","В Позитиве"],["negative","В Негативе"],["excluded","Исключить из отчёта"],["pending","Решит программа"]].forEach(function(o){
       var op = el("option", null, o[1]); op.value = o[0]; if (o[0] === repOf(r)) op.selected = true; sel.append(op);
     });
     f1.append(sel);
