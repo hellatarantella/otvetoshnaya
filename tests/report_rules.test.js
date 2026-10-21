@@ -214,5 +214,12 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
  all&=await run('28. врач заглавными буквами распознан и вписан в строку, где врача не было', [], regK, {}, {adds:[]}, {today:'2026-10-21T14:00:00', state0:stK,
    staff:[['Карапетян Элен Армановна','врач-акушер-гинеколог','Гинекологическое отделение']], deps:[['Гинекологическое отделение','Гинекология','','']],
    inspect:(B)=>{ const p=B.find(b=>b.action==='patch'); const it=p&&p.items.find(i=>i.kind==='pos'); if(!it||!/Карапетян/.test(it.doctor||'')) return 'врач не вписан: '+JSON.stringify(it); }});
+
+ // Google без текста (только оценка): в отчёт, текст — длинный прочерк
+ const regE={'google-e5':Object.assign(R('Google','2026-10-20','','Раиса',''),{text:'',fullText:'',rating:5,arrivedAt:A2('2026-10-20')}),
+   'google-e1':Object.assign(R('Google','2026-10-20','','Пётр',''),{text:'',fullText:'',rating:1,arrivedAt:A2('2026-10-20')})};
+ all&=await run('29. Google без текста: пятёрка в «Позитив», единица в «Негатив», текст «—»', [], regE, {}, {}, {today:'2026-10-21T14:00:00', state0:W,
+   inspect:(B)=>{ const a=B.find(b=>b.action==='add'); if(!a) return 'ничего не внесено'; const p=a.positive.find(x=>x.id==='google-e5'), n=a.negative.find(x=>x.id==='google-e1');
+     if(!p||p.text!=='—') return 'пятёрка без текста не внесена: '+JSON.stringify(a.positive); if(!n||n.text!=='—') return 'единица без текста не внесена'; }});
  console.log(all?'ALL OK':'SOME FAILED');
 })();

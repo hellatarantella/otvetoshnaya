@@ -230,6 +230,10 @@
   function decide(r, mail) {
     var text = s(r.fullText || r.text).trim(), plat = s(r.platform);
     var res = { id: r.id, platform: plat, date: r.date, text: text, tone: "", dept: "", doctor: "—", status: "ok", why: [] };
+    // ПРАВИЛО: отзыв Google без текста (только оценка) — в отчёт, в графе текста длинный прочерк «—»; тон по оценке
+    if (!text && plat === "Google" && r.rating != null && r.rating !== "" && !isNaN(Number(r.rating))) {
+      res.text = "—"; res.tone = Number(r.rating) <= 3 ? "negative" : "positive"; res.dept = "ГКБ 24"; return res;
+    }
     if (!text) { res.status = "wait"; res.why.push("текста ещё нет"); return res; }
     // ПРАВИЛО: в отчёт идёт только полный текст. Обрезанный площадкой текст или одна тема письма — на проверку, а не в отчёт
     if (/(^|\s)(Ещё|Читать (далее|полностью)|Посмотреть весь отзыв)\s*$/i.test(text) || (plat === "Google" && /(\.{3,}|…)\s*$/.test(text))) {
