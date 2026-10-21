@@ -133,7 +133,8 @@
       if (cand.length === 1) addP(cand[0], "page");
       else if (!cand.length) found.page404 = pg;
     }
-    var ytx = yo(text), words = [], adj = [], re = /[А-ЯЕ][а-яе]+(?:-[А-ЯЕ][а-яе]+)?/g, mm, prevEnd = -1;
+    // имена, написанные целиком заглавными («КАРАПЕТЯН ЭЛЕН АРМАНОВНЫ»), приводим к обычному виду
+    var ytx = yo(text).replace(/[А-ЯЕ]{2,}(?:-[А-ЯЕ]{2,})?/g, function (w) { return w.split("-").map(function (x) { return x.charAt(0) + x.slice(1).toLowerCase(); }).join("-"); }), words = [], adj = [], re = /[А-ЯЕ][а-яе]+(?:-[А-ЯЕ][а-яе]+)?/g, mm, prevEnd = -1;
     while ((mm = re.exec(ytx))) { adj.push(prevEnd >= 0 && /^\s+$/.test(ytx.slice(prevEnd, mm.index))); words.push(mm[0]); prevEnd = mm.index + mm[0].length; }
     var isPat = function (w) { return /(вич|вн|ичн)[а-я]{0,3}$/.test(w); };
     var NAME_END = /^(|а|я|ы|и|е|у|ю|ой|ей|ем|ом|ий|ия|ию|ии|ья|ье|ью|ьи|ьей)$/;
@@ -649,7 +650,18 @@
       var r = reg[id], ref = refOf[id]; if (!r || !ref) return;
       var full = s(r.fullText || r.text);
       var p = pos[ref];
-      if (p) { if (sameRow(p.platform, p.full, r) && truncatedOf(p.full, full)) items.push({ kind: "pos", platform: p.platform, num: p.num, key: p.full, text: clean(full) }); return; }
+      if (p) {
+        if (!sameRow(p.platform, p.full, r)) return;
+        var pit = { kind: "pos", platform: p.platform, num: p.num, key: p.full }, pch = false;
+        if (truncatedOf(p.full, full)) { pit.text = clean(full); pch = true; }
+        // врач не указан, а в отзыве он назван: вписываем (ручную запись не трогаем)
+        if (!s(p.doctor).trim() || /^[—-]$/.test(s(p.doctor).trim())) {
+          var dd = decide(Object.assign({}, r, { fullText: full }), (window.__otvAll("mail") || {})[id]);
+          if (dd && dd.doctor && dd.doctor !== "—") { pit.doctor = dd.doctor; pch = true; }
+        }
+        if (pch) items.push(pit);
+        return;
+      }
       var b = neg[ref]; if (!b) return;
       if (!sameRow(b.platform, b.full, r)) { L("блок " + b.n + " (" + b.platform + "): текст не совпал с отзывом " + id + ", не трогаю"); return; }
       negSeen[b.n] = 1;

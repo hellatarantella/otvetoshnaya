@@ -12,7 +12,7 @@
  * Скрипт работает от вашего имени и правит только эти файлы. Программа связывается с ним
  * по секретному ключу, который знает только она (первое подключение запоминает ключ).
  */
-var VERSION = 6;
+var VERSION = 7;
 var POS_ID = '1PnkJU3cjl6LlZxe1E9fHfmW7-E5kLi8Nkyr2G4dkw1A';   // «Позитив»
 var NEG_ID = '1Sp8sJv90_bUDYoo-4jPVQrHqLQU-E33s2MLJx0lrlpg';   // «Негатив»
 var REF_ID = '1s-0vfTvZeqVOrrreu9YY5fM3BycOfBtChuIu2wO8pdI';   // «[ГКБ24] Сбор отзывов — справочник»
@@ -338,8 +338,10 @@ function patch(items) {
     var ss = SpreadsheetApp.openById(POS_ID), sh = detailSheet(ss), rows = readPositive(sh);
     pos.forEach(function (it) {
       var r = rows.filter(function (x) { return x.platform === normPlat(it.platform) && String(x.num) === String(it.num); })[0];
-      if (!r || head(r.text).slice(0, 60) !== head(it.key).slice(0, 60) || !String(it.text || '').trim()) return;
-      sh.getRange(r.row, 5).setValue(String(it.text)); n++;
+      if (!r || head(r.text).slice(0, 60) !== head(it.key).slice(0, 60)) return;
+      if (String(it.text || '').trim()) { sh.getRange(r.row, 5).setValue(String(it.text)); n++; }
+      // врач: только если в строке он не указан (ручную запись не трогаем)
+      if (String(it.doctor || '').trim() && /^\s*[—-]?\s*$/.test(String(r.doctor || ''))) { sh.getRange(r.row, 7).setValue(String(it.doctor)); n++; }
     });
   }
   if (neg.length) {

@@ -19,7 +19,7 @@ function run(name, tableRows, registry, mail, expect, o){
     positive:tableRows.map((r,i)=>({platform:r[0],num:String(r[1]),date:r[2],dept:r[3]||'',doctor:'',text:head(r[4]),full:r[4]})),negative:[]};
   const bodies=[]; const invoke=(cmd,args)=>{ const b=JSON.parse(args.body); calls.push(b.action); bodies.push(b);
     if(b.action==='state') return Promise.resolve(JSON.stringify({ok:true,version:3,runner:(o.v?0:1),state}));
-    if(b.action==='refs') return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),refs:{departments:[],exceptions:[],staff:[],categories:['ГКБ 24','Хирургия','Приёмное отделение','Терапия']}}));
+    if(b.action==='refs') return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),refs:{departments:o.deps||[],exceptions:[],staff:o.staff||[],categories:['ГКБ 24','Хирургия','Приёмное отделение','Терапия','Гинекология']}}));
     if(b.action==='add'){ const refs={}; let n=tableRows.filter(r=>r[0]==='Сайт').length; (b.negative||[]).forEach((x,i)=>{ const n=state.negative.length+1; state.negative.push({n,platform:x.platform,date:x.date,text:head(x.text),answer:head(x.answer),full:x.text,fullAnswer:x.answer,link:x.link}); refs[x.id]='Негатив · блок '+n; }); (b.positive||[]).forEach(p=>{ const k=Math.max(0,...tableRows.filter(r=>r[0]===p.platform).map(r=>+r[1]))+1; refs[p.id]='Позитив · '+p.platform+' №'+k; tableRows.push([p.platform,k,p.date,p.dept,p.text]); state.positive.push({platform:p.platform,num:String(k),date:p.date,dept:p.dept,doctor:'',text:head(p.text),full:p.text}); }); calls.push({add:b.positive.map(p=>p.id+':'+p.dept)}); return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),refs,state})); }
     if(b.action==='export'){ if(o.exportFail) return Promise.resolve(JSON.stringify({ok:false,error:'нет доступа к файлу'})); return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),files:[{name:'Позитив.xlsx',data:'AA=='},{name:'Негатив.docx',data:'AA=='}]})); }
     if(b.action==='newweek'){ const e=new Date(state.end+'T00:00:00Z'); const a=new Date(e.getTime()+864e5), z=new Date(e.getTime()+7*864e5); const f=d=>d.toISOString().slice(0,10), dm=d=>f(d).slice(8,10)+'.'+f(d).slice(5,7);
@@ -205,5 +205,14 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
    'google-new':R('Google','2026-10-16','','OLGA M',gFull,{rating:5,arrivedAt:A('2026-10-21','11:00')})};
  all&=await run('27. Google: полный текст того же отзыва занимает строку обрезанного и дописывает её, второй строки нет', [], regGo, {}, {adds:[]}, {today:'2026-10-21T14:00:00', state0:stGo,
    inspect:(B)=>{ const p=B.find(b=>b.action==='patch'); const it=p&&p.items.find(i=>i.kind==='pos'); if(!it||!/Спасибо медсёстрам/.test(it.text)) return 'строка не дописана'; }});
+
+ // врач назван заглавными буквами: распознаётся и вписывается в уже записанную строку, где врача нет
+ const kText='Здравствуйте!Лежала в гинекологии у КАРАПЕТЯН ЭЛЕН АРМАНОВНЫ! Операцию делали три часа. Спасибо врачам и медсёстрам за заботу!';
+ const stK={posTitle:'Позитив',negTitle:'Негатив',tab:'x',period:'16.10–22.10.2026',start:'2026-10-16',end:'2026-10-22',negative:[],
+   positive:[{platform:'Google',num:'1',date:'16.10.2026',dept:'Гинекология',doctor:'—',full:kText}]};
+ const regK={'google-k':R('Google','2026-10-16','','OLGA M',kText,{rating:5,report:'positive',reportRef:'Позитив · Google №1',reportWeek:'2026-10-16',arrivedAt:A2('2026-10-16')})};
+ all&=await run('28. врач заглавными буквами распознан и вписан в строку, где врача не было', [], regK, {}, {adds:[]}, {today:'2026-10-21T14:00:00', state0:stK,
+   staff:[['Карапетян Элен Армановна','врач-акушер-гинеколог','Гинекологическое отделение']], deps:[['Гинекологическое отделение','Гинекология','','']],
+   inspect:(B)=>{ const p=B.find(b=>b.action==='patch'); const it=p&&p.items.find(i=>i.kind==='pos'); if(!it||!/Карапетян/.test(it.doctor||'')) return 'врач не вписан: '+JSON.stringify(it); }});
  console.log(all?'ALL OK':'SOME FAILED');
 })();
