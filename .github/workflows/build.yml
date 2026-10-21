@@ -89,7 +89,13 @@ jobs:
           # перед выпуском файлы переподписываются настоящим ключом (scripts/publish.sh)
           npx tauri signer generate --ci -p '' -f -w "$RUNNER_TEMP/tmp-updater.key" >/dev/null
           export TAURI_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/tmp-updater.key")"
-          npx tauri build ${{ matrix.args }} 2>&1 | tee ci-log/tauri.log | tail -80
+          # упаковка .dmg на сборочных Mac иногда срывается («Resource busy»): повторяем до 3 раз, код уже собран, повтор быстрый
+          set -o pipefail
+          for try in 1 2 3; do
+            if npx tauri build ${{ matrix.args }} 2>&1 | tee ci-log/tauri.log | tail -80; then break; fi
+            [ "$try" = 3 ] && exit 1
+            echo "упаковка не удалась, попытка $((try + 1))"; hdiutil info 2>/dev/null | grep -o '/dev/disk[0-9]*' | sort -u | xargs -n1 hdiutil detach -force >/dev/null 2>&1 || true; sleep 20
+          done
       - name: Журнал сборки при ошибке — в ветку ci-log-${{ runner.os }}
         if: failure() || cancelled()
         shell: bash
