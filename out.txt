@@ -1,0 +1,6 @@
+total 10813
+drwxr-xr-x 1 runneradmin 197121       0 Oct 22 06:20 .
+drwxr-xr-x 1 runneradmin 197121       0 Oct 22 06:20 ..
+-rwxr-xr-x 1 runneradmin 197121 5532512 Oct 22 06:20 Otvetoshnaya_setup.exe
+-rwxr-xr-x 1 runneradmin 197121 5532512 Oct 22 06:20 otvetoshnaya_0.2.50_windows_setup.exe
+-rw-r--r-- 1 runneradmin 197121     456 Oct 22 06:20 otvetoshnaya_0.2.50_windows_setup.exe.sig
