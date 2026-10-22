@@ -912,22 +912,23 @@
     var f = pending[d.id]; if (f) { delete pending[d.id]; f(p); }
   });
 
+  var HIDDEN_MS = 90000;   // сколько ждать скрытое окно по расписанию
   function collectOne(s, forceReuse) {
     var useReuse = !!s.reuse && (!autoRun || !!forceReuse);
-    return collectOnce(s, useReuse).then(function (p) {
-      // по расписанию почту читаем в скрытом окне; если там вход не подхватился, читаем из открытого окна почты
-      if (!useReuse && s.reuse && p && !p.ok && (p.needLogin || /нужен вход/.test(String(p.error || "")))) return collectOnce(s, true);
+    // по расписанию почту читаем в скрытом окне, но не дольше 90 с: если там вход не подхватился или страница молчит, читаем из открытого окна почты
+    return collectOnce(s, useReuse, !useReuse && s.reuse ? Math.min(s.timeout || 60000, HIDDEN_MS) : 0).then(function (p) {
+      if (!useReuse && s.reuse && p && !p.ok && !p.stopped && (p.needLogin || p.timedOut || /нужен вход/.test(String(p.error || "")))) { jlog("сбор " + s.name + ": в скрытом окне " + (p.timedOut ? "страница не ответила" : "нужен вход") + ", читаю из окна почты"); return collectOnce(s, true); }
       return p;
     });
   }
-  function collectOnce(s, useReuse) {
+  function collectOnce(s, useReuse, limit) {
     return new Promise(function (res) {
       var done = false;
       function fin(p) { if (done) return; done = true; clearTimeout(t); delete pending[s.id]; res(p); }
       var t = setTimeout(function () {
         invoke("source_close", { label: "src-" + s.id + "-c" }).catch(function () {});
-        fin({ ok: false, error: "страница не ответила" });
-      }, s.timeout || 60000);
+        fin({ ok: false, timedOut: true, error: "страница не ответила" });
+      }, limit || s.timeout || 60000);
       pending[s.id] = fin;
       invoke("source_collect", { id: s.id, url: s.url, script: s.kind === "mail" ? "(" + MAIL_ANY.toString() + ")(" + MAIL_API.toString() + "," + MAIL.toString() + "," + JSON.stringify((function () { var m = window.__otvAll("mail") || {}; return Object.keys(m).filter(function (k) { return m[k] && s0(m[k].text).trim(); }); })()) + "," + JSON.stringify(mailOpts()) + ")" : s.cfg ? "(async function(){ var r = await (" + GENERIC.toString() + ")(" + JSON.stringify(s.cfg) + "); return { items: r, seen: document.querySelectorAll(" + JSON.stringify(s.cfg.item) + ").length }; })()" : "(" + s.fn.toString() + ")()", prefix: s.prefix, waitMs: s.wait, show: !!s.show, reuse: useReuse, visible: !!s.visible })
         .catch(function (e) { fin({ ok: false, error: String(e) }); });
@@ -1201,7 +1202,13 @@
     if (!send) throw new Error('не нашла кнопку отправки');
     send.click();
     const mark = norm(text).slice(0, 40);
-    for (let i = 0; i < 20; i++) { await sleep(800); if (!card.isConnected || (norm(card.innerText).includes(mark) && !card.querySelector('textarea'))) return { ok: true }; }
+    // успех: текст ответа появился в карточке, или площадка показала свою отметку об ответе (Яндекс прячет сам текст: «Ответ компании 22 октября 2026»)
+    for (let i = 0; i < 20; i++) {
+      await sleep(800);
+      if (!card.isConnected) return { ok: true };
+      const t = card.innerText, noField = !card.querySelector('textarea');
+      if (noField && (norm(t).includes(mark) || (cfg.answered && cfg.answered.test(t)))) return { ok: true };
+    }
     throw new Error('ответ отправлен, но на странице не появился. Проверьте вручную');
   }
   async function PUB_DOCTU(text, surname, review) {
@@ -1248,7 +1255,7 @@
     "Яндекс": function (r) {
       return { url: "https://yandex.ru/sprav/1022361531/p/edit/reviews/", prefix: "https://yandex.ru/sprav/1022361531/",
         script: "(" + PUB_CARD.toString() + ")(" + [r.answer, r.author, r.review].map(function (x) { return JSON.stringify(s0(x)); }).join(",") +
-          ", { card: '.Review', box: '.Review-BusinessResponse', send: /^(Отправить|Опубликовать)$/i, sendIcon: true })" };
+          ", { card: '.Review', box: '.Review-BusinessResponse', send: /^(Отправить|Опубликовать)$/i, sendIcon: true, answered: /Ответ компании\\s+\\d{1,2}\\s+[а-яё]+(\\s+\\d{4})?/i })" };
     },
     "2ГИС": function (r) {
       return { url: "https://account.2gis.com/orgs/4504136498428595/reviews", prefix: "https://account.2gis.com/orgs/4504136498428595/",
@@ -1347,7 +1354,9 @@
       if (/доп\.? ?проверк|^Черновик из базы/i.test(s0(a.note))) up.note = "";
       if (/^Карточка врача:\s*Карточка врача:/.test(s0(a.page))) up.page = s0(a.page).replace(/^(Карточка врача:\s*)+/, "Карточка врача: ");
       // публикация не прошла из-за ошибок, исправленных в 0.2.23: отправляем ещё раз сами
-      if (a.status === "approved" && /не нашла поле ответа на странице отзыва|не нашла этот отзыв в кабинете ДокТу/.test(s0(a.publishError))) {
+      // Яндекс опубликовал, а программа не увидела ответ (Яндекс прячет текст): проверяем ещё раз — уже отвеченный отзыв станет «опубликовано» без второго ответа
+      if (a.status === "approved" && (/не нашла поле ответа на странице отзыва|не нашла этот отзыв в кабинете ДокТу/.test(s0(a.publishError)) ||
+          (a.platform === "Яндекс" && /ответ отправлен, но на странице не появился/.test(s0(a.publishError))))) {
         up.publishRequested = nowIso(); up.publishError = "";
       }
       if (a.platform === "ПроДокторов" && !ans.trim() && a.status === "pending") {
@@ -1728,7 +1737,7 @@
       return Promise.all(list.map(function (s) {
         srcState[s.id] = Object.assign({}, srcState[s.id], { busy: true }); render();
         return collectOne(s).then(function (p) {
-          if (p.stopped) { srcState[s.id] = Object.assign({}, srcState[s.id], { busy: false }); render(); return { s: s, items: [], mail: [], stopped: true }; }
+          if (p.stopped) { jlog("сбор " + s.name + ": остановлен до конца чтения"); srcState[s.id] = Object.assign({}, srcState[s.id], { busy: false }); render(); return { s: s, items: [], mail: [], stopped: true }; }
           var st = { at: nowIso(), busy: false, okAt: (srcState[s.id] || {}).okAt || "" };
           if (p.ok && Array.isArray(p.items)) { st.ok = true; st.okAt = st.at; st.count = p.items.length; st.seen = p.seen == null ? null : p.seen; st.error = ""; st.needLogin = false; }
           else { st.ok = false; st.count = 0; st.down = /сбой у площадки/.test(String(p.error || "")); st.needLogin = !st.down && (!!p.needLogin || /нужен вход/.test(String(p.error || ""))); st.error = st.needLogin ? "нужен вход" : (p.error || "не удалось прочитать"); }
