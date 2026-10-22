@@ -1433,7 +1433,8 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
   function alFlags(r){
     var all = rows.length ? alLinked(r) : {ans: null, appeal: null};
     var ar = all.ans, ap = all.appeal;
-    var ansOn = !!r.markAnswered || (r.markAnswered !== false && !!r.answered) || (!!ar && statusOf(ar) === "published");
+    // «Ответ дан» можно отжать: ваше «нет» сильнее отметок; при сборе отметка сверяется с площадкой
+    var ansOn = r.markAnswered === false ? false : (!!r.markAnswered || !!r.answered || (!!ar && statusOf(ar) === "published"));
     var appOn = !!r.markAppealed || (r.markAppealed !== false && !!ap && statusOf(ap) === "published");
     return {ar: ar, ap: ap, ansOn: ansOn, appOn: appOn};
   }
@@ -1589,7 +1590,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     var alShow = alRows.filter(function(r){ return !s(r.offlineId) && alIsNeg(r); });
     var open = alShow.filter(function(r){ return r.status !== "done"; });
     var done = alShow.filter(function(r){ return r.status === "done"; });
-    var inc = alShow.filter(function(r){ return !!r.incident; });
+    var inc = alShow.filter(function(r){ return !!r.incident && r.status !== "done"; });   // в «Инцидентах» и в счётчике только открытые; закрытые — во «Все»
     if (alFilter === "open" || alFilter === "work") alFilter = "new";
     box.hidden = !alCollRef;
     if (alFilter === "closed") alFilter = "all";

@@ -332,11 +332,14 @@
     var body = t.replace(/^\s*(Здравствуйте|Добрый день)[^\n.!]*[.!]?/i, "");   // приветствие с именем автора не проверяем
     var re = /([А-ЯЁ][а-яё]{2,})\s+([А-ЯЁ][а-яё]*(?:вн|вич|ичн)[а-яё]{0,3})(?![а-яё])/g, m;
     while ((m = re.exec(body))) {
-      if (review.indexOf(stem(m[1], 4)) < 0 || review.indexOf(stem(m[2], 5)) < 0) why.push("в отзыве нет «" + m[1] + " " + m[2] + "»");
+      // «Анна Сергеевна» в ответе = «Иванчина А.С.» в отзыве (те же инициалы)
+      var ini = new RegExp("[а-яё]{3,}\\s+" + m[1].charAt(0).toLowerCase() + "\\.\\s?" + m[2].charAt(0).toLowerCase() + "\\.").test(s(it && it.review).toLowerCase().replace(/ё/g, "е"));
+      if (!ini && (review.indexOf(stem(m[1], 4)) < 0 || review.indexOf(stem(m[2], 5)) < 0)) why.push("в отзыве нет «" + m[1] + " " + m[2] + "»");
     }
     var re2 = /([А-ЯЁ][а-яё]{3,})\s+[А-ЯЁ]\.\s?[А-ЯЁ]\./g;
     while ((m = re2.exec(body))) { if (review.indexOf(stem(m[1], 5)) < 0) why.push("в отзыве нет «" + m[1] + "»"); }
-    if (tone === "negative" && THANKS_ONLY.test(body)) why.push("на жалобу ответ как на благодарность");
+    if (tone === "negative" && THANKS_ONLY.test(body) && !/спасибо за (обратную связь|добрые слова о)/i.test(body)) why.push("на жалобу ответ как на благодарность");
+    if (tone === "negative" && /желаем (вам )?здоровья|рады, что вам|рады, что ваш/i.test(body)) why.push("на жалобу ответ с позитивом («рады», «желаем здоровья»)");
     if (tone === "positive" && COMPLAINT_ONLY.test(body)) why.push("на благодарность ответ как на жалобу");
     return { ok: !why.length, why: why };
   }

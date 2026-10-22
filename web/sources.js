@@ -956,6 +956,7 @@
             answered: !!it.answered, updatedAt: nowIso()
           };
           if (String(it.reply || "").trim().length >= 10) base.reply = String(it.reply).trim().slice(0, 5000);   // настоящий ответ больницы с площадки
+          if (it.answered === false) base.reply = "";   // площадка говорит, что ответа нет (например, удалили): старый ответ не держим
           if (it.dateApprox) base.dateApprox = true;
           if (snap.exists) {
             // площадка иногда отдаёт обрезанное начало: полный текст, прочитанный раньше, не заменяем его началом
@@ -973,7 +974,17 @@
         }).then(function () {
           if (!(it.low || strongNeg(it.text)) || it.published === false) return;
           return getDoc("alerts", it.id).then(function (a) {
-            if (a.exists) return db.collection("alerts").doc(it.id).update({ answered: !!it.answered });
+            if (a.exists) {
+              // состояние «ответ дан» берём с площадки при каждом сборе, в обе стороны: изменилось на площадке — меняется и отметка
+              var was = !!(a.data() || {}).answered, up = { answered: !!it.answered };
+              if (was !== !!it.answered) {
+                up.markAnswered = !!it.answered; up.statusAt = nowIso();
+                var ad = a.data() || {};
+                if (was && !it.answered && ad.status === "done" && !ad.markAppealed) up.status = "new";   // ответ удалили: тревога снова открыта
+                jlog("тревога " + it.id + ": на площадке ответ " + (it.answered ? "появился" : "пропал"));
+              }
+              return db.collection("alerts").doc(it.id).update(up);
+            }
             alerts++;
             return db.collection("alerts").doc(it.id).set({
               platform: it.platform, page: it.page || "", date: it.date, rating: it.rating, threshold: it.threshold,
@@ -1097,10 +1108,10 @@
             return db.collection("answers").doc(ex).update({ status: "published", publishedAt: nowIso(), publishedBy: "platform", decidedAt: nowIso() });
           }
           // ПроДокторов точно говорит, есть ли ответ: в программе «опубликовано», а на площадке ответа нет, значит, возвращаем в «к ответу»
-          if (!it.answered && it.platform === "ПроДокторов" && a && a.kind !== "appeal" && a.status === "published" && Date.now() - Date.parse(s0(a.publishedAt) || 0) > 2 * 3600e3) {
+          if (!it.answered && /^(ПроДокторов|Яндекс|2ГИС)$/.test(it.platform) && a && a.kind !== "appeal" && a.status === "published" && Date.now() - Date.parse(s0(a.publishedAt) || 0) > 2 * 3600e3) {
             made++;
-            jlog("ответ: " + ex + " отмечен опубликованным, а на ПроДокторов ответа нет: вернула в «Новые»");
-            return db.collection("answers").doc(ex).update({ status: "pending", note: "На ПроДокторов ответа нет: проверьте и опубликуйте", publishRequested: "", publishError: "" });
+            jlog("ответ: " + ex + " отмечен опубликованным, а на площадке " + it.platform + " ответа нет: вернула в «Новые»");
+            return db.collection("answers").doc(ex).update({ status: "pending", note: "На площадке " + it.platform + " ответа нет: проверьте и опубликуйте", publishRequested: "", publishError: "" });
           }
           return;
         }
@@ -1183,14 +1194,23 @@
     }
     if (!card) throw new Error('не нашла этот отзыв на странице');
     const replyBtn = el => [...el.querySelectorAll('button,[role=button],a,span')].find(e => e.children.length < 3 && /^Ответить$/i.test((e.textContent || '').trim()));
-    for (let i = 0; i < 6 && card.parentElement && !card.querySelector('textarea') && !replyBtn(card); i++) card = card.parentElement;
+    // уже отвеченный отзыв не трогаем
     if (cfg.answered && cfg.answered.test(card.innerText)) return { already: true };
+    // поле ответа ищем только внутри этого отзыва: подниматься выше можно, пока в блоке нет других отзывов
+    const own = card;
+    const others = el => [...el.querySelectorAll(cfg.card)].some(o => o !== own && !own.contains(o) && !o.contains(own));
+    for (let i = 0; i < 6 && card.parentElement && !card.querySelector('textarea') && !replyBtn(card) && !others(card.parentElement); i++) card = card.parentElement;
+    if (cfg.answered && cfg.answered.test(card.innerText)) return { already: true };
+    if (!card.querySelector('textarea') && !replyBtn(card)) throw new Error('у этого отзыва нет кнопки «Ответить»: возможно, ответ уже есть или на модерации. Проверьте вручную');
     let ta = card.querySelector('textarea');
     if (!ta) {
       const b = replyBtn(card);
       if (b) { b.click(); for (let i = 0; i < 10 && !(ta = card.querySelector('textarea')); i++) await sleep(400); }
     }
     if (!ta) throw new Error('не нашла поле ответа');
+    // поле ответа должно принадлежать именно этому отзыву
+    const holder = ta.closest(cfg.card);
+    if ((holder && holder !== own && !own.contains(holder) && !holder.contains(own)) || (head.length >= 10 && !norm(card.innerText).includes(head))) throw new Error('поле ответа относится к другому отзыву. Опубликуйте вручную');
     const win = ta.ownerDocument.defaultView;
     const setter = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value').set;
     ta.focus(); setter.call(ta, text); ta.dispatchEvent(new win.Event('input', { bubbles: true })); ta.dispatchEvent(new win.Event('change', { bubbles: true }));
@@ -1301,6 +1321,20 @@
       var t = srcState[x.id]; return { name: x.name, ok: !!t.ok, okAt: t.okAt || (t.ok ? t.at : ""), needLogin: !!t.needLogin, down: !!t.down };
     });
   };
+  // перед публикацией: ответ должен относиться именно к этому отзыву (имя в приветствии — автора, люди в тексте — из отзыва, тон — по отзыву)
+  function pubGuard(r) {
+    var reg = (window.__otvAll("registry") || {})[r.id] || {};
+    var author = s0(reg.author || r.author), review = s0(reg.fullText || reg.text || r.review), ans = s0(r.answer);
+    var nm = (ans.match(/^\s*Здравствуйте,\s*([А-ЯЁA-Z][а-яёa-z]+)/) || [])[1];
+    var low = function (x) { return x.toLowerCase().replace(/ё/g, "е"); };
+    if (nm && low(author).indexOf(low(nm).slice(0, 3)) < 0 && low(review).indexOf(low(nm).slice(0, 4)) < 0) return "в ответе обращение «" + nm + "», а автор отзыва «" + (author || "без имени") + "». Ответ не к этому отзыву, не публикую";
+    var rating = reg.rating == null ? r.rating : reg.rating;
+    var tone = rating != null && rating !== "" && +rating < 4 ? "negative" : (rating != null && rating !== "" ? "positive" : "");
+    var g = window.__otvGen && window.__otvGen.check ? window.__otvGen.check(ans, { review: review }, tone) : { ok: true };
+    if (!g.ok) return "ответ не подходит к отзыву: " + g.why.join("; ") + ". Не публикую";
+    return "";
+  }
+  window.__otvPubGuard = pubGuard;   // для проверок
   function runPub() {
     if (!db) return;
     if (pubBusy) { pubAgain = true; return; }
@@ -1313,7 +1347,8 @@
     window.__otvBar.show("Публикую ответы: " + todo.length + "…", "", []);
     todo.reduce(function (p, r) {
       return p.then(function () {
-        return publishOne(r).catch(function (e) { return { ok: false, error: String(e && e.message || e) }; }).then(function (res) {
+        var bad0 = pubGuard(r);
+        return (bad0 ? Promise.resolve({ ok: false, error: bad0 }) : publishOne(r)).catch(function (e) { return { ok: false, error: String(e && e.message || e) }; }).then(function (res) {
           var ref = db.collection("answers").doc(r.id);
           jlog("публикация " + r.platform + " " + r.id + ": " + (res.ok && res.items && (res.items.ok || res.items.already) ? (res.items.already ? "ответ уже был" : "опубликовано") : "НЕ вышло: " + (res.needLogin ? "нужен вход" : (res.error || (res.items && res.items.error) || "?")) + (res.url ? " · " + String(res.url).split("?")[0] : "")));
           if (res.ok && res.items && (res.items.ok || res.items.already)) {

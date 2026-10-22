@@ -19,7 +19,7 @@ function run(name, tableRows, registry, mail, expect, o){
     positive:tableRows.map((r,i)=>({platform:r[0],num:String(r[1]),date:r[2],dept:r[3]||'',doctor:'',text:head(r[4]),full:r[4]})),negative:[]};
   const bodies=[]; const invoke=(cmd,args)=>{ const b=JSON.parse(args.body); calls.push(b.action); bodies.push(b);
     if(b.action==='state') return Promise.resolve(JSON.stringify({ok:true,version:3,runner:(o.v?0:1),state}));
-    if(b.action==='refs') return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),refs:{departments:o.deps||[],exceptions:[],staff:o.staff||[],categories:['ГКБ 24','Хирургия','Приёмное отделение','Терапия','Гинекология']}}));
+    if(b.action==='refs') return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),refs:{departments:o.deps||[],exceptions:[],staff:o.staff||[],categories:(o.cats||['ГКБ 24','Хирургия','Приёмное отделение','Терапия','Гинекология'])}}));
     if(b.action==='add'){ const refs={}; let n=tableRows.filter(r=>r[0]==='Сайт').length; (b.negative||[]).forEach((x,i)=>{ const n=state.negative.length+1; state.negative.push({n,platform:x.platform,date:x.date,text:head(x.text),answer:head(x.answer),full:x.text,fullAnswer:x.answer,link:x.link}); refs[x.id]='Негатив · блок '+n; }); (b.positive||[]).forEach(p=>{ const k=Math.max(0,...tableRows.filter(r=>r[0]===p.platform).map(r=>+r[1]))+1; refs[p.id]='Позитив · '+p.platform+' №'+k; tableRows.push([p.platform,k,p.date,p.dept,p.text]); state.positive.push({platform:p.platform,num:String(k),date:p.date,dept:p.dept,doctor:'',text:head(p.text),full:p.text}); }); calls.push({add:b.positive.map(p=>p.id+':'+p.dept)}); return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),refs,state})); }
     if(b.action==='export'){ if(o.exportFail) return Promise.resolve(JSON.stringify({ok:false,error:'нет доступа к файлу'})); return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),files:[{name:'Позитив.xlsx',data:'AA=='},{name:'Негатив.docx',data:'AA=='}]})); }
     if(b.action==='newweek'){ const e=new Date(state.end+'T00:00:00Z'); const a=new Date(e.getTime()+864e5), z=new Date(e.getTime()+7*864e5); const f=d=>d.toISOString().slice(0,10), dm=d=>f(d).slice(8,10)+'.'+f(d).slice(5,7);
@@ -221,5 +221,24 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
  all&=await run('29. Google без текста: пятёрка в «Позитив», единица в «Негатив», текст «—»', [], regE, {}, {}, {today:'2026-10-21T14:00:00', state0:W,
    inspect:(B)=>{ const a=B.find(b=>b.action==='add'); if(!a) return 'ничего не внесено'; const p=a.positive.find(x=>x.id==='google-e5'), n=a.negative.find(x=>x.id==='google-e1');
      if(!p||p.text!=='—') return 'пятёрка без текста не внесена: '+JSON.stringify(a.positive); if(!n||n.text!=='—') return 'единица без текста не внесена'; }});
+
+ // отделение врача — по списку сотрудников, даже если пациентка пишет «отделение гинекологии» (Трифонова Н.В. — СКП)
+ const tText='Я была направлена на операцию в ГКБ №24 в отделение гинекологии, стационар 1 дня. Очень понравился консультационный прием, а потом и сделанная операция Трифоновой Наталией Владимировной. Большое спасибо всей команде гинекологического отделения.';
+ const regT={'pd-tri':Object.assign(R('ПроДокторов','2026-10-16','','Ольга',tText),{rating:5,arrivedAt:A2('2026-10-16')})};
+ all&=await run('30. отделение врача по списку сотрудников: Трифонова — СКП, а не гинекология из текста', [], regT, {}, {}, {today:'2026-10-21T14:00:00', state0:W,
+   cats:['ГКБ 24','Гинекология','СКП'], staff:[['Трифонова Наталия Владимировна','врач-акушер-гинеколог','Стационар кратковременного пребывания']], deps:[['Стационар кратковременного пребывания','СКП','',''],['Гинекологическое отделение','Гинекология','','']],
+   inspect:(B)=>{ const a=B.find(b=>b.action==='add'); const p=a&&a.positive.find(x=>x.id==='pd-tri'); if(!p) return 'не внесено'; if(p.dept!=='СКП') return 'отделение '+p.dept; }});
+
+ // смешанный отзыв: высокая оценка, благодарность врачу и жалоба — не молча в «Позитив», а «Нужна проверка»
+ const mText='Проходил обследования в терапии. Врачи грамотные внимательные и понимающие. Отдельная благодарность Иванчиной А.С. Но вот во время диализа в реанимации столкнулся с гражданином который находился без маски и не менял перчатки. В больнице все отлично но вот такой инцидент.';
+ const regM={'ya-mix':Object.assign(R('Яндекс','2026-10-20','','pavel s.',mText),{rating:5,arrivedAt:A2('2026-10-20')})};
+ all&=await run('31. смешанный отзыв с высокой оценкой: «Нужна проверка», а не «Позитив»', [], regM, {}, {}, {today:'2026-10-21T14:00:00', state0:W,
+   inspect:(B)=>{ const a=B.find(b=>b.action==='add'); if(a&&a.positive.find(x=>x.id==='ya-mix')) return 'ушёл в «Позитив» без проверки'; }});
+
+ // «мне понравились» — это не «не понравились»
+ const okText='Обратился к Виктору Сергеевичу и остался очень доволен приемом. Больше всего на приеме мне понравились его высокий профессионализм и вежливое отношение.';
+ const regOk={'pd-ok':Object.assign(R('ПроДокторов','2026-10-19','','Игорь',okText),{rating:5,arrivedAt:A2('2026-10-19')})};
+ all&=await run('32. «мне понравились» не считается жалобой: благодарность идёт в «Позитив»', [], regOk, {}, {}, {today:'2026-10-21T14:00:00', state0:W,
+   inspect:(B)=>{ const a=B.find(b=>b.action==='add'); if(!a||!a.positive.find(x=>x.id==='pd-ok')) return 'благодарность не внесена'; }});
  console.log(all?'ALL OK':'SOME FAILED');
 })();
