@@ -1,0 +1,15 @@
+{
+  "version": "0.2.50",
+  "notes": "Ответошная 0.2.50",
+  "pub_date": "2026-10-22T06:22:36Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQ1o0K2F1KzYyN1MxWHVFT00rWm5JcGN2RWE4RVp1K0xDUnRyNzJ6MnRaZkg1UnpWMmcyT1I5by9lUWwyTDdsTkNZTUZsUDlhZ0JjN25LTjFwUTYrVkRrTjJKTHIvaUE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyNjUwMTM2CWZpbGU60J7RgtCy0LXRgtC+0YjQvdCw0Y8uYXBwLnRhci5negl2ZXJzaW9uOjAuMi41MApxSDgzVmFJM2VwYkVJNkpxYUM0R0hzRW5HcTYwTDM1UHp1anZKMzA2WklyblFWWVRRa2VUVllldStyVFEvTUdJZ2kzWXNPSk9jWWZXQ3pRZVhPRTJBZz09Cg==",
+      "url": "https://raw.githubusercontent.com/hellatarantella/otvetoshnaya-releases/main/otvetoshnaya_0.2.50_mac.app.tar.gz"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRVGoxRkZGdjRUQ1pXa3E0Zjh5cWd0WG9UNTRKeUZwelRBTTltWm1JdEQ5Z05mTkRTRFFDN2hiZHNxQisvajJNTGVzUHMxU05HV3l4ekpzbEl0Y0V2WitpSmdjeDdzZEFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyNjUwMDI3CWZpbGU60J7RgtCy0LXRgtC+0YjQvdCw0Y9fMC4yLjUwX3g2NC1zZXR1cC5leGUJdmVyc2lvbjowLjIuNTAKV2tCZlFzaVNUMDVQM3hRcUVxaUk5TXB4eXd4SkVrenoyZTY0di9GTjFFMXB0aGI2S0xhUTlNb1I5c1lTS0ZydmVKUE5TM3plU0hIK2F0ZVpVT2Z1QUE9PQo=",
+      "url": "https://raw.githubusercontent.com/hellatarantella/otvetoshnaya-releases/main/otvetoshnaya_0.2.50_windows_setup.exe"
+    }
+  }
+}
