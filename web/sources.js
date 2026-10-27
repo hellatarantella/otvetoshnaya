@@ -915,11 +915,21 @@
   });
 
   var HIDDEN_MS = 90000;   // сколько ждать скрытое окно по расписанию
+  // окно почты (и Google) при первом утреннем сборе обновляет вход и перезагружает страницу — чтение теряется.
+  // Поэтому в окне ждём не дольше REUSE_MS и повторяем один раз: так же, как вы перезапускали сбор вручную (журнал 23, 26, 27.10)
+  var REUSE_MS = 60000;
+  function reuseRead(s) {
+    return collectOnce(s, true, Math.min(s.timeout || 60000, REUSE_MS)).then(function (p) {
+      if (p && p.timedOut && !p.stopped && !stopping) { jlog("сбор " + s.name + ": окно не ответило (обновляло вход), читаю ещё раз"); return collectOnce(s, true, Math.min(s.timeout || 60000, REUSE_MS)); }
+      return p;
+    });
+  }
   function collectOne(s, forceReuse) {
     var useReuse = !!s.reuse && (!autoRun || !!forceReuse);
+    if (useReuse) return reuseRead(s);
     // по расписанию почту читаем в скрытом окне, но не дольше 90 с: если там вход не подхватился или страница молчит, читаем из открытого окна почты
-    return collectOnce(s, useReuse, !useReuse && s.reuse ? Math.min(s.timeout || 60000, HIDDEN_MS) : 0).then(function (p) {
-      if (!useReuse && s.reuse && p && !p.ok && !p.stopped && (p.needLogin || p.timedOut || /нужен вход/.test(String(p.error || "")))) { jlog("сбор " + s.name + ": в скрытом окне " + (p.timedOut ? "страница не ответила" : "нужен вход") + ", читаю из окна почты"); return collectOnce(s, true); }
+    return collectOnce(s, false, s.reuse ? Math.min(s.timeout || 60000, HIDDEN_MS) : 0).then(function (p) {
+      if (s.reuse && p && !p.ok && !p.stopped && (p.needLogin || p.timedOut || /нужен вход/.test(String(p.error || "")))) { jlog("сбор " + s.name + ": в скрытом окне " + (p.timedOut ? "страница не ответила" : "нужен вход") + ", читаю из окна почты"); return reuseRead(s); }
       return p;
     });
   }
