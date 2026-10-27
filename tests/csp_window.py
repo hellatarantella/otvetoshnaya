@@ -49,7 +49,13 @@ async def main():
         }""", [FR, FB])
         await pg.evaluate("window.__otvShowTab('deckw')"); await pg.wait_for_timeout(500)
         await pg.evaluate("window.__otvDeckUi.rebuild()"); await pg.wait_for_timeout(1500)
-        if await pg.locator("text=Выбрать отзыв недели").count(): await pg.click("text=Выбрать отзыв недели"); await pg.wait_for_timeout(2500)
+        # подтверждаем всё, что просит программа, как сделала бы сотрудница
+        for _ in range(6):
+            done = True
+            for label in ["Выбрать отзыв недели", "Подтвердить цитату", "Подтвердить голоса"]:
+                if await pg.locator("text=" + label).count(): await pg.locator("text=" + label).first.click(); await pg.wait_for_timeout(1200); done = False
+            if done: break
+        await pg.wait_for_timeout(2000)
         st = await pg.evaluate("""() => {
           const s = window.__otvDeckUi._state(), first = document.querySelector('.deck-slide-in section#week img');
           const fr = document.querySelector('.deck-slide'), inner = document.querySelector('.deck-slide-in');
