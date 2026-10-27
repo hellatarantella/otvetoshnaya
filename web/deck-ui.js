@@ -4,7 +4,7 @@
 (function () {
   "use strict";
   var DK = function () { return window.__otvDeck; };
-  var db = null, root = null, weekSel = null, cur = null, res = null, fonts = null, photos = {}, picks = {}, snaps = {}, busy = false, fontFaces = false;
+  var openReview = false, db = null, root = null, weekSel = null, cur = null, res = null, fonts = null, photos = {}, picks = {}, snaps = {}, busy = false, fontFaces = false;
   function s(x) { return x == null ? "" : String(x); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function btn(text, cls, fn) { var b = el("button", "btn" + (cls ? " " + cls : ""), text); b.type = "button"; b.addEventListener("click", fn); return b; }
@@ -66,7 +66,8 @@
     weekSel = el("select", "btn"); weekSel.setAttribute("aria-label", "Неделя");
     ws.forEach(function (w) { var o = el("option", null, w.label); o.value = w.key; if (cur && w.key === cur.key) o.selected = true; weekSel.append(o); });
     weekSel.addEventListener("change", function () { cur = ws.filter(function (w) { return w.key === weekSel.value; })[0]; rebuild(); });
-    acts.append(weekSel, btn("Перечитать отчёт", "", function () { var r = window.__otvReports; (r && r.refresh ? r.refresh() : Promise.resolve()).then(rebuild, rebuild); }));
+    // «Обновить презентацию»: перечитать отчёт из Google и пересобрать слайды со всеми текущими решениями и фото
+    acts.append(weekSel, btn("Обновить презентацию", "primary", function () { var r = window.__otvReports; (r && r.refresh ? r.refresh() : Promise.resolve()).then(rebuild, rebuild); }));
     top.append(acts); root.append(top);
     if (!res) { root.append(el("p", "ctl-st err", "Не удалось собрать презентацию. Журнал записан.")); return; }
 
@@ -120,14 +121,17 @@
       if (kind === "face") row.append(btn("Фото нет: перенести в строку «Ещё…»", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick({ gold: g }); }));
     } else if (n.kind === "quote") {
       var sel = el("select", "btn"); sel.setAttribute("aria-label", "Цитата");
-      (n.options || []).forEach(function (q) { sel.append(el("option", null, q)); });
-      var inp = el("input"); inp.type = "text"; inp.className = "deck-in"; inp.value = (n.options || [])[0] || ""; inp.placeholder = "Цитата, сокращённая без изменения смысла";
-      sel.addEventListener("change", function () { inp.value = sel.value; });
-      row.append(sel, inp, btn("Подтвердить цитату", "primary", function () { var v = inp.value.trim(); if (!v) return; var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q }); }));
+      var opts = (n.options || []).slice(); if (n.current && opts.indexOf(n.current) < 0) opts.unshift(n.current);
+      opts.forEach(function (q) { var o = el("option", null, q); if (q === n.current) o.selected = true; sel.append(o); });
+      var inp = el("input"); inp.type = "text"; inp.className = "deck-in"; inp.value = n.current || opts[0] || ""; inp.placeholder = "Цитата, сокращённая без изменения смысла";
+      // объём: все карточки в одной полосе знаков — счётчик подсказывает
+      var cnt = el("span", "hint"), upd = function () { var L = inp.value.trim().length, b = n.band; cnt.textContent = L + " знаков" + (b ? (L < b[0] || L > b[1] ? " — нужно " + b[0] + "–" + b[1] : " ✓") : ""); cnt.className = "hint" + (b && (L < b[0] || L > b[1]) ? " bad" : ""); };
+      sel.addEventListener("change", function () { inp.value = sel.value; upd(); }); inp.addEventListener("input", upd); upd();
+      row.append(sel, inp, cnt, btn("Подтвердить цитату", "primary", function () { var v = inp.value.trim(); if (!v) return; var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q }); }));
     } else if (n.kind === "review") {
       var list = el("div", "deck-opts"), chosen = null;
       (n.options || []).forEach(function (o, i) {
-        var lab = el("label", "deck-opt"), rb = el("input"); rb.type = "radio"; rb.name = "rv"; rb.value = o.key; if (!i) { rb.checked = true; chosen = o; }
+        var lab = el("label", "deck-opt"), rb = el("input"); rb.type = "radio"; rb.name = "rv" + (n.current ? "c" : ""); rb.value = o.key; if (n.current ? o.key === n.current : !i) { rb.checked = true; chosen = o; }
         rb.addEventListener("change", function () { chosen = o; q.value = o.quote; });
         lab.append(rb, el("b", null, " " + o.short + " · " + o.platform + " · " + s(o.date)), el("span", null, " «" + o.quote + "»"));
         list.append(lab);
@@ -138,7 +142,8 @@
       var sels = [0, 1, 2].map(function (i) {
         var se = el("select", "btn"); se.setAttribute("aria-label", "Голос " + (i + 1));
         se.append(el("option", null, "— не ставить —"));
-        (n.options || []).forEach(function (o, k) { var op = el("option", null, o.short + ": «" + o.quote + "»"); op.value = String(k); if (k === i) op.selected = true; se.append(op); });
+        var curShort = n.current ? n.current[i] : null;
+        (n.options || []).forEach(function (o, k) { var op = el("option", null, o.short + ": «" + o.quote + "»"); op.value = String(k); if (curShort ? o.short === curShort : k === i) op.selected = true; se.append(op); });
         return se;
       });
       sels.forEach(function (x) { row.append(x); });
@@ -151,8 +156,12 @@
   }
   // всегда доступно: заменить фото и вернуть выбор
   function extraRow() {
-    var d = el("details", "deck-extra"); d.append(el("summary", null, "Заменить фото или пересмотреть выбор"));
+    var d = el("details", "deck-extra"); d.append(el("summary", null, "Пересмотреть выбор: цитаты, отзыв недели, голоса, фото"));
+    d.open = !!openReview; d.addEventListener("toggle", function () { openReview = d.open; });
     var D = res.D;
+    // всё, что уже выбрано, можно поменять: варианты показаны с текущим выбором
+    (res.choices || []).forEach(function (c) { d.append(needRow(c)); });
+    d.append(el("h3", null, "Фото"));
     (D.heroes.cards || []).forEach(function (c) { d.append(el("p", null, "Фото: " + c.short), photoPicker(fioOf(c.short), "face")); });
     if (D.review) d.append(el("p", null, "Фото «Отзыва недели»: " + D.review.short), photoPicker(fioOf(D.review.short), "tall"));
     [["Обложка", "cover"], ["Закрывающий слайд", "end"]].concat((D.where.slots || []).map(function (nm) { return [nm, "dept"]; })).forEach(function (x) { d.append(el("p", null, x[1] === "dept" ? "Фото отделения: " + x[0] : x[0]), photoPicker(x[0], x[1])); });
@@ -258,7 +267,9 @@
       var dis = blocked || issues.length > 0;
       buttons.forEach(function (b) { b.disabled = dis; b.title = dis ? "Сначала подтвердите всё в «Нужно ваше решение» и уберите замечания по вёрстке" : ""; });
     }
-    Promise.all([].concat.apply([], all.map(function (sec) { return [].map.call(sec.querySelectorAll("img"), function (im) { return im.complete ? 0 : new Promise(function (r) { im.onload = im.onerror = r; }); }); }))).then(function () { return document.fonts.ready; }).then(check);
+    // подгонка — на неуменьшенной копии (в превью слайд уменьшен), результат переносим в превью
+    var fitAll = function () { all.forEach(function (sec) { if (sec.id !== "where") return; var tmp = el("div", "deck-measure"); document.body.append(tmp); var c = cloneSec(sec); tmp.append(c); DK().fitSlide(c); setHtml(sec, c.innerHTML); tmp.remove(); }); };
+    Promise.all([].concat.apply([], all.map(function (sec) { return [].map.call(sec.querySelectorAll("img"), function (im) { return im.complete ? 0 : new Promise(function (r) { im.onload = im.onerror = r; }); }); }))).then(function () { return document.fonts.ready; }).then(function () { fitAll(); check(); });
   }
   function sig(h) { var x = 0; for (var i = 0; i < h.length; i++) x = (x * 31 + h.charCodeAt(i)) | 0; return x; }
   function savePickQuiet(patch) { if (!cur) return; var id = cur.data.start; picks[id] = Object.assign({}, picks[id] || {}, patch); db.collection("deckPicks").doc(id).set(picks[id]).catch(function () {}); }

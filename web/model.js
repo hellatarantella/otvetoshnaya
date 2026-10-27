@@ -82,6 +82,8 @@
     var sys = "Ты пишешь ответы на отзывы и вопросы пациентов от имени администрации ГКБ №24 (24 Московская больница).\n" +
       "Пиши только основной текст ответа по-русски: 1–4 предложения, без приветствия и без подписи — их добавит программа. Только текст ответа, без пояснений и кавычек.\n\n" +
       styleRules() + "\n\n" + BASE_RULES + COMMON + situationRules(mixedOf(req, ex.tone), ex.type);
+    var bans = window.__otvLearn ? window.__otvLearn.active().slice(0, 10) : [];
+    if (bans.length) sys += "\n\nНЕ ПИШИ фразы, которые сотрудница регулярно убирает из ответов: " + bans.map(function (r) { return "«" + r.phrase + "»"; }).join("; ") + ".";
     if (ex.list.length) {
       sys += "\n\nОБРАЗЦЫ, КОТОРЫЕ СОТРУДНИЦА СОГЛАСОВАЛА (повторяй стиль, длину и тон, но не копируй дословно):\n" +
         ex.list.map(function (e) { return (e.situation ? "Отзыв: «" + e.situation.slice(0, 300) + "»\nОтвет: " : "— ") + e.body; }).join("\n");

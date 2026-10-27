@@ -51,6 +51,18 @@ async def main():
           return { need: st.res.need.map(x => x.text), pdfOn: !bs.find(b => b.textContent === 'Скачать PDF').disabled, layout: document.querySelector('.deck-ui').innerText.includes('Вёрстка проверена'), slides: document.querySelectorAll('.deck-slide').length }; }""")
         ok2 = not s2['need'] and s2['pdfOn'] and s2['layout'] and s2['slides'] == 7
         print(('OK  ' if ok2 else 'FAIL') + ' после подтверждений: 7 слайдов, вёрстка проверена, выгрузка открыта', s2 if not ok2 else '')
+        # «Пересмотреть выбор»: цитату карточки можно поменять в любой момент, слайд пересобирается
+        rv = await pg.evaluate("""async () => {
+          const d = [...document.querySelectorAll('.deck-extra')].find(x => /Пересмотреть выбор/.test(x.textContent)); d.open = true;
+          const row = [...d.querySelectorAll('.deck-need')].find(r => /Цитата для карточки Белкина/.test(r.textContent));
+          const inp = row.querySelector('input.deck-in'); inp.value = 'Анна Петровна внимательный и чуткий врач, всё объяснила спокойно и подробно'; inp.dispatchEvent(new Event('input'));
+          [...row.querySelectorAll('button')].find(b => /Подтвердить цитату/.test(b.textContent)).click();
+          await new Promise(r => setTimeout(r, 2500));
+          const st = window.__otvDeckUi._state();
+          return { quote: st.res.D.heroes.cards[0].quote, onSlide: (document.querySelector('.deck-slide-in section#heroes') || {}).textContent || '', hasRefresh: [...document.querySelectorAll('.deck-ui button')].some(b => b.textContent === 'Обновить презентацию') };
+        }""")
+        ok6 = rv['quote'].startswith('Анна Петровна внимательный') and 'Анна Петровна внимательный' in rv['onSlide'] and rv['hasRefresh']
+        print(('OK  ' if ok6 else 'FAIL') + ' «Пересмотреть выбор» меняет цитату, слайд обновляется; есть «Обновить презентацию»', rv if not ok6 else '')
         # фото обложки постоянное, фото отделения — по названию отделения и переходит на следующую неделю
         s3 = await pg.evaluate("""async () => {
           const db = await window.__otvRt.use('db');
@@ -75,5 +87,5 @@ async def main():
         print(('OK  ' if ok3 else 'FAIL') + ' PDF (7 страниц) и PPTX (7 слайдов, шрифт Cera Round, текст редактируемый)', (pdf[:8], len(slides)) if not ok3 else '')
         ok4 = not errs
         print(('OK  ' if ok4 else 'FAIL') + ' без ошибок на странице', errs[:3] if errs else '')
-        await b.close(); print('ALL OK' if ok1 and ok2 and ok3 and ok4 and ok5 else 'SOME FAILED')
+        await b.close(); print('ALL OK' if ok1 and ok2 and ok3 and ok4 and ok5 and ok6 else 'SOME FAILED')
 asyncio.run(main())

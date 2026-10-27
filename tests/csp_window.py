@@ -53,7 +53,8 @@ async def main():
         for _ in range(6):
             done = True
             for label in ["Выбрать отзыв недели", "Подтвердить цитату", "Подтвердить голоса"]:
-                if await pg.locator("text=" + label).count(): await pg.locator("text=" + label).first.click(); await pg.wait_for_timeout(1200); done = False
+                loc = pg.locator("text=" + label + " >> visible=true")
+                if await loc.count(): await loc.first.click(); await pg.wait_for_timeout(1200); done = False
             if done: break
         await pg.wait_for_timeout(2000)
         st = await pg.evaluate("""() => {

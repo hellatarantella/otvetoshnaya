@@ -13,7 +13,10 @@
   /* ---------- русский текст ---------- */
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   // неразрывный пробел после коротких слов и «№»: без висящих предлогов
-  function nb(s) { var x = esc(s), re = /(^|[\s(«„;])((?:[а-яёА-ЯЁ]{1,2}|№|без|для|над|под|при|про|что|или))\s+/g, f = function (m, a, w) { return a + w + "&#160;"; }; return x.replace(re, f).replace(re, f); }
+  // без висящих в конце строки предлогов и союзов: после них неразрывный пробел (правило: нигде в презентации)
+  var SHORTW = "(?:[а-яёА-ЯЁ]{1,2}|№|без|для|над|под|при|про|обо|ото|изо|что|или|как|если|чтобы|когда|через|перед|после|между|около|вокруг|среди|также|тоже|либо|зато|хотя|пока|ради|кроме|вместо|благодаря)";
+  function nb(s) { var x = esc(s), re = new RegExp("(^|[\\s(«„;\u00a0])(" + SHORTW + ")\\s+", "gi"), f = function (m, a, w) { return a + w + "&#160;"; }; return x.replace(re, f).replace(re, f).replace(/([А-ЯЁ][а-яё-]+)\s+([А-ЯЁ]\.\s?[А-ЯЁ]\.)/g, "$1&#160;$2"); }
+  function nbName(s) { return esc(s).replace(/\s+/g, "&#160;"); }
   // число и слово: 1 отзыв, 2 отзыва, 5 отзывов
   function plural(n, one, few, many) { n = Math.abs(n) % 100; var d = n % 10; if (n > 10 && n < 20) return many; if (d === 1) return one; if (d >= 2 && d <= 4) return few; return many; }
   var W_POS = ["позитивный отзыв", "позитивных отзыва", "позитивных отзывов"];
@@ -127,7 +130,7 @@
     }
     // 3–4 карточки: карточки в ряд, остальные — строкой во всю ширину под ними
     var strip = h.rest.length ? '<div style="grid-column:1 / -1;display:flex;flex-direction:column;gap:6px;background:' + C.ice + ';border-radius:20px;padding:16px 28px">' +
-      '<p style="font-size:24px;line-height:1.35;color:' + C.ink + '"><b style="color:' + C.blue + '">' + nb(h.restTitle) + ':</b> ' + h.rest.map(function (r) { return esc(r.short); }).join(", ") + '</p></div>' : '';
+      '<p style="font-size:24px;line-height:1.35;color:' + C.ink + '"><b style="color:' + C.blue + '">' + nb(h.restTitle) + ':</b> ' + h.rest.map(function (r) { return nbName(r.short); }).join(", ") + '</p></div>' : '';
     return '<section id="heroes" style="' + SEC + 'padding:204px 80px 96px 80px;display:grid;grid-template-columns:repeat(' + k + ', 1fr);grid-template-rows:1fr auto;gap:20px 24px">' + frame("heroes", "Лидеры по благодарностям за неделю", n, D.foot) +
       h.cards.map(function (c) { return goldCard(c, true); }).join("") + strip + '</section>';
   }
@@ -153,30 +156,51 @@
           '<p style="font-size:24px;line-height:1.25;color:' + C.grey + '">' + nb(v.role) + '</p></div>';
       }).join("") + '</div>' : '') + '</div></section>';
   }
+  // «Отделения»: всегда утверждённая сетка (текст | вертикальное фото | два горизонтальных). Призовые места — строки
+  // по содержимому (медаль · названия · число): без пустых полей в карточках. Шаг списка подбирается так, чтобы колонка
+  // заполнялась без дыр: при коротком списке строки свободнее, при длинном — плотнее
   function sWhere(D, n) {
-    var w = D.where, bw = 90;
-    // широкий вариант: много отделений или три призовых места — две фотографии справа вместо трёх, слева больше места
-    var wide = w.wide != null ? w.wide : w.gold.length >= 3;
+    var w = D.where, H = 776, gw = 664 - 60 - 20 - 110 - 54;   // ширина под названия в строке места
+    var goldH = w.gold.map(function (g) { var len = g.names.join(" · ").length, lines = Math.max(1, Math.ceil(len * 15.5 / gw)); return Math.max(64, lines * 36) + 38; });
+    // высота без промежутков списка; свободное место делим на промежутки (не больше 28), не хватает — строки плотнее
+    var nOne = w.one.length, goldSum = goldH.reduce(function (a, b) { return a + b; }, 0) + 14 * Math.max(0, w.gold.length - 1);
+    var fixed = goldSum + (nOne ? 22 + 34 : 0) + (w.general ? 22 + 58 : 0), rowH = 40, free0 = H - fixed - nOne * rowH;
+    var compact = nOne && free0 / (nOne + 1) < 10;
+    if (compact) { rowH = 34; free0 = H - fixed - nOne * rowH; }
+    var gap = nOne ? Math.max(4, Math.min(28, free0 / (nOne + 1))) : 14, fs = compact ? 26 : (gap >= 26 && nOne <= 5 ? 32 : 30);
     var gold = w.gold.map(function (g) {
-      return '<div style="display:flex;flex-direction:column;gap:12px;background:' + C.gold + ';border:3px solid ' + C.goldB + ';border-radius:24px;padding:22px 26px"><div style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px"><div style="width:60px;height:60px;flex:none;display:flex;align-items:center;justify-content:center;background:' + C.goldD + ';border-radius:50%"><p style="font-size:30px;' + B + 'color:#FFFFFF">' + g.place + '</p></div><p style="font-size:84px;' + B + 'line-height:1;color:' + C.goldT + ';white-space:nowrap">' + g.n + '</p></div><div style="display:flex;flex-direction:column;gap:2px">' +
-        g.names.map(function (x) { return '<p style="font-size:' + (g.names.length > 4 ? 24 : 28) + 'px;' + B + 'line-height:1.3;color:' + C.ink + ';' + (x.length < 18 ? "white-space:nowrap" : "") + '">' + nb(x) + '</p>'; }).join("") + '</div></div>';
+      return '<div style="display:grid;grid-template-columns:60px 1fr auto;align-items:center;gap:20px;background:' + C.gold + ';border:3px solid ' + C.goldB + ';border-radius:22px;padding:' + (compact ? "10px 22px" : "16px 24px") + '">' +
+        '<div style="width:60px;height:60px;display:flex;align-items:center;justify-content:center;background:' + C.goldD + ';border-radius:50%"><p style="font-size:30px;' + B + 'color:#FFFFFF">' + g.place + '</p></div>' +
+        '<p style="font-size:28px;' + B + 'line-height:1.25;color:' + C.ink + '">' + g.names.map(function (x) { return nb(x).replace(/ (\d)/g, "&#160;$1"); }).join(" · ") + '</p>' +
+        '<p style="font-size:' + (compact ? 64 : 76) + 'px;' + B + 'line-height:1;color:' + C.goldT + ';white-space:nowrap">' + g.n + '</p></div>';
     }).join("");
-    // список — всегда одна колонка с ровным шагом, как в утверждённых презентациях; при длинном списке строки плотнее
-    var maxNames = Math.max.apply(null, w.gold.map(function (g) { return g.names.length; }).concat([0]));
-    var long = w.one.length > 6 || (w.one.length > 4 && maxNames > 3), lw = 430;
     var ones = w.one.map(function (x) {
-      return '<div style="display:grid;grid-template-columns:' + lw + 'px 1fr;gap:16px;align-items:center"><p style="font-size:' + (long ? 26 : 30) + 'px;line-height:1.2;color:' + C.ink + ';' + (x.name.length <= 28 ? "white-space:nowrap" : "") + '">' + nb(x.name) + '</p><div style="display:flex;flex-direction:row;align-items:center;gap:14px"><div style="width:' + Math.min(bw * x.n, 200) + 'px;height:' + (long ? 28 : 32) + 'px;flex:none;background:' + C.bar2 + ';border-radius:8px"></div><p style="font-size:28px;' + B + 'color:' + C.blue + '">' + x.n + '</p></div></div>';
+      return '<div style="display:grid;grid-template-columns:430px 1fr;gap:16px;align-items:center"><p style="font-size:' + fs + 'px;line-height:1.2;color:' + C.ink + ';' + (x.name.length <= 28 ? "white-space:nowrap" : "") + '">' + nb(x.name).replace(/ (\d)/g, "&#160;$1") + '</p><div style="display:flex;flex-direction:row;align-items:center;gap:14px"><div style="width:' + Math.min(90 * x.n, 180) + 'px;height:' + (compact ? 26 : 32) + 'px;flex:none;background:' + C.bar2 + ';border-radius:8px"></div><p style="font-size:28px;' + B + 'color:' + C.blue + '">' + x.n + '</p></div></div>';
     }).join("");
     var oneTitle = w.one.every(function (x) { return x.n === 1; }) ? "По&#160;одной благодарности" : "Остальные отделения";
-    var list = w.one.length ? '<p style="font-size:26px;' + B + 'color:' + C.grey + '">' + oneTitle + '</p><div style="display:flex;flex-direction:column;gap:' + (long ? 8 : 14) + 'px">' + ones + '</div>' : '';
+    var list = nOne ? '<div data-fit="list" style="display:flex;flex-direction:column;gap:' + Math.round(gap) + 'px"><p style="font-size:26px;' + B + 'color:' + C.grey + '">' + oneTitle + '</p>' + ones + '</div>' : '';
     var general = w.general ? '<div style="align-self:start;display:flex;flex-direction:row;align-items:center;gap:20px;background:' + C.blue + ';border-radius:14px;padding:8px 24px"><p style="font-size:40px;' + B + 'line-height:1.1;color:#FFFFFF;white-space:nowrap">' + w.general + '</p><p style="font-size:26px;' + B + 'color:#FFFFFF">о&#160;больнице в&#160;целом</p></div>' : '';
-    var left = '<div style="display:flex;flex-direction:column;gap:' + (long ? 16 : 22) + 'px"><div style="display:grid;grid-template-columns:repeat(' + Math.max(2, w.gold.length) + ', 1fr);gap:20px">' + gold + '</div>' + list + '<div style="flex:1"></div>' + general + '</div>';
-    var ph = w.photos;
-    if (wide) return '<section id="where" style="' + SEC + 'padding:212px 80px 104px 80px;display:grid;grid-template-columns:1fr 520px;gap:28px">' + frame("where", "Отделения: благодарности за неделю", n, D.foot) + left +
-      '<div style="display:flex;flex-direction:column;gap:28px">' + photo(ph[0], "width:520px;height:374px;border-radius:24px", "") + photo(ph[1] || ph[0], "width:520px;height:374px;border-radius:24px", "") + '</div></section>';
+    var left = '<div data-fit="col" style="display:flex;flex-direction:column;gap:22px;height:776px;min-height:0"><div data-fit="gold" style="display:flex;flex-direction:column;gap:14px">' + gold + '</div>' + list + '<div data-fit="spacer" style="flex:1"></div>' + general + '</div>';
+    var ph = w.photos || [];
     return '<section id="where" style="' + SEC + 'padding:212px 80px 104px 80px;display:grid;grid-template-columns:1fr 440px 600px;gap:28px">' + frame("where", "Отделения: благодарности за неделю", n, D.foot) + left +
       photo(ph[0], "width:440px;height:776px;border-radius:24px", ph[0] && ph[0].alt) +
       '<div style="display:flex;flex-direction:column;gap:28px">' + photo(ph[1], "width:600px;height:374px;border-radius:24px", ph[1] && ph[1].alt) + photo(ph[2], "width:600px;height:374px;border-radius:24px", ph[2] && ph[2].alt) + '</div></section>';
+  }
+  /* подгонка слайда «Отделения» по факту отрисовки: колонка текста заполняется ровно — без дыр и без выхода за подвал */
+  function fitSlide(sec) {
+    if (!sec || sec.id !== "where") return;
+    var col = sec.querySelector('[data-fit="col"]'), list = sec.querySelector('[data-fit="list"]'), goldB = sec.querySelector('[data-fit="gold"]'), sp = sec.querySelector('[data-fit="spacer"]');
+    if (!col) return;
+    var avail = col.getBoundingClientRect().height;
+    var content = function () { var h = 0, kids = [].filter.call(col.children, function (k) { return k !== sp; }); kids.forEach(function (k) { h += k.getBoundingClientRect().height; }); return h + 22 * (col.children.length - 1); };
+    var rows = list ? [].slice.call(list.children, 1) : [];
+    var setRows = function (fs, bar, gap) { if (!list) return; list.style.gap = gap + "px"; rows.forEach(function (r) { var p = r.querySelector("p"); if (p) p.style.fontSize = fs + "px"; var b = r.querySelector("div > div"); if (b) b.style.height = bar + "px"; }); };
+    var steps = [[30, 32, 14], [28, 30, 10], [26, 26, 6], [24, 24, 4]], i = 0;
+    setRows.apply(null, steps[0]);
+    while (content() > avail + 1 && ++i < steps.length) setRows.apply(null, steps[i]);
+    if (content() > avail + 1 && goldB) { [].forEach.call(goldB.children, function (g) { g.style.padding = "8px 20px"; var p = g.querySelector("p:nth-of-type(2)") || g.children[1]; if (p) p.style.fontSize = "24px"; }); goldB.style.gap = "10px"; }
+    // свободное место — поровну в промежутки списка (не больше 28 px), чтобы не было дыры над плашкой
+    if (list && rows.length) { var free = avail - content(); if (free > 0) { var g0 = parseFloat(list.style.gap) || 14, g1 = Math.min(28, g0 + free / (rows.length + 1)); list.style.gap = g1 + "px"; } }
   }
   /* самопроверка вёрстки: текст за краем слайда, на подвале или налезает на соседний блок — выгрузка запрещена */
   function layoutIssues(sec) {
@@ -246,5 +270,5 @@
   function slidesHtml(D) { return ORDER.filter(function (x) { return !(D.skip || {})[x[0]]; }).map(function (x, i) { return x[1](D, i + 1); }); }
 
   window.__otvDeck = window.__otvDeck || {};
-  Object.assign(window.__otvDeck, { slidesHtml: slidesHtml, layoutIssues: layoutIssues, nb: nb, pw: pw, plural: plural, human: human, dm: dm, dmShort: dmShort, pct: pct, signed: signed, ordinal: ordinal, W: W, H: H, C: C, W_POS: W_POS, W_NEG: W_NEG, W_THX: W_THX, MON: MON });
+  Object.assign(window.__otvDeck, { slidesHtml: slidesHtml, fitSlide: fitSlide, layoutIssues: layoutIssues, nb: nb, pw: pw, plural: plural, human: human, dm: dm, dmShort: dmShort, pct: pct, signed: signed, ordinal: ordinal, W: W, H: H, C: C, W_POS: W_POS, W_NEG: W_NEG, W_THX: W_THX, MON: MON });
 })();

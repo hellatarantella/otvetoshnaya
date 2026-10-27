@@ -39,7 +39,9 @@
   var SLIDE_DEPT = [
     [/^Отделение реанимации\s*№\s*(\d+).*$/i, "ОРИТ №$1"], [/^Отделение реанимации и интенсивной терапии\s*№\s*(\d+).*$/i, "ОРИТ №$1"],
     [/^Отделение ранней медицинской реабилитации$/i, "Ранняя реабилитация"], [/^Межокружное отделение рассеянного склероза$/i, "МОРС"],
-    [/^Отделение реабилитации стомированных больных$/i, "Реабилитация стомированных"], [/^Отделение\s+(.+)$/i, function (m, x) { return x.charAt(0).toUpperCase() + x.slice(1); }]
+    [/^Отделение реабилитации стомированных больных$/i, "Реабилитация стомированных"], [/^Аллергология и иммунология$/i, "Аллергология"],
+    [/^Ультразвуковая и функциональная диагностика$/i, "УЗИ и функциональная диагностика"], [/^Кабинет интервенционной ультрасонографии$/i, "Интервенционное УЗИ"],
+    [/^Кабинет переливания крови$/i, "Переливание крови"], [/^Патологоанатомическое отделение$/i, "Патанатомия"], [/^Физиотерапевтическое отделение$/i, "Физиотерапия"], [/^Отделение\s+(.+)$/i, function (m, x) { return x.charAt(0).toUpperCase() + x.slice(1); }]
   ];
   function slideDept(d) { d = s(d).trim(); for (var i = 0; i < SLIDE_DEPT.length; i++) if (SLIDE_DEPT[i][0].test(d)) return d.replace(SLIDE_DEPT[i][0], SLIDE_DEPT[i][1]); return d; }
   // отделение в подписи: в золотых карточках как в отчёте, в списках — коротко и со строчной
@@ -76,6 +78,7 @@
       if (/\d{3,}|http|@|\?/.test(x)) return;
       if (WEAK_START.test(x) && (good < 1 || words < 8)) return;
       if (GENERIC.test(x) && words < 8) return;
+      if (!new RegExp(GOOD.source, "i").test(x) && !SUBST.test(x)) return;   // цитата — благодарность или оценка, а не рассказ («Процедура длилась 30 минут»)
       if (avoid && avoid.some(function (a) { return a && x.indexOf(a) >= 0; })) return;
       var subst = (x.match(new RegExp(SUBST.source, "gi")) || []).length;
       var sc = subst * 3 + good - Math.abs(x.length - 75) / 15 - i * 0.1 - (THANKS_ONLY.test(x) && subst === 0 ? 20 : 0);
@@ -85,6 +88,10 @@
   }
   // из нескольких цитат — ближе всего к общему объёму блока (карточки одного вида выглядят одинаково)
   // список уже отсортирован по содержанию: берём лучшую по содержанию фразу нужного объёма (±30 знаков от общего), иначе лучшую подходящую
+  // объём цитат одного вида блоков: все карточки (и все голоса) — в одной полосе знаков, чтобы блоки были соразмерны
+  var BAND = { card2: [55, 110, 80], card4: [45, 85, 65], voice: [50, 100, 72] };
+  function okQuote(q, band) { q = s(q).trim(); var w = q.split(/\s+/).length; return q.length >= band[0] && q.length <= band[1] && w >= 6 && !(WEAK_START.test(q) && w < 8); }
+  function inBand(list, band) { return (list || []).filter(function (q) { return okQuote(q, band); }); }
   function nearest(list, target, max) { var c = (list || []).filter(function (q) { return q.length <= max; }); return c.filter(function (q) { return Math.abs(q.length - target) <= 30; })[0] || c[0] || ""; }
 
   // цитаты о самом враче: в общем отзыве о нескольких врачах — только фразы, где назван он, а не коллега
@@ -160,7 +167,7 @@
     list.forEach(function (d) { var rd = Object.keys(d.depts).filter(function (x) { return x && x !== "ГКБ 24"; }); d.dept = d.p.cat || rd[0] || ""; if (rd.length && d.p.cat && rd.indexOf(d.p.cat) < 0) checks.push({ bad: true, text: d.p.short + ": в отчёте «" + rd.join(", ") + "», по «Списку врачей» «" + d.p.cat + "». Исправьте отчёт или список" }); });
 
     // каждый отзыв в презентации — один раз: сначала «Отзыв недели», затем цитаты золотых карточек и голоса — из других отзывов
-    var usedRows = [];
+    var usedRows = [], vcAll = [], band = BAND.card2;
     var cand = P.map(function (r, i) {
       var txt = s(r.full || r.text), toks = s(r.doctor).split(/\s*[,;]\s*/).filter(function (x) { return x && x !== "—"; });
       var p = toks.length === 1 ? person(toks[0]) : null; if (p && p.ambiguous) p = null;
@@ -176,15 +183,18 @@
     // золотые карточки: больше одной благодарности и есть фото; без фото — просим фото или переносим в строку ниже (решает пользователь)
     var goldPick = pick.gold || {};
     var gold = list.filter(function (d) { return d.n >= 2 && goldPick[d.p.short] !== "rest"; }).slice(0, 4);
-    var lim = gold.length >= 3 ? 80 : 110, target = gold.length >= 3 ? 62 : 75;
+    band = gold.length >= 3 ? BAND.card4 : BAND.card2; var lim = band[1], target = band[2];
     gold.forEach(function (d) {
       if (!photoOf(d.p.fio, "face")) need.push({ kind: "photo", who: d.p.fio, short: d.p.short, dept: d.dept, text: "Нужно фото: " + d.p.fio + " (" + d.dept + ") — загрузите или уберите из золотых карточек" });
       var qa = quotesAbout(d, list, usedRows), q = (pick.quote || {})[d.p.short];
-      if (q && usedRows.some(function (r) { return inRow(q, r); })) q = "";   // подтверждённая цитата из отзыва, который уже есть в другом блоке
+      var why = "";
+      if (q && usedRows.some(function (r) { return inRow(q, r); })) { q = ""; why = " (выбранная раньше цитата — из отзыва, который уже есть в другом блоке)"; }
+      if (q && !okQuote(q, band)) { why = " (выбранная раньше «" + q + "» — " + (q.length < band[0] ? "слишком короткая или обрывок" : "длиннее других") + ")"; q = ""; }
       d.quotes = qa.map(function (x) { return x.text; });
+      d.options = inBand(d.quotes, band);
       if (!q) {
-        need.push({ kind: "quote", short: d.p.short, options: d.quotes.filter(function (x) { return x.length <= lim; }), text: "Цитата для карточки " + d.p.short + ": выберите или впишите" });
-        q = nearest(d.quotes, target, lim);
+        need.push({ kind: "quote", short: d.p.short, options: d.options, band: band, text: "Цитата для карточки " + d.p.short + ": выберите или впишите, " + band[0] + "–" + band[1] + " знаков" + why });
+        q = nearest(d.options, target, lim);
       }
       d.quote = q;
       var src = qa.filter(function (x) { return x.text === q; })[0]; if (src) usedRows.push(src.row); else d.rows.forEach(function (r) { if (inRow(q, r)) usedRows.push(r); });
@@ -205,14 +215,15 @@
       var goldSet = {}; gold.forEach(function (d) { goldSet[d.p.short] = 1; });
       var free = function (c) { return c.p.short !== r0.p.short && usedRows.indexOf(c.row) < 0; };
       var vc = cand.filter(function (c) { return free(c) && !goldSet[c.p.short]; }).concat(cand.filter(function (c) { return free(c) && goldSet[c.p.short]; }));
-      var vp = (pick.voices || []).filter(function (v) { return v.short !== r0.p.short && !usedRows.some(function (r) { return inRow(v.quote, r); }); });
+      var vp = (pick.voices || []).filter(function (v) { return v.short !== r0.p.short && !usedRows.some(function (r) { return inRow(v.quote, r); }) && okQuote(v.quote, BAND.voice); });
       var dropped = (pick.voices || []).length !== vp.length;
       var voices = vp.length && !dropped ? vp : [], seen = {};
       voices.forEach(function (v) { seen[v.short] = 1; });
-      if (!voices.length) vc.forEach(function (c) { if (voices.length >= 3 || seen[c.p.short]) return; var q = nearest(c.quotes, 70, 100); if (!q) return; seen[c.p.short] = 1; voices.push({ short: c.p.short, quote: q, key: c.key }); });
+      if (!voices.length) vc.forEach(function (c) { if (voices.length >= 3 || seen[c.p.short]) return; var q = nearest(inBand(c.quotes, BAND.voice), BAND.voice[2], BAND.voice[1]); if (!q) return; seen[c.p.short] = 1; voices.push({ short: c.p.short, quote: q, key: c.key }); });
       D.review.voices = voices.map(function (v) { var dd = docs[v.short]; return { short: v.short, quote: v.quote, role: dd ? roleOf(dd.p, dd.dept) : "" }; });
       D.review.voicesTitle = voices.length === 3 ? "И ещё три голоса недели" : voices.length === 2 ? "И ещё два голоса недели" : voices.length === 1 ? "И ещё один голос недели" : "";
-      if ((!vp.length || dropped) && voices.length) need.push({ kind: "voices", options: vc.slice(0, 10).map(function (c) { return { key: c.key, short: c.p.short, quote: nearest(c.quotes, 70, 100) || c.quotes[0], quotes: c.quotes }; }), text: dropped ? "Три голоса недели: в выбранных был отзыв, который уже есть в презентации — подтвердите заново" : "Три голоса недели: подтвердите или замените" });
+      vcAll = vc.map(function (c) { return { key: c.key, short: c.p.short, quote: nearest(inBand(c.quotes, BAND.voice), BAND.voice[2], BAND.voice[1]) || "", quotes: inBand(c.quotes, BAND.voice) }; }).filter(function (o) { return o.quote; });
+      if ((!vp.length || dropped) && voices.length) need.push({ kind: "voices", options: vc.slice(0, 10).map(function (c) { return { key: c.key, short: c.p.short, quote: nearest(inBand(c.quotes, BAND.voice), BAND.voice[2], BAND.voice[1]) || c.quotes[0], quotes: inBand(c.quotes, BAND.voice) }; }).filter(function (o) { return okQuote(o.quote, BAND.voice); }), text: dropped ? "Три голоса недели: в выбранных был повтор или цитата не того объёма — подтвердите заново" : "Три голоса недели: подтвердите или замените" });
     } else { D.skip.review = true; checks.push({ bad: false, text: "Отзывов о врачах с цитатой нет: слайд «Отзыв недели» пропущен" }); }
 
     // отделения: строки отчёта по графе «Отделение»; «ГКБ 24» — о больнице в целом
@@ -228,7 +239,7 @@
       photos: [] };
     // фото на слайде «Отделения» — лучших отделений недели (по местам); подойдёт фото отделения или врачей этого отделения.
     // Фото хранится по названию отделения и в следующие недели подставляется само
-    var w0 = D.where, wide = w0.gold.length >= 3;   // три призовых места — две фотографии справа, слева место под три карточки
+    var w0 = D.where, wide = false;   // всегда утверждённая сетка с тремя фото: не хватает фото — программа просит
     var slotsN = wide ? 2 : 3, slots = dl.slice(0, slotsN).map(function (d) { return d.name; });
     while (slots.length < slotsN) slots.push(slots.indexOf("ГКБ 24") < 0 ? "ГКБ 24" : "ГКБ 24 (" + (slots.length + 1) + ")");
     w0.wide = wide; w0.slots = slots;
@@ -256,7 +267,13 @@
     var gsum = gold.reduce(function (a, d) { return a + d.n; }, 0) + rest.reduce(function (a, d) { return a + d.n; }, 0);
     checks.push({ bad: false, text: "Благодарностей врачам: " + gsum + " (" + list.length + " " + dk.plural(list.length, "сотрудник", "сотрудника", "сотрудников") + ")" });
     D.notes = notesOf(D, numbers);
-    return { D: D, checks: checks, need: need, numbers: numbers, doctors: list.map(function (d) { return { short: d.p.short, fio: d.p.fio, dept: d.dept, n: d.n, gold: gold.indexOf(d) >= 0, hasPhoto: !!photoOf(d.p.fio, "face") }; }) };
+    // всё, что можно пересмотреть в любой момент (кнопка «Пересмотреть выбор»): варианты и текущий выбор
+    var revOpts = function (c) { return { key: c.key, short: c.p.short, platform: platKey(c.row.platform), date: c.row.date, quote: c.quotes[0], text: s(c.row.full || c.row.text) }; };
+    var choices = [];
+    if (r0) choices.push({ kind: "review", options: cand.slice(0, 8).map(revOpts), current: r0.key, text: "Отзыв недели" });
+    gold.forEach(function (d) { choices.push({ kind: "quote", short: d.p.short, options: d.options || [], band: band, current: d.quote, text: "Цитата для карточки " + d.p.short + " (" + band[0] + "–" + band[1] + " знаков)" }); });
+    if (D.review && D.review.voices.length) choices.push({ kind: "voices", options: (vcAll || []).slice(0, 12), current: D.review.voices.map(function (v) { return v.short; }), text: "Три голоса недели" });
+    return { choices: choices, D: D, checks: checks, need: need, numbers: numbers, doctors: list.map(function (d) { return { short: d.p.short, fio: d.p.fio, dept: d.dept, n: d.n, gold: gold.indexOf(d) >= 0, hasPhoto: !!photoOf(d.p.fio, "face") }; }) };
   }
   function restTitle(rest) {
     if (!rest.length) return "";

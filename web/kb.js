@@ -124,6 +124,17 @@
       var ia = el("div", "actions"); ia.append(imp); top.append(ia);
     }
     box.append(top);
+    // чему программа научилась на ваших правках
+    var L = window.__otvLearn ? window.__otvLearn.rules() : [];
+    var lb = el("details", "card"); lb.append(el("summary", null, "Чему программа научилась на ваших правках: " + L.filter(function (r) { return !r.off; }).length));
+    if (!L.length) lb.append(el("p", "meta", "Пока нет: правило появляется, когда вы убираете одну и ту же фразу из черновика хотя бы дважды."));
+    L.forEach(function (r) {
+      var row = el("div", "actions"), b = el("button", "link", r.off ? "Вернуть правило" : "Отменить"); b.type = "button";
+      b.addEventListener("click", function () { window.__otvLearn.setDisabled(r.key, !r.off).then(render, render); });
+      row.append(el("span", null, (r.off ? "(отменено) " : "") + "Не предлагать «" + r.phrase + "» — вы убрали " + r.removed + " раз" + (r.kept ? ", оставили " + r.kept : "")), b);
+      lb.append(row);
+    });
+    box.append(lb);
     var res = el("div"); res.id = "kbList"; box.append(res);
     list();
   }

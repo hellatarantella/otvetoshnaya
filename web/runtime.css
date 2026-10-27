@@ -91,3 +91,4 @@ input.ck-in{flex:1 1 200px}
 .deck-crop-in{background:var(--surface);color:var(--text);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;align-items:center;max-width:92vw}
 .deck-crop canvas{cursor:grab;max-width:80vw;border-radius:8px;touch-action:none}
 .deck-crop canvas.round{border-radius:50%}
+.hint.bad{color:var(--err-text)}
