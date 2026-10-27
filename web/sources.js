@@ -179,7 +179,9 @@
       const more = [...c.querySelectorAll('a,button,[role="button"],span')].filter(x => x.children.length === 0 && /^(Ещё|Читать (далее|полностью)|Посмотреть весь отзыв|More|Read more|See full review)$/i.test((x.textContent || '').trim()));
       if (more.length) { more.forEach(x => { try { x.click(); } catch (er) {} }); await sleep(700); }
       const t = c.innerText;
-      const author = (t.split('open_in_new')[0].trim().split('\n').pop() || '').trim();
+      // имя автора: служебные строки Google («Местный эксперт · 12 отзывов · 3 фото») в имя не берём — счётчик меняется, а номер отзыва не должен
+      const aLines = t.split('open_in_new')[0].trim().split('\n').map(x => x.trim()).filter(x => x && !/^(Местный эксперт|Local Guide)|\d+\s*(отзыв|фото|review|photo)|^·$/i.test(x));
+      const author = (aLines.pop() || '').trim();
       const text = (t.split(rel)[1] || '').split(/24 Московская больница|Владелец/)[0].replace('НОВЫЙ ФИЛИАЛ', '').replace(/Посмотреть весь отзыв/g, '').trim();
       const dt = new Date(Date.now() + 3 * 3600e3 - age * 864e5).toISOString().slice(0, 10);
       // номер отзыва — по автору и началу текста: у обрезанного и полного варианта он один и тот же
@@ -944,6 +946,25 @@
 
   // для проверок: занесение собранных отзывов в реестр
   window.__otvIngest = function (items) { return ingest(items); };
+  /* двойник отзыва: та же площадка, дата ±4 дня, совпадает начало текста (а без текста — автор и оценка) */
+  function findTwin(it) {
+    if (!it || !/^(Google|2ГИС)$/.test(it.platform) || !window.__otvAll) return "";   // у остальных площадок свой постоянный номер отзыва
+    var reg = window.__otvAll("registry") || {}, nt = function (x) { return String(x || "").toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim(); };
+    var head = nt(it.text).slice(0, 60), au = nt(it.author), d0 = Date.parse(it.date || "");
+    var hit = Object.keys(reg).filter(function (id) {
+      var r = reg[id] || {};
+      if (id === it.id || r.platform !== it.platform) return false;
+      var d1 = Date.parse(r.date || ""); if (!isNaN(d0) && !isNaN(d1) && Math.abs(d0 - d1) > 4 * 864e5) return false;
+      var t1 = nt(r.fullText || r.text), a1 = nt(r.author);
+      // автор тот же; у старых записей Google вместо имени могла записаться строка «12 отзывов · 3 фото»
+      var sameAu = au && a1 === au || /\d+ (отзыв|фото|review|photo)|местный эксперт|local guide/.test(a1 + " " + au);
+      if (!sameAu || Number(r.rating) !== Number(it.rating)) return false;
+      if (head.length >= 40) return t1.length >= 40 && (t1.slice(0, 60).indexOf(head.slice(0, 40)) === 0 || head.indexOf(t1.slice(0, 40)) === 0);
+      return !head && !t1 && au && a1 === au;
+    });
+    return hit.length === 1 ? hit[0] : "";
+  }
+  window.__otvFindTwin = findTwin;
   function ingest(items) {
     var added = 0, alerts = 0;
     return items.reduce(function (pr, it) {
@@ -958,6 +979,13 @@
           if (String(it.reply || "").trim().length >= 10) base.reply = String(it.reply).trim().slice(0, 5000);   // настоящий ответ больницы с площадки
           if (it.answered === false) base.reply = "";   // площадка говорит, что ответа нет (например, удалили): старый ответ не держим
           if (it.dateApprox) base.dateApprox = true;
+          if (!snap.exists) {
+            // тот же отзыв мог раньше записаться под другим номером (у Google меняется строка автора): ищем по тексту, чтобы не завести второй раз
+            var twin = findTwin(it);
+            if (twin) { jlog("сбор: " + it.id + " — это уже собранный отзыв " + twin + ", новый не завожу"); it = Object.assign({}, it, { id: twin }); return getDoc("registry", twin).then(function (s2) { snap = s2; return go(); }); }
+          }
+          return go();
+          function go() {
           if (snap.exists) {
             // площадка иногда отдаёт обрезанное начало: полный текст, прочитанный раньше, не заменяем его началом
             var was = String((snap.data() || {}).fullText || ""), nw = base.fullText.replace(/(\.{3,}|…|Ещё)\s*$/, "").replace(/\s+/g, " ").trim();
@@ -971,6 +999,7 @@
             tone: "", report: it.published === false ? "unpublished" : "pending", reportRef: "", reason: "", source: "auto",
             arrivedAt: it.published === false ? "" : nowIso()   // неделя отчёта считается по дате поступления
           }));
+          }
         }).then(function () {
           if (!(it.low || strongNeg(it.text)) || it.published === false) return;
           return getDoc("alerts", it.id).then(function (a) {
@@ -1759,11 +1788,22 @@
       scheduleAuto();
     }, (autoTimer ? 30 : 1) * 60 * 1000);
   }   // сбор по расписанию: без всплывающих вопросов, только строка «Не прочитано» под кнопкой
+  var collectSeq = 0, COLLECT_MAX_MS = 6 * 60000;   // сбор целиком: все площадки читаются параллельно (каждая до 1–2 мин) + запись
+  window.__otvSetCollectMax = function (ms) { COLLECT_MAX_MS = ms; };   // для проверок
   function collect(list, opts) {
     autoRun = !!(opts && opts.auto);
     if (running) { list.forEach(function (s) { if (recheck.indexOf(s) < 0) recheck.push(s); }); return Promise.resolve(); }
     running = true; render();
-    var t0 = Date.now();
+    var t0 = Date.now(), stage = "запуск", runId = ++collectSeq, hung = false;
+    var step = function (name) { stage = name; jlog("сбор: шаг «" + name + "» · " + Math.round((Date.now() - t0) / 1000) + " с"); };
+    // сторож: сбор не может висеть бесконечно. Если шаг после чтения площадок не закончился, сбор завершается сам,
+    // а в журнале остаётся, на каком шаге он встал (раньше приходилось останавливать вручную и запускать заново)
+    var dog = setTimeout(function () {
+      if (!running || collectSeq !== runId) return;
+      hung = true; jlog("сбор завис на шаге «" + stage + "» через " + Math.round((Date.now() - t0) / 1000) + " с: завершаю сам");
+      running = false; stopping = false; render();
+      window.__otvBar.show("Сбор завис на шаге «" + stage + "» и завершён сам, журнал записан. Можно собрать ещё раз", "err", [["Собрать ещё раз", function () { window.__otvBar.hide(); collect(SOURCES); }], ["Закрыть", window.__otvBar.hide]]);
+    }, COLLECT_MAX_MS);
     var req = db.collection("requests").doc("collect");
     return req.get().then(function (r) {
       var prev = r.exists ? r.data() : {};
@@ -1784,10 +1824,11 @@
       }));
     }).then(function (results) {
       jlog("сбор закончен за " + Math.round((Date.now() - t0) / 1000) + " с");
+      step("запись отзывов");
       var all = [], mails = [], answeredMail = [], mdiag = null, replies = {};
       results.forEach(function (r) { all = all.concat(r.items); mails = mails.concat(r.mail || []); answeredMail = answeredMail.concat(r.answered || []); Object.assign(replies, r.replies || {}); if (r.mdiag) mdiag = r.mdiag; });
-      return ingest(all).then(function (sum) { return ingestMail(mails, answeredMail, mdiag).then(function (m) { return saveReplies(replies, mdiag && mdiag.complete ? mails.map(function (x) { return x && x.id; }).filter(Boolean) : []).then(function () { return m; }); }).then(function (m) { sum.added += m.added; sum.alerts += m.alerts; sum.mail = m; return sum; }); })
-        .then(function (sum) { return makeAnswers(all).then(function (a) { sum.toAnswer = a.made; sum.closedA = a.closed; return sum; }, function () { return sum; }); }).then(function (sum) {
+      return ingest(all).then(function (sum) { step("запись почты"); return ingestMail(mails, answeredMail, mdiag).then(function (m) { return saveReplies(replies, mdiag && mdiag.complete ? mails.map(function (x) { return x && x.id; }).filter(Boolean) : []).then(function () { return m; }); }).then(function (m) { sum.added += m.added; sum.alerts += m.alerts; sum.mail = m; return sum; }); })
+        .then(function (sum) { step("карточки ответов"); return makeAnswers(all).then(function (a) { sum.toAnswer = a.made; sum.closedA = a.closed; return sum; }, function () { return sum; }); }).then(function (sum) {
         var secs = Math.max(1, Math.round((Date.now() - t0) / 1000));
         var badR = results.filter(function (r) { return !r.stopped && !srcState[r.s.id].ok; });
         var bad = badR.map(function (r) { return r.s.name + (srcState[r.s.id].down ? " (сбой у самой площадки)" : ""); });
@@ -1800,6 +1841,7 @@
                   (sum.mail && sum.mail.wrongRows ? "\n⚠ В отчёте лишние строки из почты (повтор или чужой текст), удалите их: " + sum.mail.wrongRefs.join("; ") : "") +
                   (bad.length ? "\n⚠ Не вышло: " + bad.join(", ") + (needIn ? ". Нажмите «Войти» у источника" : "") : "") +
                   (sum.mail && sum.mail.unread ? "\n⚠ Почта: текст " + sum.mail.unread + " писем не прочитался, они в карточках с темой" : "");
+        step("итог");
         return req.get().then(function (r) {
           var prev = r.exists ? r.data() : {};
           return req.set(Object.assign({}, prev, { state: "done", finishedAt: nowIso(), message: msg, lastFinishedAt: nowIso(), lastMessage: msg }));
@@ -1814,6 +1856,8 @@
       jlog("сбор не прошёл: " + (e && (e.message || e.code) || e));
       window.__otvBar.show("Сбор не прошёл: " + (e && (e.message || e.code) || e), "err", [["Закрыть", window.__otvBar.hide]]);
     }).then(function () {
+      clearTimeout(dog);
+      if (hung) { jlog("сбор, который считался зависшим, всё же закончился за " + Math.round((Date.now() - t0) / 1000) + " с"); if (collectSeq !== runId) return; }
       running = false; stopping = false; render();
       if (recheck.length) { var again = recheck; recheck = []; return collect(again); }
     });

@@ -24,7 +24,7 @@ function run(name, tableRows, registry, mail, expect, o){
     if(b.action==='export'){ if(o.exportFail) return Promise.resolve(JSON.stringify({ok:false,error:'нет доступа к файлу'})); return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),files:[{name:'Позитив.xlsx',data:'AA=='},{name:'Негатив.docx',data:'AA=='}]})); }
     if(b.action==='newweek'){ const e=new Date(state.end+'T00:00:00Z'); const a=new Date(e.getTime()+864e5), z=new Date(e.getTime()+7*864e5); const f=d=>d.toISOString().slice(0,10), dm=d=>f(d).slice(8,10)+'.'+f(d).slice(5,7);
       if(b.expect!==dm(a)+'–'+dm(z)) return Promise.resolve(JSON.stringify({ok:false,error:'Отчёт уже сменился'}));
-      state=Object.assign({},state,{start:f(a),end:f(z),period:dm(a)+'–'+dm(z)+'.'+z.getUTCFullYear(),positive:[],negative:[]}); tableRows=[]; return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),period:state.period,state})); }
+      state=Object.assign({},state,{start:f(a),end:f(z),period:dm(a)+'–'+dm(z)+'.'+z.getUTCFullYear(),positive:[],negative:[]}); tableRows=[]; if(o.newweekLost) return Promise.resolve(JSON.stringify({ok:false,error:'Превышено время ожидания ответа Google'})); return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1),period:state.period,state})); }
     if(b.action==='patch'){ (b.items||[]).forEach(it=>{ if(it.kind==='neg'){ const x=state.negative.find(q=>q.n===it.n); if(x){ if(it.text!=null)x.full=it.text; if(it.answer!=null)x.fullAnswer=it.answer; if(it.link!=null)x.link=it.link; } } else { const x=state.positive.find(q=>q.platform===it.platform&&q.num===String(it.num)); if(x) x.full=it.text; } }); return Promise.resolve(JSON.stringify({ok:true,version:4,runner:(o.v?0:1),patched:(b.items||[]).length})); }
     if(b.action==='numbers'||b.action==='answers') return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1)}));
     return Promise.resolve(JSON.stringify({ok:true,version:(o.v||3),runner:(o.v?0:1)}));
@@ -120,6 +120,8 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
    'site-1430':R('Сайт','2026-10-22','14:30','Кира','Письмо пришло в четверг в 14:30, но внести не успели до закрытия, оно не должно потеряться.',{arrivedAt:A('2026-10-22','14:30')})});
  all&=await run('18. пятница, новый отчёт: пришедшее после закрытия и не успевшее до него внесены в новую неделю, сданное не повторено', [], regB, {'site-1430':{kind:'thanks'}},
    {calls:['newweek'], period:'23.10–29.10.2026', adds:[['site-1430:ГКБ 24','ya-thu1530:ГКБ 24']]}, {today:'2026-10-23T10:00:00', state0:W16, press:true});
+ all&=await run('18а. новый отчёт: Google сменил неделю, но не успел ответить — данные всё равно вносятся сразу', [], regB, {'site-1430':{kind:'thanks'}},
+   {calls:['newweek'], period:'23.10–29.10.2026', adds:[['site-1430:ГКБ 24','ya-thu1530:ГКБ 24']]}, {today:'2026-10-23T10:00:00', state0:W16, press:true, newweekLost:true});
  all&=await run('19. почта не прочитана: отчёт предупреждает, что он неполный', tbl, regBase, mail, {msg:/Отчёт может быть неполным: не прочитаны Почта сайта \(нужен вход\)/}, {health:[{name:'Почта сайта',ok:false,okAt:'2026-10-14T06:00:00Z',needLogin:true},{name:'ПроДокторов',ok:true,okAt:'2026-10-15T08:00:00Z'}]});
 
  // ---- целостность отчёта: только одобренные ответы, полные тексты, свои ссылки ----
@@ -240,5 +242,13 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
  const regOk={'pd-ok':Object.assign(R('ПроДокторов','2026-10-19','','Игорь',okText),{rating:5,arrivedAt:A2('2026-10-19')})};
  all&=await run('32. «мне понравились» не считается жалобой: благодарность идёт в «Позитив»', [], regOk, {}, {}, {today:'2026-10-21T14:00:00', state0:W,
    inspect:(B)=>{ const a=B.find(b=>b.action==='add'); if(!a||!a.positive.find(x=>x.id==='pd-ok')) return 'благодарность не внесена'; }});
+ // «Не отвечаем» и реклама — не в «Позитив» сами, а под вопрос (27.10: реклама в 2ГИС попала в позитив)
+ const regSk={'gis-ad':Object.assign(R('2ГИС','2026-10-20','','Компания',"Отличный сервис! Ремонт квартир под ключ, скидка 20% по промокоду. Пишите в t.me/remont_msk"),{rating:5,arrivedAt:A2('2026-10-20')}),
+   'gis-skip':Object.assign(R('2ГИС','2026-10-20','','Ирина','Хорошая больница, всё понравилось, спасибо'),{rating:5,arrivedAt:A2('2026-10-20')}),
+   'gis-ok':Object.assign(R('2ГИС','2026-10-20','','Олег','Спасибо врачам приёмного отделения за внимательное отношение'),{rating:5,arrivedAt:A2('2026-10-20')})};
+ all&=await run('33. «Не отвечаем» и реклама: «Нужна проверка», а не «Позитив»; обычная благодарность вносится', [], regSk, {}, {}, {today:'2026-10-21T14:00:00', state0:W,
+   answers:{'gis-skip':{status:'skip'}},
+   inspect:(B)=>{ const a=B.find(b=>b.action==='add'); const ps=a?a.positive.map(x=>x.id):[];
+     if(ps.indexOf('gis-ad')>=0) return 'реклама ушла в «Позитив»'; if(ps.indexOf('gis-skip')>=0) return '«Не отвечаем» ушёл в «Позитив»'; if(ps.indexOf('gis-ok')<0) return 'обычная благодарность не внесена'; }});
  console.log(all?'ALL OK':'SOME FAILED');
 })();

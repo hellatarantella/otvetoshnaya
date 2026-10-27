@@ -12,7 +12,7 @@
  * Скрипт работает от вашего имени и правит только эти файлы. Программа связывается с ним
  * по секретному ключу, который знает только она (первое подключение запоминает ключ).
  */
-var VERSION = 7;
+var VERSION = 8;
 var POS_ID = '1PnkJU3cjl6LlZxe1E9fHfmW7-E5kLi8Nkyr2G4dkw1A';   // «Позитив»
 var NEG_ID = '1Sp8sJv90_bUDYoo-4jPVQrHqLQU-E33s2MLJx0lrlpg';   // «Негатив»
 var REF_ID = '1s-0vfTvZeqVOrrreu9YY5fM3BycOfBtChuIu2wO8pdI';   // «[ГКБ24] Сбор отзывов — справочник»
@@ -455,7 +455,9 @@ function newWeek(req) {
   if (today < a) throw new Error('Неделя ' + ddmm(per.start) + '–' + ddmm(per.end) + ' ещё не закончилась. Новый отчёт можно начать с пятницы');
   if (req.expect && req.expect !== ddmm(a) + '–' + ddmm(b)) throw new Error('Отчёт уже сменился. Обновите окно');
   var negDoc = DocumentApp.openById(NEG_ID), negTitle = negDoc.getName();
-  var mN = /(\d{4})_(\d+)_/.exec(negTitle), negNum = mN ? +mN[2] + 1 : per.num + 1;
+  // у «Негатива» свой счётчик: неделя без негатива номер не тратит (документ просто переходит на новую неделю с тем же номером)
+  var negEmpty = !readNegative(negTable(negDoc)).some(function (b) { return !b.empty; });
+  var mN = /(\d{4})_(\d+)_/.exec(negTitle), negNum = mN ? +mN[2] + (negEmpty ? 0 : 1) : per.num + 1;
   var newPos = 'Позитив ' + a.getFullYear() + '_' + (per.num + 1) + '_' + ddmm(a) + '_' + ddmm(b);
   var newNeg = 'Негатив ' + a.getFullYear() + '_' + negNum + '_' + ddmm(a) + '_' + ddmm(b);
 

@@ -47,6 +47,14 @@ ctx.Date=class extends Date{ constructor(...a){ if(a.length) super(...a); else s
 try { vm.runInContext('newWeek({saved:true, expect:"23.10–29.10"})',ctx); } catch(e){ chk(false,'вторая неделя: '+e.message); }
 const b3=vm.runInContext('readNegative(negTable(DocumentApp.openById("x")))',ctx);
 chk(b3.length===1&&b3[0].empty&&negTitle==='Негатив 2026_89_23.10_29.10','вторая неделя: «Негатив» очищен и переименован');
+// 4а. неделя без негатива номер «Негатива» не тратит (27.10: номер ушёл вперёд, исправляли руками)
+const save4=[negTitle,posTitle,header];
+ctx.Date=class extends Date{ constructor(...a){ if(a.length) super(...a); else super('2026-11-03T10:00:00'); } };
+try { vm.runInContext('newWeek({saved:true, expect:"30.10–05.11"})',ctx); } catch(e){ chk(false,'пустая неделя: '+e.message); }
+chk(negTitle==='Негатив 2026_89_30.10_05.11','пустая неделя: номер «Негатива» прежний: '+negTitle);
+chk(/^Позитив 2026_\d+_30\.10_05\.11$/.test(posTitle),'«Позитив» при этом идёт дальше: '+posTitle);
+[negTitle,posTitle,header]=save4;
+ctx.Date=class extends Date{ constructor(...a){ if(a.length) super(...a); else super('2026-10-27T10:00:00'); } };
 
 // 5. правка уже записанных блоков: ответ, ссылка, текст; чужая строка (ключ не совпал) не трогается
 try { vm.runInContext('addNegative([{id:"p1",platform:"Яндекс",date:"23 октября 2026",text:"Первый отзыв про замену хирурга без консультации.",answer:"Черновик невпопад",link:"https://y/AAA"},{id:"p2",platform:"Яндекс",date:"23 октября 2026",text:"Второй отзыв, совсем другой.",answer:"Мой ответ",link:"https://y/AAA"}],{})',ctx); } catch(e){ chk(false,'подготовка: '+e.message); }
