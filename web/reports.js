@@ -930,7 +930,7 @@
     var o = list[0], c = catOf(o);
     return { fio: o.fio, short: o.short, sur: o.sur, name: o.name, pat: o.pat, pos: o.pos, dept: o.dept, cat: c.cat || "", catSure: !!c.sure };
   }
-  window.__otvReports = { person: personOf, refs: function () { return refs; }, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
+  window.__otvReports = { refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
     // для ответов: кто упомянут и из какого отделения (без запросов в Google)
     strongNeg: function (t) { return NEG_STRONG.test(String(t || "")); },
     people: function (text, page) { return idx ? findPeople(text, page) : []; }, catOf: function (p) { return idx ? catOf(p) : {}; }, textDepts: function (t) { return textDepts(t); } };

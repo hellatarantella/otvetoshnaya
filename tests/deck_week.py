@@ -41,8 +41,8 @@ async def main():
           const c = document.createElement('canvas'); c.width = 400; c.height = 300; const g = c.getContext('2d'); g.fillStyle = '#7a9cc6'; g.fillRect(0, 0, 400, 300); g.fillStyle = '#fff'; g.fillRect(150, 80, 100, 120);
           const src = c.toDataURL('image/jpeg', 0.8), put = (key, kind, weekly) => db.collection('deckPhotos').doc(kind + '_' + key.replace(/\\s+/g, '_')).set({ key, kind, week: weekly ? wk : '', src });
           for (const n of st.res.need.filter(n => n.kind === 'photo')) {
-            const kind = n.slot === 'cover' ? 'cover' : n.slot === 'end' ? 'end' : n.slot === 'dept' ? (n.who === 'Отделение 1' ? 'dept0' : 'dept') : n.tall ? 'tall' : 'face';
-            await put(n.who, kind, ['cover', 'end', 'dept', 'dept0'].includes(kind));
+            const kind = n.slot === 'cover' ? 'cover' : n.slot === 'end' ? 'end' : n.slot === 'dept' ? 'dept' : n.tall ? 'tall' : 'face';
+            await put(n.who, kind, false);
           }
         }""")
         await pg.wait_for_timeout(1500)
@@ -51,6 +51,20 @@ async def main():
           return { need: st.res.need.map(x => x.text), pdfOn: !bs.find(b => b.textContent === 'Скачать PDF').disabled, layout: document.querySelector('.deck-ui').innerText.includes('Вёрстка проверена'), slides: document.querySelectorAll('.deck-slide').length }; }""")
         ok2 = not s2['need'] and s2['pdfOn'] and s2['layout'] and s2['slides'] == 7
         print(('OK  ' if ok2 else 'FAIL') + ' после подтверждений: 7 слайдов, вёрстка проверена, выгрузка открыта', s2 if not ok2 else '')
+        # фото обложки постоянное, фото отделения — по названию отделения и переходит на следующую неделю
+        s3 = await pg.evaluate("""async () => {
+          const db = await window.__otvRt.use('db');
+          const w = (await db.collection('weeks').doc('2026-10-23').get()).data();
+          await db.collection('weeks').doc('2026-10-30').set(Object.assign({}, w, { start: '2026-10-30', end: '2026-11-05', period: '30.10–05.11.2026' }));
+          await new Promise(r => setTimeout(r, 400)); window.__otvDeckUi.rebuild(); await new Promise(r => setTimeout(r, 500));
+          const sel = document.querySelector('.deck-ui select'); sel.value = [...sel.options].find(o => o.textContent.includes('30.10')).value; sel.dispatchEvent(new Event('change')); await new Promise(r => setTimeout(r, 800));
+          const st = window.__otvDeckUi._state();
+          return { week: st.cur.data.start, need: st.res.need.map(n => n.who), slots: st.res.D.where.slots, cover: !!st.res.D.photos.cover };
+        }""")
+        ok5 = s3['week'] == '2026-10-30' and s3['cover'] and 'Обложка' not in s3['need'] and not any(x in s3['need'] for x in s3['slots']) and s3['slots'][0] == 'Хирургия'
+        print(('OK  ' if ok5 else 'FAIL') + ' следующая неделя: обложка и фото отделений (по названию) подставляются сами', s3 if not ok5 else '')
+        await pg.evaluate("async () => { const sel = document.querySelector('.deck-ui select'); sel.value = [...sel.options].find(o => o.textContent.includes('23.10')).value; sel.dispatchEvent(new Event('change')); await new Promise(r => setTimeout(r, 1500)); }")
+        await pg.wait_for_timeout(1500)
         await pg.click("text=Скачать PDF"); await pg.wait_for_function("(window.__demoFiles||[]).length >= 1", timeout=90000)
         await pg.click("text=Скачать PPTX"); await pg.wait_for_function("(window.__demoFiles||[]).length >= 2", timeout=90000)
         files = await pg.evaluate("() => window.__demoFiles.map(f => [f.filename, f.data])")
@@ -61,5 +75,5 @@ async def main():
         print(('OK  ' if ok3 else 'FAIL') + ' PDF (7 страниц) и PPTX (7 слайдов, шрифт Cera Round, текст редактируемый)', (pdf[:8], len(slides)) if not ok3 else '')
         ok4 = not errs
         print(('OK  ' if ok4 else 'FAIL') + ' без ошибок на странице', errs[:3] if errs else '')
-        await b.close(); print('ALL OK' if ok1 and ok2 and ok3 and ok4 else 'SOME FAILED')
+        await b.close(); print('ALL OK' if ok1 and ok2 and ok3 and ok4 and ok5 else 'SOME FAILED')
 asyncio.run(main())

@@ -156,7 +156,7 @@
   function sWhere(D, n) {
     var w = D.where, bw = 90;
     // широкий вариант: много отделений или три призовых места — две фотографии справа вместо трёх, слева больше места
-    var wide = w.gold.length >= 3 || w.one.length > 5 || w.one.some(function (x) { return x.name.length > 26; });
+    var wide = w.wide != null ? w.wide : (w.gold.length >= 3 || w.one.length > 5 || w.one.some(function (x) { return x.name.length > 26; }));
     var gold = w.gold.map(function (g) {
       return '<div style="display:flex;flex-direction:column;gap:12px;background:' + C.gold + ';border:3px solid ' + C.goldB + ';border-radius:24px;padding:22px 26px"><div style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px"><div style="width:60px;height:60px;flex:none;display:flex;align-items:center;justify-content:center;background:' + C.goldD + ';border-radius:50%"><p style="font-size:30px;' + B + 'color:#FFFFFF">' + g.place + '</p></div><p style="font-size:84px;' + B + 'line-height:1;color:' + C.goldT + ';white-space:nowrap">' + g.n + '</p></div><div style="display:flex;flex-direction:column;gap:2px">' +
         g.names.map(function (x) { return '<p style="font-size:' + (g.names.length > 4 ? 24 : 28) + 'px;' + B + 'line-height:1.3;color:' + C.ink + ';' + (x.length < 18 ? "white-space:nowrap" : "") + '">' + nb(x) + '</p>'; }).join("") + '</div></div>';
@@ -171,7 +171,7 @@
     var left = '<div style="display:flex;flex-direction:column;gap:' + (long ? 16 : 22) + 'px"><div style="display:grid;grid-template-columns:repeat(' + Math.max(2, w.gold.length) + ', 1fr);gap:20px">' + gold + '</div>' + list + '<div style="flex:1"></div>' + general + '</div>';
     var ph = w.photos;
     if (wide) return '<section id="where" style="' + SEC + 'padding:212px 80px 104px 80px;display:grid;grid-template-columns:1fr 520px;gap:28px">' + frame("where", "Отделения: благодарности за неделю", n, D.foot) + left +
-      '<div style="display:flex;flex-direction:column;gap:28px">' + photo(ph[1] || ph[0], "width:520px;height:374px;border-radius:24px", "") + photo(ph[2] || ph[0], "width:520px;height:374px;border-radius:24px", "") + '</div></section>';
+      '<div style="display:flex;flex-direction:column;gap:28px">' + photo(ph[0], "width:520px;height:374px;border-radius:24px", "") + photo(ph[1] || ph[0], "width:520px;height:374px;border-radius:24px", "") + '</div></section>';
     return '<section id="where" style="' + SEC + 'padding:212px 80px 104px 80px;display:grid;grid-template-columns:1fr 440px 600px;gap:28px">' + frame("where", "Отделения: благодарности за неделю", n, D.foot) + left +
       photo(ph[0], "width:440px;height:776px;border-radius:24px", ph[0] && ph[0].alt) +
       '<div style="display:flex;flex-direction:column;gap:28px">' + photo(ph[1], "width:600px;height:374px;border-radius:24px", ph[1] && ph[1].alt) + photo(ph[2], "width:600px;height:374px;border-radius:24px", ph[2] && ph[2].alt) + '</div></section>';

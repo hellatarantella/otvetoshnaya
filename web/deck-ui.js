@@ -9,8 +9,9 @@
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function btn(text, cls, fn) { var b = el("button", "btn" + (cls ? " " + cls : ""), text); b.type = "button"; b.addEventListener("click", fn); return b; }
   function log(m) { if (window.__otvLog) window.__otvLog("презентация: " + m); }
-  var KIND_SIZE = { face: [600, 600], tall: [960, 1350], dept0: [880, 1552], dept: [1200, 748], cover: [1920, 1080], end: [1920, 1080] };
-  var WEEKLY = { cover: 1, end: 1, dept: 1, dept0: 1 };   // эти фото — каждую неделю новые (правило)
+  // фото отделения хранится крупно (4:3): слайд сам обрезает его под вертикальную или горизонтальную ячейку
+  var KIND_SIZE = { face: [600, 600], tall: [960, 1350], dept: [1400, 1050], cover: [1920, 1080], end: [1920, 1080] };
+  // обложка и закрывающий слайд постоянные (загружены один раз, можно заменить); фото отделений — по названию отделения, копятся в библиотеке
 
   /* ---------- данные ---------- */
   function weeks() {
@@ -19,9 +20,11 @@
     if (st && st.start) list.unshift({ key: "cur", label: "Текущий отчёт: " + s(st.period), data: { start: st.start, end: st.end, positive: st.positive || [], negative: st.negative || [] } });
     return list;
   }
-  function photoKey(k, kind) { return kind + "|" + k + (WEEKLY[kind] && cur ? "|" + cur.data.start : ""); }
-  function photoOf(k, kind) {
-    var p = photos[photoKey(k, kind === "dept" && k === "Отделение 1" ? "dept0" : kind)];
+  function photoKey(k, kind) { return kind + "|" + k; }
+  function photoOf(k, kind, slot) {
+    var p = photos[photoKey(k, kind)];
+    // фото, загруженные раньше под «Отделение 1–3» этой недели, не теряются: ими закрываем ячейку, пока нет фото отделения
+    if (!p && kind === "dept" && slot != null) p = photos[(slot === 0 ? "dept0" : "dept") + "|Отделение " + (slot + 1)];
     return p ? { src: p.src, pos: "center center" } : null;
   }
   function pickDoc() { return cur ? (picks[cur.data.start] || {}) : {}; }
@@ -59,7 +62,7 @@
     weekSel = el("select", "btn"); weekSel.setAttribute("aria-label", "Неделя");
     ws.forEach(function (w) { var o = el("option", null, w.label); o.value = w.key; if (cur && w.key === cur.key) o.selected = true; weekSel.append(o); });
     weekSel.addEventListener("change", function () { cur = ws.filter(function (w) { return w.key === weekSel.value; })[0]; rebuild(); });
-    acts.append(weekSel, btn("Обновить из отчёта", "", function () { var r = window.__otvReports; (r && r.update ? r.update() : Promise.resolve()).then(rebuild); }));
+    acts.append(weekSel, btn("Перечитать отчёт", "", function () { var r = window.__otvReports; (r && r.refresh ? r.refresh() : Promise.resolve()).then(rebuild, rebuild); }));
     top.append(acts); root.append(top);
     if (!res) { root.append(el("p", "ctl-st err", "Не удалось собрать презентацию. Журнал записан.")); return; }
 
@@ -108,7 +111,7 @@
   function needRow(n) {
     var row = el("div", "deck-need"); row.append(el("p", null, n.text));
     if (n.kind === "photo") {
-      var kind = n.slot === "cover" ? "cover" : n.slot === "end" ? "end" : n.slot === "dept" ? (n.who === "Отделение 1" ? "dept0" : "dept") : n.tall ? "tall" : "face";
+      var kind = n.slot === "cover" ? "cover" : n.slot === "end" ? "end" : n.slot === "dept" ? "dept" : n.tall ? "tall" : "face";
       row.append(photoPicker(n.who, kind));
       if (kind === "face") row.append(btn("Фото нет: перенести в строку «Ещё…»", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick({ gold: g }); }));
     } else if (n.kind === "quote") {
@@ -148,7 +151,7 @@
     var D = res.D;
     (D.heroes.cards || []).forEach(function (c) { d.append(el("p", null, "Фото: " + c.short), photoPicker(fioOf(c.short), "face")); });
     if (D.review) d.append(el("p", null, "Фото «Отзыва недели»: " + D.review.short), photoPicker(fioOf(D.review.short), "tall"));
-    [["Обложка", "cover"], ["Закрывающий слайд", "end"], ["Отделение 1", "dept0"], ["Отделение 2", "dept"], ["Отделение 3", "dept"]].forEach(function (x) { d.append(el("p", null, x[0]), photoPicker(x[0], x[1])); });
+    [["Обложка", "cover"], ["Закрывающий слайд", "end"]].concat((D.where.slots || []).map(function (nm) { return [nm, "dept"]; })).forEach(function (x) { d.append(el("p", null, x[1] === "dept" ? "Фото отделения: " + x[0] : x[0]), photoPicker(x[0], x[1])); });
     d.append(btn("Сбросить все решения этой недели", "", function () { if (!cur) return; picks[cur.data.start] = {}; db.collection("deckPicks").doc(cur.data.start).delete().then(rebuild); }));
     return d;
   }
@@ -163,7 +166,7 @@
     wrap.append(f); return wrap;
   }
   function savePhoto(key, kind, data) {
-    var id = photoKey(key, kind), doc = { key: key, kind: kind, week: WEEKLY[kind] && cur ? cur.data.start : "", src: data, at: new Date().toISOString() };
+    var id = photoKey(key, kind), doc = { key: key, kind: kind, week: "", src: data, at: new Date().toISOString() };
     photos[id] = doc;
     return db.collection("deckPhotos").doc(id.replace(/[^\wа-яё-]+/gi, "_")).set(doc).then(rebuild);
   }
@@ -264,13 +267,16 @@
       db = d;
       var n = 0, go = function () { if (++n >= 4) rebuild(); };
       db.collection("weeks").onSnapshot(function (sn) { snaps = {}; sn.docs.forEach(function (x) { var v = x.data() || {}; if (v.start) snaps[v.start] = v; }); if (n >= 4) rebuild(); go(); }, go);
-      db.collection("deckPhotos").onSnapshot(function (sn) { photos = {}; sn.docs.forEach(function (x) { var v = x.data() || {}; photos[photoKey2(v)] = v; }); go(); }, go);
+      // одна запись на фото: если одно и то же загружали в разные недели — берём последнее
+      db.collection("deckPhotos").onSnapshot(function (sn) { photos = {}; sn.docs.forEach(function (x) { var v = x.data() || {}, k = photoKey2(v); if (!photos[k] || String(v.at || "") > String(photos[k].at || "")) photos[k] = v; }); if (n >= 4) rebuild(); go(); }, go);
       db.collection("deckPicks").onSnapshot(function (sn) { picks = {}; sn.docs.forEach(function (x) { picks[x.id] = x.data() || {}; }); go(); }, go);
       db.collection("settings").onSnapshot(function (sn) { var f = null; sn.docs.forEach(function (x) { if (x.id === "deckFonts") f = x.data() || null; }); if ((f && f.at) !== (fonts && fonts.at) || !!f !== !!fonts) { fonts = f; fontFaces = false; if (n >= 4) rebuild(); } go(); }, go);
     });
-    window.addEventListener("otv-tab", function (e) { if (e.detail === "deckw" && db) rebuild(); });
+    // при открытии вкладки — свежие данные отчёта из Google (строки, удалённые или поправленные вручную, сразу учитываются)
+    function fresh() { var r = window.__otvReports; return (r && r.refresh ? r.refresh() : Promise.resolve()).catch(function (e) { log("отчёт не перечитан: " + (e && e.message || e)); }).then(rebuild); }
+    window.addEventListener("otv-tab", function (e) { if (e.detail === "deckw" && db) fresh(); });
   }
-  function photoKey2(v) { return v.kind + "|" + v.key + (WEEKLY[v.kind] && v.week ? "|" + v.week : ""); }
+  function photoKey2(v) { return v.kind + "|" + v.key; }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount();
   window.__otvDeckUi = { rebuild: function () { rebuild(); }, _state: function () { return { res: res, cur: cur, photos: photos, picks: picks }; } };
 })();

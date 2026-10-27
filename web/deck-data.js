@@ -193,15 +193,31 @@
     checks.push({ bad: deptSum !== pos, text: "Отделения в сумме: " + deptSum + " из " + pos + " (из них о больнице в целом " + general + ")" });
     D.where = { gold: goldN.map(function (n, i) { return { place: i + 1, n: n, names: dl.filter(function (d) { return d.n === n; }).map(function (d) { return d.name; }) }; }),
       one: dl.filter(function (d) { return goldN.indexOf(d.n) < 0; }).map(function (d) { return { name: d.name, n: d.n }; }), general: general,
-      photos: [photoOf("Отделение 1", "dept"), photoOf("Отделение 2", "dept"), photoOf("Отделение 3", "dept")] };
-    ["Отделение 1", "Отделение 2", "Отделение 3"].forEach(function (k, i) { if (!D.where.photos[i]) need.push({ kind: "photo", who: k, slot: "dept", text: "Фото отделения " + (i + 1) + " для слайда «Отделения» (" + (i ? "горизонтальное" : "вертикальное") + ")" }); });
+      photos: [] };
+    // фото на слайде «Отделения» — лучших отделений недели (по местам); подойдёт фото отделения или врачей этого отделения.
+    // Фото хранится по названию отделения и в следующие недели подставляется само
+    var w0 = D.where, wide = w0.gold.length >= 3 || w0.one.length > 5 || w0.one.some(function (x) { return x.name.length > 26; });
+    var slotsN = wide ? 2 : 3, slots = dl.slice(0, slotsN).map(function (d) { return d.name; });
+    while (slots.length < slotsN) slots.push(slots.indexOf("ГКБ 24") < 0 ? "ГКБ 24" : "ГКБ 24 (" + (slots.length + 1) + ")");
+    w0.wide = wide; w0.slots = slots;
+    w0.photos = slots.map(function (nm, i) {
+      var p = photoOf(nm, "dept", i);
+      if (!p) list.filter(function (d) { return d.dept === nm; }).some(function (d) { p = photoOf(d.p.fio, "tall") || photoOf(d.p.fio, "face"); return !!p; });   // фото врача этого отделения
+      return p;
+    });
+    slots.forEach(function (nm, i) {
+      if (w0.photos[i]) return;
+      var dd = dl.filter(function (d) { return d.name === nm; })[0], docsIn = list.filter(function (d) { return d.dept === nm; }).map(function (d) { return d.p.short; });
+      need.push({ kind: "photo", who: nm, slot: "dept", text: /^ГКБ 24/.test(nm) ? "Фото больницы для слайда «Отделения» (ячейка " + (i + 1) + ")" :
+        "Фото для слайда «Отделения»: " + nm + (dd ? " (" + (i + 1) + "-е по благодарностям, " + dd.n + ")" : "") + " — фото отделения или врачей отделения" + (docsIn.length ? " (" + docsIn.slice(0, 3).join(", ") + ")" : "") + ". Сохранится для следующих недель" });
+    });
 
     // год
     var peakI = 0, lowI = 0; Y.forEach(function (w, i) { if (w.pos > Y[peakI].pos) peakI = i; if (w.pos < Y[lowI].pos) lowI = i; });
     D.year = { year: year, weeks: Y, avg: avg, peakIdx: peakI, lowIdx: lowI };
     D.photos.cover = photoOf("Обложка", "cover"); D.photos.end = photoOf("Закрывающий слайд", "end");
-    if (!D.photos.cover) need.push({ kind: "photo", who: "Обложка", slot: "cover", text: "Фото для обложки (каждую неделю новое)" });
-    if (!D.photos.end) need.push({ kind: "photo", who: "Закрывающий слайд", slot: "end", text: "Фото для закрывающего слайда (каждую неделю новое)" });
+    if (!D.photos.cover) need.push({ kind: "photo", who: "Обложка", slot: "cover", text: "Фото для обложки: загружается один раз, потом можно заменить" });
+    if (!D.photos.end) need.push({ kind: "photo", who: "Закрывающий слайд", slot: "end", text: "Фото для закрывающего слайда: загружается один раз, потом можно заменить" });
 
     // итоговые проверки
     checks.unshift({ bad: false, text: "Позитивных " + pos + ", негативных " + neg + " — по отчёту недели" });
