@@ -44,6 +44,7 @@ function run(name, tableRows, registry, mail, expect, o){
     if (expect.noCalls && expect.noCalls.some(c=>out.calls.includes(c))){ ok=false; console.log('  FAIL unexpected calls',out.calls); }
     if (expect.period && out.period!==expect.period){ ok=false; console.log('  FAIL period',out.period); }
     if (expect.msg && !expect.msg.test(lastMsg)){ ok=false; console.log('  FAIL msg'); }
+    if (expect.noMsg && expect.noMsg.test(lastMsg)){ ok=false; console.log('  FAIL noMsg: '+lastMsg); }
     if (expect.adds!==undefined && JSON.stringify(out.adds)!==JSON.stringify(expect.adds)){ ok=false; console.log('  FAIL adds',JSON.stringify(out.adds),'want',JSON.stringify(expect.adds)); }
     console.log(ok?'OK  ':'BAD ',name); console.log('     msg:', lastMsg.slice(0,400)); if(!ok) console.log(out); return ok;
   });
@@ -68,6 +69,9 @@ const mail={'site-kozS':{kind:'thanks'},'site-kozL':{kind:'thanks'},'site-stup':
   'site-stup':'positive Позитив · Сайт №5','site-kozL':'positive Позитив · Сайт №4','site-kozS':'excluded | Повтор отзыва','site-led2':'excluded | Повтор отзыва','site-led1':'positive Позитив · Сайт №6','site-trub':'positive Позитив · Сайт №1'}});
  all&=await run('2. Соколова нет в таблице: внести (отмечен вручную)', tbl.filter(r=>r[4]!==T.stup), regBase, mail, {adds:[['site-stup:ГКБ 24']], reg:{'site-stup':'positive Позитив · Сайт №7'}});
  all&=await run('3. строку не-повтора удалили: не возвращать, спросить', tbl.filter(r=>r[4]!==T.luc), regBase, mail, {adds:[], reg:{'site-luc':'pending | Нужна проверка: строку этого отзыва удалили'}});
+ // в таблице строка, за которой нет отзыва этой недели в программе (как 27.10: 30 строк, а в программе 29) — программа её называет
+ all&=await run('1а. строка в таблице без отзыва недели: названа в сообщении', tbl.concat([['ПроДокторов',2,'13.10.2026','Хирургия','Отзыв, вписанный в таблицу вручную, его нет среди собранных отзывов недели']]), regBase, mail, {adds:[], msg:/строки без отзыва этой недели в программе \(1\): «Позитив» ПроДокторов №2 \(13\.10\.2026\)/});
+ all&=await run('1б. все строки таблицы с отзывами: предупреждения нет', tbl, regBase, mail, {adds:[], noMsg:/без отзыва этой недели/});
  const reg4=Object.assign({},regBase,{'site-new':R('Сайт','2026-10-15','09:00','Петров Пётр',T.other)}); const mail4=Object.assign({},mail,{'site-new':{kind:'thanks'}});
  all&=await run('4. новое письмо: внести', tbl, reg4, mail4, {adds:[['site-new:ГКБ 24']]});
  const reg5=Object.assign({},regBase,{'site-new2':R('Сайт','2026-10-15','09:30','Иванов Иван',T.other2)}); const mail5=Object.assign({},mail,{'site-new2':{kind:'thanks'}});

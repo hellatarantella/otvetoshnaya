@@ -23,8 +23,12 @@
   function photoKey(k, kind) { return kind + "|" + k; }
   function photoOf(k, kind, slot) {
     var p = photos[photoKey(k, kind)];
-    // фото, загруженные раньше под «Отделение 1–3» этой недели, не теряются: ими закрываем ячейку, пока нет фото отделения
-    if (!p && kind === "dept" && slot != null) p = photos[(slot === 0 ? "dept0" : "dept") + "|Отделение " + (slot + 1)];
+    // обложка и закрывающий слайд — фото утверждённых презентаций (как раньше); своё ставится только кнопкой «Заменить»
+    if (kind === "cover" || kind === "end") {
+      if (p && p.override) return { src: p.src, pos: "center center" };
+      var A = window.__otvDeckAssets || {}, d = A[kind === "cover" ? "coverDefault" : "endDefault"];
+      return d ? { src: d, pos: "center center" } : null;
+    }
     return p ? { src: p.src, pos: "center center" } : null;
   }
   function pickDoc() { return cur ? (picks[cur.data.start] || {}) : {}; }
@@ -160,13 +164,13 @@
   /* ---------- фото: загрузка и кадрирование ---------- */
   function photoPicker(key, kind) {
     var wrap = el("span", "deck-ph"), f = el("input"); f.type = "file"; f.accept = "image/jpeg,image/png,image/webp"; f.setAttribute("aria-label", "Фото: " + key);
-    var have = photos[photoKey(key, kind)];
+    var have = (kind === "cover" || kind === "end") ? photoOf(key, kind) : photos[photoKey(key, kind)];
     if (have) { var im = el("img"); im.src = have.src; im.alt = key; im.className = kind === "face" ? "round" : ""; wrap.append(im); }
     f.addEventListener("change", function () { var file = f.files && f.files[0]; if (file) cropDialog(file, kind, function (data) { savePhoto(key, kind, data); }); });
     wrap.append(f); return wrap;
   }
   function savePhoto(key, kind, data) {
-    var id = photoKey(key, kind), doc = { key: key, kind: kind, week: "", src: data, at: new Date().toISOString() };
+    var id = photoKey(key, kind), doc = { key: key, kind: kind, week: "", src: data, at: new Date().toISOString(), override: kind === "cover" || kind === "end" };
     photos[id] = doc;
     return db.collection("deckPhotos").doc(id.replace(/[^\wа-яё-]+/gi, "_")).set(doc).then(rebuild);
   }

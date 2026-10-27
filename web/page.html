@@ -2691,10 +2691,15 @@ gkb24@zdrav.mos.ru
   function ddmm(d){ return pad(d.getDate()) + "." + pad(d.getMonth() + 1); }
   var weekStart = weekOf(new Date());
 
+  // неделя — как в отчётах: по дате ПОСТУПЛЕНИЯ, с четверга 15:00 до четверга 15:00 (МСК); уже внесённый в отчёт недели — в той неделе
   function inWeek(r){
     if (r.report === "unpublished") return false;   // ещё не опубликованные площадкой нигде не показываем: появятся, когда их опубликуют
+    var a = key(weekStart), b = key(addDays(weekStart, 6));
+    if (r.reportWeek) return r.reportWeek === a;
+    var cut = Date.parse(b + "T15:00:00+03:00"), prevCut = cut - 7 * 864e5, at = r.arrivedAt ? Date.parse(r.arrivedAt) : NaN;
+    if (!isNaN(at)) return at >= prevCut && at < cut;
     var d = parseD(r.date); if (!d) return false;
-    var a = key(weekStart), b = key(addDays(weekStart, 6)), k = key(d);
+    var k = key(d);
     return k >= a && k <= b;
   }
   function stars(v){

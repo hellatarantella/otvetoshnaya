@@ -201,9 +201,7 @@
     while (slots.length < slotsN) slots.push(slots.indexOf("ГКБ 24") < 0 ? "ГКБ 24" : "ГКБ 24 (" + (slots.length + 1) + ")");
     w0.wide = wide; w0.slots = slots;
     w0.photos = slots.map(function (nm, i) {
-      var p = photoOf(nm, "dept", i);
-      if (!p) list.filter(function (d) { return d.dept === nm; }).some(function (d) { p = photoOf(d.p.fio, "tall") || photoOf(d.p.fio, "face"); return !!p; });   // фото врача этого отделения
-      return p;
+      return photoOf(nm, "dept", i);   // только фото, загруженное для этого отделения: иначе программа просит его
     });
     slots.forEach(function (nm, i) {
       if (w0.photos[i]) return;

@@ -421,7 +421,7 @@
     if (!ready()) { if (!opts.auto) setRun("err", "Сначала подключите Google. Кнопка «Подключить Google» выше."); return Promise.resolve(); }
     if (busy) return Promise.resolve();
     busy = true; setRun("", "Читаю отчёты…");
-    var W = null, frozen = false, warnSrc = false, added = { pos: 0, neg: 0 }, checks = 0, later = 0, excl = 0, waiting = 0, removedRows = 0, dupList = [], extraRows = [], manualAdded = 0, site = null;
+    var orphanRows = [], W = null, frozen = false, warnSrc = false, added = { pos: 0, neg: 0 }, checks = 0, later = 0, excl = 0, waiting = 0, removedRows = 0, dupList = [], extraRows = [], manualAdded = 0, site = null;
     return loadRefs().then(function () { return call("state"); }).then(function () {
       setRun("", "Сверяю отзывы с таблицами…");
       var reg = window.__otvAll("registry") || {}, mail = window.__otvAll("mail") || {}, have = inReport(), rows = reportRows();
@@ -460,6 +460,10 @@
       var byLen = live.slice().sort(function (x, y) { return s(y.fullText || y.text).length - s(x.fullText || x.text).length; });
       byLen.forEach(function (r) { var ex = have[key3(r.platform, dmyOf(r.date), r.fullText || r.text)]; if (ex && !claimed[ex]) { claimed[ex] = r.id; refOf[r.id] = ex; } });
       byLen.forEach(function (r) { if (refOf[r.id]) return; var f = findRef(rows, r, claimed); if (f) { claimed[f] = r.id; refOf[r.id] = f; } });
+      // строки таблицы, за которыми нет ни одного отзыва этой недели (вписаны руками, остались от прошлой недели, отзыв удалён с площадки):
+      // называем их, чтобы итог «в таблице = в программе» сходился и было видно, что проверить
+      orphanRows = rows.filter(function (x) { return !claimed[x.ref] && s(x.text).trim(); })
+        .map(function (x) { return x.ref.replace(/^Позитив · /, "«Позитив» ").replace(/^Негатив · /, "«Негатив» ") + (x.date ? " (" + x.date + ")" : ""); });
       // 2. понятные повторы: тот же отзыв дважды (тот же человек и тот же текст, или почти слово в слово)
       var parent = {};
       var root = function (id) { while (parent[id] && parent[id] !== id) id = parent[id]; return id; };
@@ -598,6 +602,7 @@
       }
       var msg = "Отчёт " + s(st.period) + ": " + parts.join(" · ");
       if (extraRows.length) msg += ". ⚠ В таблице один и тот же отзыв стоит дважды, удалите лишние строки: " + extraRows.join("; ");
+      if (orphanRows.length) msg += ". ⚠ В таблице есть строки без отзыва этой недели в программе (" + orphanRows.length + "): " + orphanRows.slice(0, 6).join("; ") + ". Проверьте: отзыв другой недели, вписан вручную или удалён с площадки";
       if (removedRows) msg += ". Из таблицы удалены строки отзывов: " + removedRows + ". Решите в «Нужна проверка», вернуть их или нет";
       // отзывы, пришедшие после закрытия недели, программа помнит и внесёт сама, когда вы начнёте новый отчёт
       if (frozen) msg = "Неделя " + st.period + " закрыта в четверг в 15:00, в неё больше ничего не вносится. " + msg;
@@ -606,7 +611,7 @@
       var hl = window.__otvSrcHealth ? window.__otvSrcHealth() : [];
       var badSrc = hl.filter(function (h) { return !h.ok || !h.okAt || Date.now() - Date.parse(h.okAt) > 12 * 3600e3; });
       if (badSrc.length) { msg = "⚠ Отчёт может быть неполным: не прочитаны " + badSrc.map(function (h) { return h.name + (h.needLogin ? " (нужен вход)" : "") + (h.okAt ? ", последний раз " + new Date(h.okAt).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : ""); }).join("; ") + ". Войдите и нажмите «Собрать отзывы». " + msg; warnSrc = true; }
-      var warn = checks || extraRows.length || removedRows || (site && site.adding > 0) || warnSrc;
+      var warn = checks || extraRows.length || orphanRows.length || removedRows || (site && site.adding > 0) || warnSrc;
       setRun(warn ? "warn" : "ok", msg);
       saveLast(msg);
       // всё, что требует вашего действия, видно на любой вкладке
