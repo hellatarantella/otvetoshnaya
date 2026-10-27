@@ -156,17 +156,19 @@
   function sWhere(D, n) {
     var w = D.where, bw = 90;
     // широкий вариант: много отделений или три призовых места — две фотографии справа вместо трёх, слева больше места
-    var wide = w.wide != null ? w.wide : (w.gold.length >= 3 || w.one.length > 5 || w.one.some(function (x) { return x.name.length > 26; }));
+    var wide = w.wide != null ? w.wide : w.gold.length >= 3;
     var gold = w.gold.map(function (g) {
       return '<div style="display:flex;flex-direction:column;gap:12px;background:' + C.gold + ';border:3px solid ' + C.goldB + ';border-radius:24px;padding:22px 26px"><div style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px"><div style="width:60px;height:60px;flex:none;display:flex;align-items:center;justify-content:center;background:' + C.goldD + ';border-radius:50%"><p style="font-size:30px;' + B + 'color:#FFFFFF">' + g.place + '</p></div><p style="font-size:84px;' + B + 'line-height:1;color:' + C.goldT + ';white-space:nowrap">' + g.n + '</p></div><div style="display:flex;flex-direction:column;gap:2px">' +
         g.names.map(function (x) { return '<p style="font-size:' + (g.names.length > 4 ? 24 : 28) + 'px;' + B + 'line-height:1.3;color:' + C.ink + ';' + (x.length < 18 ? "white-space:nowrap" : "") + '">' + nb(x) + '</p>'; }).join("") + '</div></div>';
     }).join("");
-    var long = wide && w.one.length > 4, lw = long ? 330 : wide ? 520 : 430;   // больше четырёх — в две колонки
+    // список — всегда одна колонка с ровным шагом, как в утверждённых презентациях; при длинном списке строки плотнее
+    var maxNames = Math.max.apply(null, w.gold.map(function (g) { return g.names.length; }).concat([0]));
+    var long = w.one.length > 6 || (w.one.length > 4 && maxNames > 3), lw = 430;
     var ones = w.one.map(function (x) {
-      return '<div style="display:grid;grid-template-columns:' + lw + 'px 1fr;gap:16px;align-items:center"><p style="font-size:' + (long ? 26 : 30) + 'px;line-height:1.2;color:' + C.ink + ';' + (x.name.length <= 26 ? "white-space:nowrap" : "") + '">' + nb(x.name) + '</p><div style="display:flex;flex-direction:row;align-items:center;gap:14px"><div style="width:' + Math.min(bw * x.n, 200) + 'px;height:' + (long ? 28 : 32) + 'px;flex:none;background:' + C.bar2 + ';border-radius:8px"></div><p style="font-size:28px;' + B + 'color:' + C.blue + '">' + x.n + '</p></div></div>';
+      return '<div style="display:grid;grid-template-columns:' + lw + 'px 1fr;gap:16px;align-items:center"><p style="font-size:' + (long ? 26 : 30) + 'px;line-height:1.2;color:' + C.ink + ';' + (x.name.length <= 28 ? "white-space:nowrap" : "") + '">' + nb(x.name) + '</p><div style="display:flex;flex-direction:row;align-items:center;gap:14px"><div style="width:' + Math.min(bw * x.n, 200) + 'px;height:' + (long ? 28 : 32) + 'px;flex:none;background:' + C.bar2 + ';border-radius:8px"></div><p style="font-size:28px;' + B + 'color:' + C.blue + '">' + x.n + '</p></div></div>';
     }).join("");
     var oneTitle = w.one.every(function (x) { return x.n === 1; }) ? "По&#160;одной благодарности" : "Остальные отделения";
-    var list = w.one.length ? '<p style="font-size:26px;' + B + 'color:' + C.grey + '">' + oneTitle + '</p><div style="display:grid;grid-template-columns:' + (long && wide ? "1fr 1fr" : "1fr") + ';gap:' + (long ? 10 : 14) + 'px 32px">' + ones + '</div>' : '';
+    var list = w.one.length ? '<p style="font-size:26px;' + B + 'color:' + C.grey + '">' + oneTitle + '</p><div style="display:flex;flex-direction:column;gap:' + (long ? 8 : 14) + 'px">' + ones + '</div>' : '';
     var general = w.general ? '<div style="align-self:start;display:flex;flex-direction:row;align-items:center;gap:20px;background:' + C.blue + ';border-radius:14px;padding:8px 24px"><p style="font-size:40px;' + B + 'line-height:1.1;color:#FFFFFF;white-space:nowrap">' + w.general + '</p><p style="font-size:26px;' + B + 'color:#FFFFFF">о&#160;больнице в&#160;целом</p></div>' : '';
     var left = '<div style="display:flex;flex-direction:column;gap:' + (long ? 16 : 22) + 'px"><div style="display:grid;grid-template-columns:repeat(' + Math.max(2, w.gold.length) + ', 1fr);gap:20px">' + gold + '</div>' + list + '<div style="flex:1"></div>' + general + '</div>';
     var ph = w.photos;
