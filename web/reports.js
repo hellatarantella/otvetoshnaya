@@ -733,7 +733,11 @@
       // всё, что стоит в отчёте закрываемой недели, помечаем этой неделей: после очистки таблицы оно не «пропадёт» и не внесётся второй раз
       var reg = window.__otvAll("registry") || {}, old = st.start, marks = [];
       Object.keys(reg).forEach(function (id) { var r = reg[id]; if (r && (r.report === "positive" || r.report === "negative") && s(r.reportRef) && !r.reportWeek) marks.push(id); });
-      return marks.reduce(function (p, id) { return p.then(function () { return regUpdate(id, { reportWeek: old }); }); }, Promise.resolve()).then(saveFiles);
+      // снимок закрываемой недели: из него строится презентация недели и динамика года (после смены отчёта таблица уже пустая)
+      var snap = { start: st.start, end: st.end, period: st.period, positive: (st.positive || []).map(function (r) { return { platform: r.platform, num: r.num, date: r.date, dept: r.dept, doctor: r.doctor, text: r.text, full: r.full }; }),
+        negative: (st.negative || []).filter(function (b) { return !b.empty; }).map(function (b) { return { platform: b.platform, date: b.date, text: b.text, full: b.full }; }), savedAt: nowIso() };
+      var saveSnap = db ? db.collection("weeks").doc(st.start).set(snap).catch(function () {}) : Promise.resolve();
+      return saveSnap.then(function () { return marks.reduce(function (p, id) { return p.then(function () { return regUpdate(id, { reportWeek: old }); }); }, Promise.resolve()); }).then(saveFiles);
     }).then(function (names) {
       setRun("", "Старые отчёты в «Загрузках». Готовлю новую неделю " + expect + "…");
       return call("newweek", { saved: true, expect: expect }).then(function (r) { return { names: names, r: r }; });
@@ -915,7 +919,18 @@
   window.addEventListener("otv-write", function (ev) { var d = ev.detail || {}; if (d.name === "registry") renderChecksSoon(); });
   var rcT = null;
   function renderChecksSoon() { clearTimeout(rcT); rcT = setTimeout(renderChecks, 300); }
-  window.__otvReports = { update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
+  /* сотрудник из графы «Врач» отчёта («Трофимова», «Иванова А.А.») → строка «Списка врачей» и отделение в отчёте.
+     Тот же справочник и те же правила, что при заполнении отчёта: презентация не может разойтись с отчётом */
+  function personOf(tok) {
+    if (!idx) return null;
+    var m = /^([А-ЯЁ][а-яё-]+)(?:\s+([А-ЯЁ])\.?\s*([А-ЯЁ])?\.?)?/.exec(s(tok).trim()); if (!m) return null;
+    var list = (idx.bySur[m[1]] || []).filter(function (o) { return !m[2] || (o.name.charAt(0) === m[2] && (!m[3] || o.pat.charAt(0) === m[3])); });
+    var docs = list.filter(function (o) { return o.doctor; }); if (docs.length) list = docs;
+    if (list.length !== 1) return list.length ? { ambiguous: list.map(function (o) { return o.short; }) } : null;
+    var o = list[0], c = catOf(o);
+    return { fio: o.fio, short: o.short, sur: o.sur, name: o.name, pat: o.pat, pos: o.pos, dept: o.dept, cat: c.cat || "", catSure: !!c.sure };
+  }
+  window.__otvReports = { person: personOf, refs: function () { return refs; }, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
     // для ответов: кто упомянут и из какого отделения (без запросов в Google)
     strongNeg: function (t) { return NEG_STRONG.test(String(t || "")); },
     people: function (text, page) { return idx ? findPeople(text, page) : []; }, catOf: function (p) { return idx ? catOf(p) : {}; }, textDepts: function (t) { return textDepts(t); } };

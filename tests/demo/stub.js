@@ -99,6 +99,7 @@
         if (cmd === "db_save") { mem = a.json; return Promise.resolve(null); }
         if (cmd === "app_info") return Promise.resolve({ version: "0.2.8 · тест", keySource: "keychain", backups: 3, backupsKeep: 14, encrypted: true, dataBytes: mem.length, test: false });
         if (cmd === "update_check") return Promise.resolve(null);
+        if (cmd === "save_download") { (window.__demoFiles = window.__demoFiles || []).push({ filename: a.filename, data: a.data }); return Promise.resolve("/Загрузки/" + a.filename); }   // для проверок: что программа сохранила бы в «Загрузки»
         if (cmd === "source_collect") {
           var id = a.id, wait = id === "mail" ? 9000 : /^pub/.test(id) ? 1500 : 2500 + Math.random() * 5000;
           timers[id] = setTimeout(function () { var f = FAKE[id] || function () { return { ok: true, items: [] }; }; emit("source-result", { id: id, payload: JSON.stringify(f()), from: "src-" + id + "-c" }); }, wait);

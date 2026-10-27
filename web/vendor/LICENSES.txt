@@ -1,0 +1,2 @@
+jspdf.umd.min.js — jsPDF 2.5.1, MIT License, (c) 2010-2021 James Hall, https://github.com/parallax/jsPDF
+pptxgen.bundle.js — PptxGenJS 3.12.0 (с JSZip), MIT License, (c) 2015-2023 Brent Ely, https://github.com/gitbrent/PptxGenJS
