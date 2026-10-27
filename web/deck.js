@@ -84,8 +84,8 @@
       '<p style="font-size:36px;' + B + 'line-height:1.2;color:#FFFFFF">' + esc(pw(w.pos, W_POS)) + '</p>' +
       '<p style="font-size:26px;line-height:1.4;color:' + C.pale + '">' + nb(w.place) + '</p>' +
       '<div style="flex:1"></div>' +
-      '<p style="align-self:start;font-size:28px;' + B + 'color:' + C.blue + ';background:#FFFFFF;padding:8px 22px;border-radius:12px;white-space:nowrap">' + nb(w.vsPrev) + '</p>' +
-      '<p style="align-self:start;font-size:28px;' + B + 'color:#FFFFFF;background:' + C.mid + ';padding:8px 22px;border-radius:12px;white-space:nowrap">' + nb(w.vsAvg) + '</p></div>' +
+      '<p style="align-self:start;max-width:100%;font-size:28px;' + B + 'color:' + C.blue + ';background:#FFFFFF;padding:8px 22px;border-radius:12px">' + nb(w.vsPrev) + '</p>' +
+      '<p style="align-self:start;max-width:100%;font-size:28px;' + B + 'color:#FFFFFF;background:' + C.mid + ';padding:8px 22px;border-radius:12px">' + nb(w.vsAvg) + '</p></div>' +
       '<div style="display:flex;flex-direction:column;gap:24px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">' +
       '<div style="display:flex;flex-direction:column;gap:6px;background:' + C.pink + ';border-radius:24px;padding:26px 36px">' +
       '<p style="font-size:84px;' + B + 'line-height:1;color:' + C.red + ';white-space:nowrap">' + w.neg + '</p>' +
@@ -187,6 +187,11 @@
       if (x + r.width > W + 1 || y + r.height > H + 1 || x < -1) out.push(name + " выходит за край слайда");
       else if (!isFoot && y + r.height > foot + 2 && !/^(cover|end)$/.test(sec.id)) out.push(name + " налезает на подвал");
       if (e.scrollWidth > e.clientWidth + 2 && getComputedStyle(e).whiteSpace === "nowrap") out.push(name + " не помещается по ширине");
+      // текст или плашка выходит за свою карточку (ближайший блок с фоном)
+      for (var a = e.parentElement; a && a !== sec; a = a.parentElement) {
+        var bg = getComputedStyle(a).backgroundColor;
+        if (bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bg)) { var ar = a.getBoundingClientRect(), er = e.getBoundingClientRect(); if (er.right > ar.right + 2 || er.left < ar.left - 2) out.push(name + " выходит за карточку"); break; }
+      }
     });
     // карточки и плашки не должны выходить за свою колонку
     [].forEach.call(sec.querySelectorAll("div"), function (d) {

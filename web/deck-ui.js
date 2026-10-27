@@ -207,6 +207,26 @@
   }
   function alertBar(t) { if (window.__otvBar) window.__otvBar.show(t, "err", [["Закрыть", window.__otvBar.hide]]); }
 
+  /* ---------- вставка слайдов ----------
+     Окно программы (Tauri) дописывает в политику безопасности nonce, и стили, вставленные внутри HTML (style="…"), браузер
+     отбрасывает (27.10: превью развалилось, выгрузка не работала). Поэтому стили переносим из HTML в элементы кодом (CSSOM) —
+     так работает при любой политике безопасности */
+  function setHtml(host, html) {
+    var doc = new DOMParser().parseFromString("<!doctype html><html><body>" + html + "</body></html>", "text/html");
+    [].forEach.call(doc.body.querySelectorAll("[style]"), function (e) { e.setAttribute("data-css", e.getAttribute("style")); e.removeAttribute("style"); });
+    host.textContent = "";
+    [].slice.call(doc.body.childNodes).forEach(function (n) { host.appendChild(document.importNode(n, true)); });
+    [].forEach.call(host.querySelectorAll("[data-css]"), function (e) { e.style.cssText = e.getAttribute("data-css"); e.removeAttribute("data-css"); });
+  }
+  function cloneSec(sec) { var t = document.createElement("div"); setHtml(t, sec.outerHTML); return t.firstElementChild; }
+  // стили слайда действительно применились (иначе слайд рассыпается, а выгрузка дала бы кривой файл)
+  function styled(sec) { var t = sec.querySelector("h1,h2"); return !t || getComputedStyle(t).position === "absolute"; }
+  // масштаб превью — из ширины окна (формула в CSS не работает в Safari)
+  function fit(fr, inner) {
+    var go = function () { var w = fr.clientWidth; if (w) inner.style.transform = "scale(" + (w / 1920) + ")"; };
+    go(); if (window.ResizeObserver) new ResizeObserver(go).observe(fr); else window.addEventListener("resize", go);
+  }
+
   /* ---------- предпросмотр и самопроверка ---------- */
   var slides = [];
   function renderPreview(pv, issuesBox, buttons, blocked) {
@@ -214,9 +234,9 @@
     var edits = (pickDoc().edits || {}), all = [];
     slides.forEach(function (h, i) {
       var fr = el("div", "deck-slide"), inner = el("div", "deck-slide-in");
-      inner.innerHTML = h; fr.append(inner); pv.append(fr);
-      var sec = inner.firstChild, id = sec.id, saved = edits[id];
-      if (saved && saved.sig === sig(h)) sec.innerHTML = saved.html;
+      setHtml(inner, h); fr.append(inner); pv.append(fr); fit(fr, inner);
+      var sec = inner.firstElementChild, id = sec.id, saved = edits[id];
+      if (saved && saved.sig === sig(h)) setHtml(sec, saved.html);
       sec.querySelectorAll("p,h1,h2").forEach(function (t) { if (t.textContent.trim()) { t.contentEditable = "true"; t.spellcheck = false; } });
       sec.addEventListener("focusout", function () { var e = Object.assign({}, pickDoc().edits || {}); e[id] = { sig: sig(h), html: sec.innerHTML }; savePickQuiet({ edits: e }); check(); });
       all.push(sec);
@@ -225,7 +245,11 @@
       // самопроверка — на неуменьшенной копии слайда
       var issues = [], tmp = el("div", "deck-measure");
       document.body.append(tmp);
-      all.forEach(function (sec, i) { tmp.innerHTML = ""; var c = sec.cloneNode(true); tmp.append(c); DK().layoutIssues(c).forEach(function (x) { issues.push("Слайд " + (i + 1) + ": " + x); }); });
+      all.forEach(function (sec, i) {
+        tmp.textContent = ""; var c = cloneSec(sec); tmp.append(c);
+        if (!styled(c)) { issues.push("Слайд " + (i + 1) + ": оформление слайда не применилось. Журнал записан"); log("слайд " + c.id + ": стили не применились"); return; }
+        DK().layoutIssues(c).forEach(function (x) { issues.push("Слайд " + (i + 1) + ": " + x); });
+      });
       tmp.remove();
       issuesBox.textContent = "";
       issuesBox.append(el("h3", null, issues.length ? "Вёрстка: нужно поправить" : "Вёрстка проверена: всё помещается"));
@@ -244,9 +268,12 @@
     if (busy) return; busy = true;
     st.hidden = false; st.className = "ctl-st"; st.textContent = kind === "pdf" ? "Готовлю PDF…" : "Готовлю PPTX…";
     var tmp = el("div", "deck-measure"); document.body.append(tmp);
-    var secs = [].map.call(document.querySelectorAll(".deck-slide-in > section"), function (s0) { return s0.cloneNode(true); });
+    var secs = [].map.call(document.querySelectorAll(".deck-slide-in > section"), function (s0) { return cloneSec(s0); });
     var prims = [];
-    secs.reduce(function (p, sec) { return p.then(function () { tmp.innerHTML = ""; tmp.append(sec); sec.querySelectorAll("[contenteditable]").forEach(function (x) { x.removeAttribute("contenteditable"); }); return DK().measure(sec).then(function (x) { prims.push(x); }); }); }, document.fonts.ready)
+    secs.reduce(function (p, sec) { return p.then(function () {
+      tmp.textContent = ""; tmp.append(sec); sec.querySelectorAll("[contenteditable]").forEach(function (x) { x.removeAttribute("contenteditable"); });
+      if (!styled(sec)) throw new Error("оформление слайда «" + sec.id + "» не применилось");
+      return DK().measure(sec).then(function (x) { prims.push(x); }); }); }, document.fonts.ready)
       .then(function () {
         tmp.remove();
         var name = "Онлайн-обращения " + DK().dm(cur.data.start) + "–" + DK().dm(cur.data.end) + "." + cur.data.end.slice(0, 4);

@@ -11,6 +11,7 @@ done
 if [ "${NO_BROWSER:-}" != "1" ]; then
   python3 tests/demo/build.py "$out/page.html" >/dev/null || { echo "НЕ СОБРАЛАСЬ ТЕСТОВАЯ СТРАНИЦА"; fail=1; }
   for t in tests/*.py; do
+    if [ "$t" = tests/csp_window.py ]; then for m in "" --no-attr; do python3 "$t" $m > "$out/r" 2>&1; if tail -1 "$out/r" | grep -q "ALL OK"; then echo "ok  $t $m"; else echo "НЕ ПРОШЛА: $t $m"; tail -20 "$out/r"; fail=1; fi; done; continue; fi
     python3 "$t" "$out/page.html" > "$out/r" 2>&1; if tail -1 "$out/r" | grep -q "ALL OK"; then echo "ok  $t"; else echo "НЕ ПРОШЛА: $t"; tail -20 "$out/r"; fail=1; fi
   done
 fi

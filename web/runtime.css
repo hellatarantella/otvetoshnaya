@@ -80,8 +80,8 @@ input.ck-in{flex:1 1 200px}
 .deck-extra summary{cursor:pointer;font-weight:600;margin-top:8px}
 .deck-extra p{margin:10px 0 4px;font-size:14px}
 .deck-preview{display:grid;gap:12px}
-.deck-slide{width:100%;aspect-ratio:16/9;overflow:hidden;border-radius:10px;border:1px solid var(--border);container-type:inline-size;background:#fff}
-.deck-slide-in{width:1920px;height:1080px;transform-origin:0 0;transform:scale(calc(100cqw / 1920px))}
+.deck-slide{width:100%;aspect-ratio:16/9;overflow:hidden;border-radius:10px;border:1px solid var(--border);background:#fff;position:relative}
+.deck-slide-in{width:1920px;height:1080px;transform-origin:0 0;position:absolute;left:0;top:0}
 .deck-slide-in section{position:relative;width:1920px;height:1080px;overflow:hidden;box-sizing:border-box}
 .deck-slide-in section *,.deck-measure section *{margin:0;box-sizing:border-box}
 .deck-slide-in [contenteditable]:focus{outline:3px solid #4F78B0;outline-offset:2px}
