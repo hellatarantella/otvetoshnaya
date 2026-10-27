@@ -62,6 +62,27 @@
   });
   window.addEventListener("otv-imported", function () { scanAll(); });
 
+  /* ---------- база обучения ---------- */
+  function hash(x) { var h = 0; x = s(x); for (var i = 0; i < x.length; i++) h = (h * 31 + x.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+  function importTraining(d) {
+    if (!d || typeof d !== "object") throw new Error("это не файл базы обучения");
+    var jobs = [];
+    var cases = (d["разборы_22_10_2026"] && d["разборы_22_10_2026"].items) || d.items || [];
+    cases.forEach(function (it) {
+      var sit = s(it.review);
+      if (s(it.reply).trim()) jobs.push({ key: "train-r-" + hash(sit), data: { kind: "review", platform: s(it.platform), page: s(it.page), date: s(it.date), situation: sit, answer: s(it.reply).trim(), draft: "", edited: true, status: "approved", note: "база обучения: " + s(it.tone), source: "обучение" } });
+      if (s(it.appeal).trim()) jobs.push({ key: "train-a-" + hash(sit), data: { kind: "appeal", platform: s(it.platform), page: s(it.page), date: s(it.date), situation: sit, answer: s(it.appeal).trim(), draft: "", edited: true, status: "approved", note: "база обучения: обжалование", source: "обучение" } });
+    });
+    (d["утверждённые_примеры"] || []).forEach(function (it) {
+      var txt = s(it["текст"]).trim(); if (!txt) return;
+      jobs.push({ key: "train-e-" + hash(txt), data: { kind: /обжал/i.test(s(it["тип"])) ? "appeal" : "review", platform: s(it["площадка"]), page: "", date: "", situation: s(it["отзыв"] || ""), answer: txt, draft: "", edited: true, status: "approved", note: "база обучения: " + s(it["тип"]) + " · " + s(it["статус"]), source: "обучение" } });
+    });
+    var rules = d["правила"];
+    var saveRules = rules && db ? db.collection("settings").doc("trainRules").set({ rules: rules, at: nowIso() }) : Promise.resolve();
+    return saveRules.then(function () { return jobs.reduce(function (p, e) { return p.then(function (n) { return remember(e).then(function (x) { return n + (x ? 1 : 0); }); }); }, Promise.resolve(0)); });
+  }
+  window.__otvKbImportTraining = function (d) { return importTraining(d); };
+
   /* ---------- вкладка «База ответов» ---------- */
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function copy(text, btn) {
@@ -86,6 +107,17 @@
       chips.append(b);
     });
     top.append(chips);
+    // база обучения (файл от Claude: правила, согласованные ответы и обжалования) — загружается сюда, в репозиторий не попадает
+    var tr = el("input"); tr.type = "file"; tr.accept = ".json,application/json"; tr.hidden = true;
+    var trB = el("button", "btn", "Загрузить базу обучения (JSON)"); trB.type = "button";
+    var trMsg = el("span", "meta");
+    trB.addEventListener("click", function () { tr.click(); });
+    tr.addEventListener("change", function () {
+      var f = tr.files && tr.files[0]; if (!f) return;
+      f.text().then(function (txt) { return importTraining(JSON.parse(txt)); }).then(function (n) { trMsg.textContent = "Добавлено в базу: " + n; }, function (e) { trMsg.textContent = "Не загрузилось: " + (e && e.message || e); });
+      tr.value = "";
+    });
+    var ta = el("div", "actions"); ta.append(trB, tr, trMsg); top.append(ta);
     if (window.__otvImport) {
       var imp = el("button", "btn", "Загрузить архив ответов"); imp.type = "button";
       imp.addEventListener("click", function () { window.__otvImport(); });

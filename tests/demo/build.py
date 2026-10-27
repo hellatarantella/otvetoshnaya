@@ -14,7 +14,7 @@ def inline(name):
     js = open(root + name, encoding='utf-8').read().replace('</script', '<\\/script')
     h = h.replace(tag, '<script>\n' + js + '\n</script>')
 inline('runtime.js'); inline('sources.js'); inline('kb.js'); inline('templates.js'); inline('gen.js'); inline('model.js'); inline('gscode.js'); inline('reports.js')
-for n in ['vendor/jspdf.umd.min.js', 'vendor/pptxgen.bundle.js', 'deck-assets.js', 'deck.js', 'deck-data.js', 'deck-export.js', 'deck-ui.js']: inline(n)
+for n in ['appeal.js', 'vendor/jspdf.umd.min.js', 'vendor/pptxgen.bundle.js', 'deck-assets.js', 'deck.js', 'deck-data.js', 'deck-export.js', 'deck-ui.js']: inline(n)
 h = h.replace('<head>', '<head>\n<script>\n' + stub + '\n</script>', 1)
 h = h.replace('window.claude', 'window.__otvRt')
 h = re.sub(r'<title>[^<]*</title>', '<title>Ответошная тест</title>', h, count=1)

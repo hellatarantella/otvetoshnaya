@@ -2542,12 +2542,12 @@ gkb24@zdrav.mos.ru
 
     function renderResult(res){
       out.textContent = "";
-      var texts = cfg.multi ? (Array.isArray(res.variants) ? res.variants : []) : [s(res.text)];
+      var texts = (cfg.multi || Array.isArray(res.variants)) ? (Array.isArray(res.variants) ? res.variants : []) : [s(res.text)];
       texts = texts.map(s).filter(function(t){ return t.trim(); });
       if (!texts.length) { showStatus("Ответ пришёл пустым. Нажмите «Ещё вариант».", true); return; }
       texts.forEach(function(t, i){
         var card = el("div","res");
-        if (texts.length > 1) card.append(el("div","res-h","Вариант " + (i + 1)));
+        if (texts.length > 1) card.append(el("div","res-h", (res.labels && res.labels[i]) || ("Вариант " + (i + 1))));
         var ta = el("textarea","res-ta"); ta.value = t; ta.rows = Math.min(24, Math.max(4, t.split("\n").length + Math.ceil(t.length / 90)));
         var warn = el("ul","lint");
         var upd = function(){ var w = lintFor(cfg.kind, ta.value); warn.textContent = ""; w.forEach(function(x){ warn.append(el("li",null,x)); }); warn.hidden = !w.length; };
@@ -2560,8 +2560,19 @@ gkb24@zdrav.mos.ru
       again.hidden = false; refine.hidden = false;
     }
 
+    var localRound = 0;
+    function runLocal(again){
+      // в программе «Ответошная» без онлайн-сервиса: тексты собираются по вашим правилам и образцам прямо здесь
+      try {
+        localRound = again ? localRound + 1 : 0;
+        var res = window.__otvLocalGen[id](st.values || {}, localRound);
+        if (!res || !(s(res.text).trim() || (res.variants || []).some(function(x){ return s(x).trim(); }))) { showStatus("Не получилось собрать текст по шаблонам: проверьте, что текст вставлен целиком.", true); return; }
+        st.last = res; st.turns = null; showStatus(""); renderResult(res); saveHistory(res);
+      } catch (e) { showStatus("Не получилось: " + (e && e.message || e), true); if (window.__otvLog) window.__otvLog("окно " + id + ": " + (e && e.stack || e)); }
+    }
     function run(turns, fresh){
       samplePromise.then(function(sample){
+        if (!sample && window.__otvLocalGen && window.__otvLocalGen[id]) { runLocal(fresh && !!st.last); return; }
         if (!sample) { showStatus("Окно работает только внутри приложения Claude.", true); return; }
         st.ctl = new AbortController();
         busy(true); showStatus("Думаю… (обычно 10–60 секунд)");
@@ -2591,7 +2602,9 @@ gkb24@zdrav.mos.ru
       run([{role:"user", content: cfg.prompt(st.values) + "\n\nДай другой вариант формулировок, не повторяй предыдущий."}], true);
     });
     rBtn.addEventListener("click", function(){
-      var c = rIn.value.trim(); if (!c || !st.turns) { showStatus("Напишите, что поправить.", true); return; }
+      var c = rIn.value.trim();
+      if (c && !st.turns && st.last) { showStatus("Поправьте текст прямо в поле выше: без онлайн-сервиса переписывание по комментарию недоступно. Можно нажать «Ещё вариант».", true); return; }
+      if (!c || !st.turns) { showStatus("Напишите, что поправить.", true); return; }
       var cur = Array.from(out.querySelectorAll(".res-ta")).map(function(t){ return t.value; });
       var curJson = cfg.multi ? JSON.stringify({variants: cur}) : JSON.stringify({text: cur[0] || "", note: s(st.last && st.last.note)});
       var turns = st.turns.slice(0, -1).concat([{role:"assistant", content: curJson}, {role:"user", content: "Исправь по замечанию сотрудницы: " + c + "\nСоблюдай все правила выше. Верни только JSON того же вида."}]);
@@ -2637,7 +2650,7 @@ gkb24@zdrav.mos.ru
     });
 
     samplePromise.then(function(sample){
-      if (!sample) { go.disabled = true; showStatus("Окно работает только внутри приложения Claude (нужен доступ к Claude для этой страницы).", true); }
+      if (!sample && !(window.__otvLocalGen && window.__otvLocalGen[id])) { go.disabled = true; showStatus("Окно работает только внутри приложения Claude (нужен доступ к Claude для этой страницы).", true); }
     });
   }
 
