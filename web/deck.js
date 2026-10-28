@@ -16,6 +16,8 @@
   // без висящих в конце строки предлогов и союзов: после них неразрывный пробел (правило: нигде в презентации)
   var SHORTW = "(?:[а-яёА-ЯЁ]{1,2}|№|без|для|над|под|при|про|обо|ото|изо|что|или|как|если|чтобы|когда|через|перед|после|между|около|вокруг|среди|также|тоже|либо|зато|хотя|пока|ради|кроме|вместо|благодаря)";
   function nb(s) { var x = esc(s), re = new RegExp("(^|[\\s(«„;\u00a0])(" + SHORTW + ")\\s+", "gi"), f = function (m, a, w) { return a + w + "&#160;"; }; return x.replace(re, f).replace(re, f).replace(/([А-ЯЁ][а-яё-]+)\s+([А-ЯЁ]\.\s?[А-ЯЁ]\.)/g, "$1&#160;$2"); }
+  // то же для готового текста (после правки прямо на слайде): неразрывный пробел символом
+  function nbText(x) { var re = new RegExp("(^|[\\s(«„;\u00a0])(" + SHORTW + ")[ \\t]+", "gi"), f = function (m, a, w) { return a + w + "\u00a0"; }; return String(x).replace(re, f).replace(re, f).replace(/([А-ЯЁ][а-яё-]+) +([А-ЯЁ]\. ?[А-ЯЁ]\.)/g, "$1\u00a0$2"); }
   function nbName(s) { return esc(s).replace(/\s+/g, "&#160;"); }
   // число и слово: 1 отзыв, 2 отзыва, 5 отзывов
   function plural(n, one, few, many) { n = Math.abs(n) % 100; var d = n % 10; if (n > 10 && n < 20) return many; if (d === 1) return one; if (d >= 2 && d <= 4) return few; return many; }
@@ -112,7 +114,7 @@
       '<p style="font-size:26px;' + B + 'color:' + C.goldT + ';text-align:center">' + nb(c.dept) + '</p>' +
       '<p style="font-size:' + (small ? 40 : 44) + 'px;' + B + 'line-height:1.1;color:' + C.ink + ';text-align:center">' + esc(c.sur) + '</p>' +
       '<p style="font-size:28px;line-height:1.25;color:' + C.ink + ';text-align:center">' + esc(c.name) + '</p>' +
-      '<div style="display:flex;flex-direction:row;align-items:baseline;gap:14px"><p style="font-size:' + (small ? 76 : 88) + 'px;' + B + 'line-height:1.05;color:' + C.goldT + ';white-space:nowrap">' + c.n + '</p><p style="font-size:30px;' + B + 'color:' + C.goldT + '">' + esc(pw(c.n, W_THX)) + '</p></div>' +
+      '<div style="display:flex;flex-direction:row;align-items:baseline;gap:14px"><p style="position:relative;top:0.05em;font-size:' + (small ? 76 : 88) + 'px;' + B + 'line-height:1.05;color:' + C.goldT + ';white-space:nowrap">' + c.n + '</p><p style="font-size:30px;' + B + 'color:' + C.goldT + '">' + esc(pw(c.n, W_THX)) + '</p></div>' +
       (c.quote ? '<p style="font-size:' + (small ? 24 : 26) + 'px;font-style:italic;line-height:1.4;color:' + C.blue + ';text-align:center">«' + nb(c.quote) + '»</p>' : '') +
       '<div style="flex:1"></div>' +
       '<p style="font-size:24px;line-height:1.3;color:' + C.goldT + ';text-align:center">' + nb(c.where) + '</p></div>';
@@ -285,5 +287,5 @@
   function slidesHtml(D) { return ORDER.filter(function (x) { return !(D.skip || {})[x[0]]; }).map(function (x, i) { return x[1](D, i + 1); }); }
 
   window.__otvDeck = window.__otvDeck || {};
-  Object.assign(window.__otvDeck, { slidesHtml: slidesHtml, fitSlide: fitSlide, layoutIssues: layoutIssues, nb: nb, pw: pw, plural: plural, human: human, dm: dm, dmShort: dmShort, pct: pct, signed: signed, ordinal: ordinal, W: W, H: H, C: C, W_POS: W_POS, W_NEG: W_NEG, W_THX: W_THX, MON: MON });
+  Object.assign(window.__otvDeck, { nbText: nbText, slidesHtml: slidesHtml, fitSlide: fitSlide, layoutIssues: layoutIssues, nb: nb, pw: pw, plural: plural, human: human, dm: dm, dmShort: dmShort, pct: pct, signed: signed, ordinal: ordinal, W: W, H: H, C: C, W_POS: W_POS, W_NEG: W_NEG, W_THX: W_THX, MON: MON });
 })();

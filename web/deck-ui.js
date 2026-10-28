@@ -286,30 +286,43 @@
     Promise.all([].concat.apply([], all.map(function (sec) { return [].map.call(sec.querySelectorAll("img"), function (im) { return im.complete ? 0 : new Promise(function (r) { im.onload = im.onerror = r; }); }); }))).then(function () { return document.fonts.ready; }).then(function () { fitAll(); check(); });
   }
   /* правка прямо на слайде — только текст. Вставка из другого места приносила своё оформление (мелкий шрифт), Enter — новые
-     блоки: часть цитаты становилась другого размера (28.10). Теперь вставляется простой текст, Enter не разрывает абзац,
-     а всё чужое, что всё же попало внутрь, при выходе из правки превращается в текст абзаца */
+     блоки: часть цитаты становилась другого размера (28.10). Теперь вставляется простой текст, Enter завершает правку,
+     а всё чужое, что всё же попало внутрь, при выходе из правки превращается в текст абзаца.
+     Абзац становится редактируемым только на время правки (по щелчку): в окне программы (движок Safari) у редактируемого
+     текста неразрывный пробел переносится как обычный — предлоги повисали в конце строки (28.10). После правки неразрывные
+     пробелы после предлогов и союзов расставляются заново */
   function editable(sec) {
-    var keep = [];
+    var keep = [], eds = [];
     sec.querySelectorAll("p,h1,h2").forEach(function (t) {
       if (!t.textContent.trim()) return;
-      t.contentEditable = "plaintext-only"; if (t.contentEditable !== "plaintext-only") t.contentEditable = "true"; t.spellcheck = false;
+      eds.push(t); t.tabIndex = -1; t.classList.add("deck-ed");
       // сохранённая раньше правка могла принести чужое оформление — убираем его
       [].forEach.call(t.querySelectorAll("*"), function (x) { if (/^(DIV|P|FONT|H\d)$/.test(x.tagName) || /font-size|font-family|line-height/.test(x.getAttribute("style") || "") || x.style && (x.style.fontSize || x.style.fontFamily)) unwrap(x); });
-      t.normalize();
+      t.normalize(); fixNb(t);
       [].forEach.call(t.querySelectorAll("*"), function (x) { keep.push(x); });
+      var on = function () { if (t.isContentEditable) return; t.contentEditable = "plaintext-only"; if (t.contentEditable !== "plaintext-only") t.contentEditable = "true"; t.spellcheck = false; };
+      t.addEventListener("focus", on);
+      t.addEventListener("click", function (e) {
+        if (t.isContentEditable && document.activeElement === t && t.__caret) return;
+        on(); t.focus(); t.__caret = 1;
+        var r = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+        if (r && t.contains(r.startContainer)) { var sl = getSelection(); sl.removeAllRanges(); sl.addRange(r); }
+      });
+      t.addEventListener("blur", function () { t.__caret = 0; t.removeAttribute("contenteditable"); });
       t.addEventListener("paste", function (e) { e.preventDefault(); var tx = ((e.clipboardData || window.clipboardData).getData("text/plain") || "").replace(/\s+/g, " "); document.execCommand("insertText", false, tx); });
       t.addEventListener("drop", function (e) { e.preventDefault(); });
       t.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); t.blur(); } });
     });
-    sec.__keep = keep;
+    sec.__keep = keep; sec.__eds = eds;
   }
+  function fixNb(t) { var w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT), n, all = []; while ((n = w.nextNode())) all.push(n); all.forEach(function (x) { var v = DK().nbText(x.nodeValue); if (v !== x.nodeValue) x.nodeValue = v; }); }
   function unwrap(x) { if (!x.parentNode) return; x.parentNode.replaceChild(document.createTextNode((/^(BR|DIV|P)$/.test(x.tagName) ? " " : "") + x.textContent), x); }
   function clean(sec) {
     var keep = sec.__keep || [];
-    sec.querySelectorAll("[contenteditable]").forEach(function (t) {
+    (sec.__eds || []).forEach(function (t) {
       var bad = [].filter.call(t.querySelectorAll("*"), function (x) { return keep.indexOf(x) < 0; });
       bad.forEach(function (x) { if (t.contains(x)) unwrap(x); });
-      t.normalize();
+      t.normalize(); fixNb(t);
     });
   }
   function sig(h) { var x = 0; for (var i = 0; i < h.length; i++) x = (x * 31 + h.charCodeAt(i)) | 0; return x; }

@@ -52,13 +52,15 @@ async def main():
         await pg.evaluate("""() => { const t = [...document.querySelectorAll('.deck-slide-in section#review p')].find(x => x.textContent.startsWith('«')); const dt = new DataTransfer();
           dt.setData('text/html', '<span style="font-size:13px;font-family:Times">за профессионализм, чуткость и мастерство</span>'); dt.setData('text/plain', ' за профессионализм, чуткость и мастерство');
           t.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""")
+        await pg.evaluate("document.execCommand('insertText', false, ' и опыт')")
+        rest = await pg.evaluate("() => document.querySelectorAll('.deck-slide-in [contenteditable]').length")
         await pg.keyboard.press('Enter'); await pg.keyboard.type(' ещё'); await pg.wait_for_timeout(300)
         await pg.evaluate("document.activeElement && document.activeElement.blur()"); await pg.wait_for_timeout(800)
         s3 = await pg.evaluate("""() => { const t = [...document.querySelectorAll('.deck-slide-in section#review p')].find(x => x.textContent.startsWith('«'));
           const sizes = new Set(); const w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent.trim()) sizes.add(getComputedStyle(n.parentElement).fontSize);
-          return { text: t.textContent, kids: t.children.length, sizes: [...sizes], saved: JSON.stringify((window.__otvDeckUi._state().picks['2026-10-23'] || {}).edits || {}).includes('font-size:13px') }; }""")
-        ok5 = 'мастерство' in s3['text'] and s3['kids'] == 0 and s3['sizes'] == ['50px'] and not s3['saved']
-        print(('OK  ' if ok5 else 'FAIL') + ' правка цитаты на слайде: текст вставлен, шрифт один и тот же', s3 if not ok5 else '')
+          return { rest: document.querySelectorAll('.deck-slide-in [contenteditable]').length, text: t.textContent, kids: t.children.length, sizes: [...sizes], saved: JSON.stringify((window.__otvDeckUi._state().picks['2026-10-23'] || {}).edits || {}).includes('font-size:13px') }; }""")
+        ok5 = rest == 1 and s3['rest'] == 0 and 'и\u00a0опыт' in s3['text'] and 'мастерство' in s3['text'] and s3['kids'] == 0 and s3['sizes'] == ['50px'] and not s3['saved']
+        print(('OK  ' if ok5 else 'FAIL') + ' правка на слайде: текст вставлен, шрифт один, после «и» неразрывный пробел, вне правки слайд не редактируемый', s3 if not ok5 else '')
         # правка переживает пересборку и тоже без чужого оформления
         await pg.evaluate("window.__otvDeckUi.rebuild()"); await pg.wait_for_timeout(2000)
         s4 = await pg.evaluate("""() => { const t = [...document.querySelectorAll('.deck-slide-in section#review p')].find(x => x.textContent.startsWith('«')); return { text: t.textContent, kids: t.children.length, size: getComputedStyle(t).fontSize }; }""")
@@ -69,7 +71,7 @@ async def main():
           const st = window.__otvDeckUi._state();
           return { heads: /Место/.test(sec.textContent) && /Благодарностей/.test(sec.textContent), roles: st.res.D.review.voices.map(v => v.role).concat([st.res.D.review.lineAfter]), chips, panels: sec.querySelectorAll('[data-fit="gold"]').length, ui: document.querySelector('.deck-ui').innerText.includes('Вёрстка проверена') }; }""")
         ok7 = s5['heads'] and not any(('зав.' in r or 'хирург' in r or 'невролог,' in r) for r in s5['roles']) and s5['panels'] == 1 and 'ОРИТ №2' in [c.replace(' ', ' ') for c in s5['chips']] and len(s5['chips']) >= 5 and not any('·' in c for c in s5['chips'])
-        print(('OK  ' if ok7 else 'FAIL') + ' «Отделения»: места в одной панели, каждое отделение отдельной плашкой', s5 if not ok7 else '')
+        print(('OK  ' if ok7 else 'FAIL') + ' «Отделения»: таблица мест с заголовками, отделения плашками; на слайде 4 подписи — фамилия и отделение', s5 if not ok7 else '')
         ok8 = not errs
         print(('OK  ' if ok8 else 'FAIL') + ' без ошибок на странице', errs[:3] if errs else '')
         await b.close(); print('ALL OK' if all([ok1, ok2, ok3, ok4, ok5, ok6, ok7, ok8]) else 'SOME FAILED')

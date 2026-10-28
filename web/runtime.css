@@ -87,7 +87,10 @@ input.ck-in{flex:1 1 200px}
 .deck-slide-in{width:1920px;height:1080px;transform-origin:0 0;position:absolute;left:0;top:0}
 .deck-slide-in section{position:relative;width:1920px;height:1080px;overflow:hidden;box-sizing:border-box}
 .deck-slide-in section *,.deck-measure section *{margin:0;box-sizing:border-box}
-.deck-slide-in [contenteditable]:focus{outline:3px solid #4F78B0;outline-offset:2px}
+.deck-slide-in .deck-ed{cursor:text}
+.deck-slide-in .deck-ed:focus{outline:3px solid #4F78B0;outline-offset:2px}
+/* движок Safari у редактируемого текста переносит неразрывный пробел как обычный — запрещаем */
+.deck-slide-in [contenteditable],.deck-measure [contenteditable]{-webkit-nbsp-mode:normal!important;-webkit-line-break:auto!important;line-break:auto!important;overflow-wrap:normal!important;word-wrap:normal!important}
 .deck-measure{position:fixed;left:-30000px;top:0;width:1920px;height:1080px;overflow:hidden}
 .deck-measure section{position:relative;width:1920px;height:1080px;overflow:hidden;box-sizing:border-box}
 .deck-crop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1000}
