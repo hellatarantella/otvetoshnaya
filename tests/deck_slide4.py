@@ -66,8 +66,9 @@ async def main():
         print(('OK  ' if ok6 else 'FAIL') + ' правка сохранена и после пересборки', s4 if not ok6 else '')
         # «Отделения»: каждое отделение — своя плашка, вёрстка без замечаний
         s5 = await pg.evaluate("""() => { const sec = document.querySelector('.deck-slide-in section#where'); const chips = [...sec.querySelectorAll('[data-fit="chip"]')].map(x => x.textContent);
-          return { chips, panels: sec.querySelectorAll('[data-fit="gold"]').length, ui: document.querySelector('.deck-ui').innerText.includes('Вёрстка проверена') }; }""")
-        ok7 = s5['panels'] == 1 and 'ОРИТ №2' in [c.replace(' ', ' ') for c in s5['chips']] and len(s5['chips']) >= 5 and not any('·' in c for c in s5['chips'])
+          const st = window.__otvDeckUi._state();
+          return { heads: /Место/.test(sec.textContent) && /Благодарностей/.test(sec.textContent), roles: st.res.D.review.voices.map(v => v.role).concat([st.res.D.review.lineAfter]), chips, panels: sec.querySelectorAll('[data-fit="gold"]').length, ui: document.querySelector('.deck-ui').innerText.includes('Вёрстка проверена') }; }""")
+        ok7 = s5['heads'] and not any(('зав.' in r or 'хирург' in r or 'невролог,' in r) for r in s5['roles']) and s5['panels'] == 1 and 'ОРИТ №2' in [c.replace(' ', ' ') for c in s5['chips']] and len(s5['chips']) >= 5 and not any('·' in c for c in s5['chips'])
         print(('OK  ' if ok7 else 'FAIL') + ' «Отделения»: места в одной панели, каждое отделение отдельной плашкой', s5 if not ok7 else '')
         ok8 = not errs
         print(('OK  ' if ok8 else 'FAIL') + ' без ошибок на странице', errs[:3] if errs else '')

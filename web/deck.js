@@ -168,18 +168,21 @@
     var compact = nOne && free0 / (nOne + 1) < 10;
     if (compact) { rowH = 34; free0 = H - fixed - nOne * rowH; }
     var gap = nOne ? Math.max(4, Math.min(28, free0 / (nOne + 1))) : 14, fs = compact ? 26 : (gap >= 26 && nOne <= 5 ? 32 : 30);
-    // призовые места — одна золотая панель, места строками через разделитель (одиночная плашка с коротким названием выглядела растянутой)
-    var gold = w.gold.map(function (g, i) {
-      return (i ? '<div style="height:2px;background:#F0D58A"></div>' : '') +
-        '<div data-fit="prow" style="display:grid;grid-template-columns:150px 1fr;align-items:center;gap:18px;padding:' + (compact ? "8px 0px" : "14px 0px") + '">' +
-        '<div style="display:flex;flex-direction:row;align-items:center;gap:14px"><div style="width:52px;height:52px;flex:none;display:flex;align-items:center;justify-content:center;background:' + C.goldD + ';border-radius:50%"><p style="font-size:28px;' + B + 'color:#FFFFFF">' + g.place + '</p></div>' +
-        '<p style="font-size:' + (compact ? 56 : 64) + 'px;' + B + 'line-height:1;color:' + C.goldT + ';white-space:nowrap">' + g.n + '</p></div>' +
+    // призовые места — таблица в одной золотой панели: «Место | Отделения | Благодарностей» — место и число в разных колонках
+    // с заголовками (рядом медаль и число путались), каждое отделение своей плашкой
+    var GCOL = "grid-template-columns:72px 1fr 72px;align-items:center;gap:14px";
+    var gold = (w.gold.length ? '<div style="display:flex;flex-direction:row;align-items:center;gap:14px;padding:10px 0px 6px 0px">' + ["Место", "Отделения", "Благодарностей"].map(function (t, i) { return '<p style="font-size:20px;' + B + 'color:' + C.goldT + (i === 0 ? ';width:72px;text-align:center' : i === 1 ? ';flex:1' : ';text-align:right') + '">' + t + '</p>'; }).join("") + '</div>' : '') +
+      w.gold.map(function (g) {
+      return '<div style="height:2px;background:#F0D58A"></div>' +
+        '<div data-fit="prow" style="display:grid;' + GCOL + ';padding:' + (compact ? "8px 0px" : "14px 0px") + '">' +
+        '<div style="display:flex;justify-content:center"><div style="width:52px;height:52px;display:flex;align-items:center;justify-content:center;background:' + C.goldD + ';border-radius:50%"><p style="font-size:28px;' + B + 'color:#FFFFFF">' + g.place + '</p></div></div>' +
         '<div style="display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px">' + g.names.map(function (x) {
           return '<p data-fit="chip" style="max-width:100%;font-size:28px;' + B + 'line-height:1.2;color:' + C.ink + ';background:#FFFFFF;border-radius:12px;padding:6px 16px">' + nb(x).replace(/ (\d)/g, "&#160;$1") + '</p>';
-        }).join("") + '</div></div>';
+        }).join("") + '</div>' +
+        '<p style="font-size:' + (compact ? 56 : 64) + 'px;' + B + 'line-height:1;color:' + C.goldT + ';white-space:nowrap;text-align:right">' + g.n + '</p></div>';
     }).join("");
     var ones = w.one.map(function (x) {
-      return '<div style="display:grid;grid-template-columns:430px 1fr;gap:16px;align-items:center"><p style="font-size:' + fs + 'px;line-height:1.2;color:' + C.ink + ';' + (x.name.length <= 28 ? "white-space:nowrap" : "") + '">' + nb(x.name).replace(/ (\d)/g, "&#160;$1") + '</p><div style="display:flex;flex-direction:row;align-items:center;gap:14px"><div style="width:' + Math.min(90 * x.n, 180) + 'px;height:' + (compact ? 26 : 32) + 'px;flex:none;background:' + C.bar2 + ';border-radius:8px"></div><p style="font-size:28px;' + B + 'color:' + C.blue + '">' + x.n + '</p></div></div>';
+      return '<div style="display:grid;grid-template-columns:430px 1fr;gap:16px;align-items:center"><p style="font-size:' + fs + 'px;line-height:1.2;color:' + C.ink + ';' + (x.name.length <= 28 ? "white-space:nowrap" : "") + '">' + nb(x.name).replace(/ (\d)/g, "&#160;$1") + '</p><div style="display:flex;flex-direction:row;align-items:center;gap:14px"><div style="width:' + Math.min(90 * x.n, 180) + 'px;height:' + (compact ? 26 : 32) + 'px;flex:none;background:' + C.bar2 + ';border-radius:8px"></div><p style="font-size:28px;' + B + 'line-height:1;color:' + C.blue + '">' + x.n + '</p></div></div>';
     }).join("");
     var oneTitle = w.one.every(function (x) { return x.n === 1; }) ? "По&#160;одной благодарности" : "Остальные отделения";
     var list = nOne ? '<div data-fit="list" style="display:flex;flex-direction:column;gap:' + Math.round(gap) + 'px"><p style="font-size:26px;' + B + 'color:' + C.grey + '">' + oneTitle + '</p>' + ones + '</div>' : '';
@@ -199,10 +202,10 @@
     var content = function () { var h = 0, kids = [].filter.call(col.children, function (k) { return k !== sp; }); kids.forEach(function (k) { h += k.getBoundingClientRect().height; }); return h + 22 * (col.children.length - 1); };
     var rows = list ? [].slice.call(list.children, 1) : [];
     var setRows = function (fs, bar, gap) { if (!list) return; list.style.gap = gap + "px"; rows.forEach(function (r) { var p = r.querySelector("p"); if (p) p.style.fontSize = fs + "px"; var b = r.querySelector("div > div"); if (b) b.style.height = bar + "px"; }); };
-    var steps = [[30, 32, 14], [28, 30, 10], [26, 26, 6], [24, 24, 4]], i = 0;
+    var steps = [[30, 32, 14], [28, 30, 10], [26, 26, 6], [24, 24, 4], [22, 20, 2]], i = 0;
     setRows.apply(null, steps[0]);
     while (content() > avail + 1 && ++i < steps.length) setRows.apply(null, steps[i]);
-    if (content() > avail + 1 && goldB) { [].forEach.call(goldB.querySelectorAll('[data-fit="prow"]'), function (g) { g.style.padding = "6px 0px"; }); [].forEach.call(goldB.querySelectorAll('[data-fit="chip"]'), function (p) { p.style.fontSize = "22px"; p.style.padding = "4px 12px"; }); }
+    if (content() > avail + 1 && goldB) { [].forEach.call(goldB.querySelectorAll('[data-fit="prow"]'), function (g) { g.style.padding = "6px 0px"; }); [].forEach.call(goldB.querySelectorAll('[data-fit="chip"]'), function (p) { p.style.fontSize = "22px"; p.style.padding = "4px 12px"; }); [].forEach.call(goldB.querySelectorAll('[data-fit="prow"] > div:nth-child(2)'), function (d) { d.style.gap = "6px"; }); }
     // свободное место — поровну в промежутки списка (не больше 28 px), чтобы не было дыры над плашкой
     if (list && rows.length) { var free = avail - content(); if (free > 0) { var g0 = parseFloat(list.style.gap) || 14, g1 = Math.min(28, g0 + free / (rows.length + 1)); list.style.gap = g1 + "px"; } }
     // короткая неделя: остаток — в строки мест и списка (свободнее и крупнее), а что осталось — поровну сверху и снизу, без дыры внизу

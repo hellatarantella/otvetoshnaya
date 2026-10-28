@@ -237,7 +237,7 @@
       var rd = docs[r0.p.short] ? docs[r0.p.short].dept : r0.p.cat;
       var rph = photoOf(r0.p.fio, "tall");
       if (!rph) need.push({ kind: "photo", who: r0.p.fio, short: r0.p.short, dept: rd, tall: true, text: "Нужно фото для «Отзыва недели»: " + r0.p.fio + " (вертикальное, во весь рост слайда)" });
-      D.review = { photo: rph, short: r0.p.short, quote: rQuote, lineBefore: rp.before != null ? rp.before : "Благодарность врачу: ", lineName: rp.name || (r0.p.sur + " " + r0.p.name + " " + r0.p.pat), lineAfter: rp.after != null ? rp.after : ", " + roleOf(r0.p, rd),
+      D.review = { photo: rph, short: r0.p.short, quote: rQuote, lineBefore: rp.before != null ? rp.before : "Благодарность врачу: ", lineName: rp.name || (r0.p.sur + " " + r0.p.name + " " + r0.p.pat), lineAfter: rp.after != null ? rp.after : ", " + deptLow(rd),   // подпись: фамилия и отделение, без должности (решение 28.10)
         platforms: [platKey(r0.row.platform)], date: dateHuman(r0.row.date), voicesTitle: "", voices: [] };
       // три голоса: другие врачи (не врач «Отзыва недели»), другие отзывы; как в образце — сначала врачи не из золотых карточек
       var goldSet = {}; gold.forEach(function (d) { goldSet[d.p.short] = 1; });
@@ -255,7 +255,7 @@
       }); });
       // на слайде — в порядке кандидатов (как предложено), а не в порядке подбора
       voices.sort(function (a, b) { var ia = vc.map(function (c) { return c.key; }).indexOf(a.key), ib = vc.map(function (c) { return c.key; }).indexOf(b.key); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
-      D.review.voices = voices.map(function (v) { var dd = docs[v.short]; return { short: v.short, quote: v.quote, role: dd ? roleOf(dd.p, dd.dept) : "" }; });
+      D.review.voices = voices.map(function (v) { var dd = docs[v.short]; return { short: v.short, quote: v.quote, role: dd ? deptLow(dd.dept) : "" }; });
       D.review.voicesTitle = voices.length === 3 ? "И ещё три голоса недели" : voices.length === 2 ? "И ещё два голоса недели" : voices.length === 1 ? "И ещё один голос недели" : "";
       vcAll = vc.map(function (c) { return { key: c.key, short: c.p.short, quote: nearest(inBand(c.quotes, BAND.voice), BAND.voice[2], BAND.voice[1]) || "", quotes: inBand(c.quotes, BAND.voice) }; }).filter(function (o) { return o.quote; });
       voices.forEach(function (v) { var o = vcAll.filter(function (x) { return x.key === v.key || !v.key && x.short === v.short; })[0]; if (o && o.quotes.indexOf(v.quote) < 0) o.quotes = [v.quote].concat(o.quotes); });
