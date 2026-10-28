@@ -43,14 +43,24 @@
     [/^Ультразвуковая и функциональная диагностика$/i, "УЗИ и функциональная диагностика"], [/^Кабинет интервенционной ультрасонографии$/i, "Интервенционное УЗИ"],
     [/^Кабинет переливания крови$/i, "Переливание крови"], [/^Патологоанатомическое отделение$/i, "Патанатомия"], [/^Физиотерапевтическое отделение$/i, "Физиотерапия"], [/^Отделение\s+(.+)$/i, function (m, x) { return x.charAt(0).toUpperCase() + x.slice(1); }]
   ];
+  // номер отделения — как в справочнике: «Колопроктология 7» (решение 28.10)
   function slideDept(d) { d = s(d).trim(); for (var i = 0; i < SLIDE_DEPT.length; i++) if (SLIDE_DEPT[i][0].test(d)) return d.replace(SLIDE_DEPT[i][0], SLIDE_DEPT[i][1]); return d; }
+  // «зав. кардиологией»: название отделения в творительном падеже; если слово не склоняется по правилу — прежняя подпись
+  function instr(d) {
+    var ok = true, out = s(d).split(" ").map(function (w) {
+      if (/^(и|№\d+|\d+|[А-ЯЁ]{2,})$/.test(w)) return w;
+      if (/ия$/.test(w)) return w.replace(/ия$/, "ией"); if (/яя$/.test(w)) return w.replace(/яя$/, "ей"); if (/ая$/.test(w)) return w.replace(/ая$/, "ой"); if (/[кгхнтлр]а$/.test(w)) return w.replace(/а$/, "ой"); if (/ение$/.test(w)) return w + "м"; if (/ое$/.test(w)) return w.replace(/ое$/, "ым");
+      ok = false; return w;
+    }).join(" ");
+    return ok ? out : "";
+  }
   // отделение в подписи: в золотых карточках как в отчёте, в списках — коротко и со строчной
   var SHORT_DEPT = { "Ранняя реабилитация": "реабилитация", "Аллергология и иммунология": "аллергология", "Межокружное отделение рассеянного склероза": "МОРС" };
   function deptLow(d) { d = slideDept(d); if (SHORT_DEPT[d]) return SHORT_DEPT[d]; return /^[А-ЯЁ0-9]{2,}/.test(d) ? d : d.charAt(0).toLowerCase() + d.slice(1); }
   // должность из «Списка врачей» коротко: «врач-колопроктолог» → «колопроктолог», «заведующий отделением» → «зав. <отделение>»
   function roleOf(p, dept) {
     var pos = s(p && p.pos).toLowerCase().trim(), d = s(dept);
-    if (/^заведующ/.test(pos)) return deptShortAbbr(d) ? "зав. " + deptShortAbbr(d) : "зав. отделением, " + deptLow(d);
+    if (/^заведующ/.test(pos)) return deptShortAbbr(d) ? "зав. " + deptShortAbbr(d) : instr(deptLow(d)) ? "зав. " + instr(deptLow(d)) : "зав. отделением, " + deptLow(d);
     var x = pos.replace(/^врач[- ]?/, "").replace(/^-/, "").trim();
     if (!x || x.split(/[- ]/).some(function (w) { return stem(w) === stem(d); })) return deptLow(d);
     return x + (d ? ", " + (/^[А-ЯЁ]{2,}$/.test(d) ? d : deptLow(d)) : "");
@@ -317,5 +327,5 @@
   }
 
   window.__otvDeck = window.__otvDeck || {};
-  Object.assign(window.__otvDeck, { praise: praise, BAND: BAND, build: build, history: history, quotes: quotes, platKey: platKey, roleOf: roleOf, deptLow: deptLow, whereLine: whereLine, countPos: countPos, countNeg: countNeg, SEED_2026: SEED_2026 });
+  Object.assign(window.__otvDeck, { instr: instr, slideDept: slideDept, praise: praise, BAND: BAND, build: build, history: history, quotes: quotes, platKey: platKey, roleOf: roleOf, deptLow: deptLow, whereLine: whereLine, countPos: countPos, countNeg: countNeg, SEED_2026: SEED_2026 });
 })();
