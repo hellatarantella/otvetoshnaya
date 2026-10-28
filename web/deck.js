@@ -157,30 +157,34 @@
       }).join("") + '</div>' : '') + '</div></section>';
   }
   // «Отделения»: всегда утверждённая сетка (текст | вертикальное фото | два горизонтальных). Призовые места — строки
-  // по содержимому (медаль · названия · число): без пустых полей в карточках. Шаг списка подбирается так, чтобы колонка
-  // заполнялась без дыр: при коротком списке строки свободнее, при длинном — плотнее
+  // по содержимому: слева медаль и число, справа названия отдельными плашками (не сливаются в абзац и не разнесены по краям).
+  // Шаг списка подбирается так, чтобы колонка заполнялась без дыр: при коротком списке строки свободнее, при длинном — плотнее
   function sWhere(D, n) {
-    var w = D.where, H = 776, gw = 664 - 60 - 20 - 110 - 54;   // ширина под названия в строке места
-    var goldH = w.gold.map(function (g) { var len = g.names.join(" · ").length, lines = Math.max(1, Math.ceil(len * 15.5 / gw)); return Math.max(64, lines * 36) + 38; });
+    var w = D.where, H = 776, cw = 664 - 48 - 150 - 18;   // ширина под плашки названий в строке места
+    var goldH = w.gold.map(function (g) { var x = 0, lines = 1; g.names.forEach(function (nm) { var ww = nm.length * 15 + 44; if (x && x + ww > cw) { lines++; x = 0; } x += ww + 10; }); return Math.max(76, lines * 50 - 10) + 34; });
     // высота без промежутков списка; свободное место делим на промежутки (не больше 28), не хватает — строки плотнее
     var nOne = w.one.length, goldSum = goldH.reduce(function (a, b) { return a + b; }, 0) + 14 * Math.max(0, w.gold.length - 1);
     var fixed = goldSum + (nOne ? 22 + 34 : 0) + (w.general ? 22 + 58 : 0), rowH = 40, free0 = H - fixed - nOne * rowH;
     var compact = nOne && free0 / (nOne + 1) < 10;
     if (compact) { rowH = 34; free0 = H - fixed - nOne * rowH; }
     var gap = nOne ? Math.max(4, Math.min(28, free0 / (nOne + 1))) : 14, fs = compact ? 26 : (gap >= 26 && nOne <= 5 ? 32 : 30);
-    var gold = w.gold.map(function (g) {
-      return '<div style="display:grid;grid-template-columns:60px 1fr auto;align-items:center;gap:20px;background:' + C.gold + ';border:3px solid ' + C.goldB + ';border-radius:22px;padding:' + (compact ? "10px 22px" : "16px 24px") + '">' +
-        '<div style="width:60px;height:60px;display:flex;align-items:center;justify-content:center;background:' + C.goldD + ';border-radius:50%"><p style="font-size:30px;' + B + 'color:#FFFFFF">' + g.place + '</p></div>' +
-        '<p style="font-size:28px;' + B + 'line-height:1.25;color:' + C.ink + '">' + g.names.map(function (x) { return nb(x).replace(/ (\d)/g, "&#160;$1"); }).join(" · ") + '</p>' +
-        '<p style="font-size:' + (compact ? 64 : 76) + 'px;' + B + 'line-height:1;color:' + C.goldT + ';white-space:nowrap">' + g.n + '</p></div>';
+    // призовые места — одна золотая панель, места строками через разделитель (одиночная плашка с коротким названием выглядела растянутой)
+    var gold = w.gold.map(function (g, i) {
+      return (i ? '<div style="height:2px;background:#F0D58A"></div>' : '') +
+        '<div data-fit="prow" style="display:grid;grid-template-columns:150px 1fr;align-items:center;gap:18px;padding:' + (compact ? "8px 0px" : "14px 0px") + '">' +
+        '<div style="display:flex;flex-direction:row;align-items:center;gap:14px"><div style="width:52px;height:52px;flex:none;display:flex;align-items:center;justify-content:center;background:' + C.goldD + ';border-radius:50%"><p style="font-size:28px;' + B + 'color:#FFFFFF">' + g.place + '</p></div>' +
+        '<p style="font-size:' + (compact ? 56 : 64) + 'px;' + B + 'line-height:1;color:' + C.goldT + ';white-space:nowrap">' + g.n + '</p></div>' +
+        '<div style="display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px">' + g.names.map(function (x) {
+          return '<p data-fit="chip" style="max-width:100%;font-size:28px;' + B + 'line-height:1.2;color:' + C.ink + ';background:#FFFFFF;border-radius:12px;padding:6px 16px">' + nb(x).replace(/ (\d)/g, "&#160;$1") + '</p>';
+        }).join("") + '</div></div>';
     }).join("");
     var ones = w.one.map(function (x) {
       return '<div style="display:grid;grid-template-columns:430px 1fr;gap:16px;align-items:center"><p style="font-size:' + fs + 'px;line-height:1.2;color:' + C.ink + ';' + (x.name.length <= 28 ? "white-space:nowrap" : "") + '">' + nb(x.name).replace(/ (\d)/g, "&#160;$1") + '</p><div style="display:flex;flex-direction:row;align-items:center;gap:14px"><div style="width:' + Math.min(90 * x.n, 180) + 'px;height:' + (compact ? 26 : 32) + 'px;flex:none;background:' + C.bar2 + ';border-radius:8px"></div><p style="font-size:28px;' + B + 'color:' + C.blue + '">' + x.n + '</p></div></div>';
     }).join("");
     var oneTitle = w.one.every(function (x) { return x.n === 1; }) ? "По&#160;одной благодарности" : "Остальные отделения";
     var list = nOne ? '<div data-fit="list" style="display:flex;flex-direction:column;gap:' + Math.round(gap) + 'px"><p style="font-size:26px;' + B + 'color:' + C.grey + '">' + oneTitle + '</p>' + ones + '</div>' : '';
-    var general = w.general ? '<div style="align-self:start;display:flex;flex-direction:row;align-items:center;gap:20px;background:' + C.blue + ';border-radius:14px;padding:8px 24px"><p style="font-size:40px;' + B + 'line-height:1.1;color:#FFFFFF;white-space:nowrap">' + w.general + '</p><p style="font-size:26px;' + B + 'color:#FFFFFF">о&#160;больнице в&#160;целом</p></div>' : '';
-    var left = '<div data-fit="col" style="display:flex;flex-direction:column;gap:22px;height:776px;min-height:0"><div data-fit="gold" style="display:flex;flex-direction:column;gap:14px">' + gold + '</div>' + list + '<div data-fit="spacer" style="flex:1"></div>' + general + '</div>';
+    var general = w.general ? '<div data-fit="general" style="align-self:start;display:flex;flex-direction:row;align-items:center;gap:20px;background:' + C.blue + ';border-radius:14px;padding:8px 24px"><p style="font-size:40px;' + B + 'line-height:1.1;color:#FFFFFF;white-space:nowrap">' + w.general + '</p><p style="font-size:26px;' + B + 'color:#FFFFFF">о&#160;больнице в&#160;целом</p></div>' : '';
+    var left = '<div data-fit="col" style="display:flex;flex-direction:column;gap:22px;height:776px;min-height:0">' + (w.gold.length ? '<div data-fit="gold" style="display:flex;flex-direction:column;gap:0px;background:' + C.gold + ';border:3px solid ' + C.goldB + ';border-radius:24px;padding:6px 24px">' + gold + '</div>' : '') + '' + list + '<div data-fit="spacer" style="flex:1"></div>' + general + '</div>';
     var ph = w.photos || [];
     return '<section id="where" style="' + SEC + 'padding:212px 80px 104px 80px;display:grid;grid-template-columns:1fr 440px 600px;gap:28px">' + frame("where", "Отделения: благодарности за неделю", n, D.foot) + left +
       photo(ph[0], "width:440px;height:776px;border-radius:24px", ph[0] && ph[0].alt) +
@@ -198,9 +202,17 @@
     var steps = [[30, 32, 14], [28, 30, 10], [26, 26, 6], [24, 24, 4]], i = 0;
     setRows.apply(null, steps[0]);
     while (content() > avail + 1 && ++i < steps.length) setRows.apply(null, steps[i]);
-    if (content() > avail + 1 && goldB) { [].forEach.call(goldB.children, function (g) { g.style.padding = "8px 20px"; var p = g.querySelector("p:nth-of-type(2)") || g.children[1]; if (p) p.style.fontSize = "24px"; }); goldB.style.gap = "10px"; }
+    if (content() > avail + 1 && goldB) { [].forEach.call(goldB.querySelectorAll('[data-fit="prow"]'), function (g) { g.style.padding = "6px 0px"; }); [].forEach.call(goldB.querySelectorAll('[data-fit="chip"]'), function (p) { p.style.fontSize = "22px"; p.style.padding = "4px 12px"; }); }
     // свободное место — поровну в промежутки списка (не больше 28 px), чтобы не было дыры над плашкой
     if (list && rows.length) { var free = avail - content(); if (free > 0) { var g0 = parseFloat(list.style.gap) || 14, g1 = Math.min(28, g0 + free / (rows.length + 1)); list.style.gap = g1 + "px"; } }
+    // короткая неделя: остаток — в строки мест и списка (свободнее и крупнее), а что осталось — поровну сверху и снизу, без дыры внизу
+    var prows = goldB ? [].slice.call(goldB.querySelectorAll('[data-fit="prow"]')) : [], left = avail - content();
+    if (left > 40) {
+      if (prows.length) { var add = Math.min(22, left / 2 / (prows.length * 2)); prows.forEach(function (g) { g.style.padding = (14 + add) + "px 0px"; }); }
+      if (list && rows.length) { left = avail - content(); var g2 = Math.min(48, (parseFloat(list.style.gap) || 14) + left / 2 / (rows.length + 1)); list.style.gap = g2 + "px"; }
+      left = avail - content();
+      if (left > 40 && sp && !sec.querySelector('[data-fit="general"]')) { sp.style.flex = "none"; col.style.justifyContent = "center"; }
+    }
   }
   /* самопроверка вёрстки: текст за краем слайда, на подвале или налезает на соседний блок — выгрузка запрещена */
   function layoutIssues(sec) {

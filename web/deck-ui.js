@@ -120,40 +120,54 @@
       row.append(photoPicker(n.who, kind));
       if (kind === "face") row.append(btn("Фото нет: перенести в строку «Ещё…»", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick({ gold: g }); }));
     } else if (n.kind === "quote") {
-      var sel = el("select", "btn"); sel.setAttribute("aria-label", "Цитата");
-      var opts = (n.options || []).slice(); if (n.current && opts.indexOf(n.current) < 0) opts.unshift(n.current);
-      opts.forEach(function (q) { var o = el("option", null, q); if (q === n.current) o.selected = true; sel.append(o); });
-      var inp = el("input"); inp.type = "text"; inp.className = "deck-in"; inp.value = n.current || opts[0] || ""; inp.placeholder = "Цитата, сокращённая без изменения смысла";
-      // объём: все карточки в одной полосе знаков — счётчик подсказывает
-      var cnt = el("span", "hint"), upd = function () { var L = inp.value.trim().length, b = n.band; cnt.textContent = L + " знаков" + (b ? (L < b[0] || L > b[1] ? " — нужно " + b[0] + "–" + b[1] : " ✓") : ""); cnt.className = "hint" + (b && (L < b[0] || L > b[1]) ? " bad" : ""); };
-      sel.addEventListener("change", function () { inp.value = sel.value; upd(); }); inp.addEventListener("input", upd); upd();
-      row.append(sel, inp, cnt, btn("Подтвердить цитату", "primary", function () { var v = inp.value.trim(); if (!v) return; var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q }); }));
+      var qp = quotePicker(n.options, n.current, n.band, "Цитата");
+      row.append(qp.box, btn("Подтвердить цитату", "primary", function () { var v = qp.value(); if (!v) return; var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q, own: ownList(v, n.options) }); }));
     } else if (n.kind === "review") {
-      var list = el("div", "deck-opts"), chosen = null;
+      var list = el("div", "deck-opts"), chosen = null, rq = null, rqBox = el("div");
+      var setQ = function (o, cur0) { rq = quotePicker(o.quotes && o.quotes.length ? o.quotes : [o.quote], cur0 || o.quote, n.band, "Цитата отзыва недели"); rqBox.textContent = ""; rqBox.append(rq.box); };
       (n.options || []).forEach(function (o, i) {
         var lab = el("label", "deck-opt"), rb = el("input"); rb.type = "radio"; rb.name = "rv" + (n.current ? "c" : ""); rb.value = o.key; if (n.current ? o.key === n.current : !i) { rb.checked = true; chosen = o; }
-        rb.addEventListener("change", function () { chosen = o; q.value = o.quote; });
+        rb.addEventListener("change", function () { chosen = o; setQ(o); });
         lab.append(rb, el("b", null, " " + o.short + " · " + o.platform + " · " + s(o.date)), el("span", null, " «" + o.quote + "»"));
         list.append(lab);
       });
-      var q = el("input"); q.type = "text"; q.className = "deck-in"; q.value = chosen ? chosen.quote : ""; q.placeholder = "Цитата недели";
-      row.append(list, q, btn("Выбрать отзыв недели", "primary", function () { if (!chosen) return; savePick({ review: chosen.key, reviewText: Object.assign({}, pickDoc().reviewText || {}, { quote: q.value.trim() || chosen.quote }) }); }));
+      if (chosen) setQ(chosen);
+      row.append(list, rqBox, btn("Выбрать отзыв недели", "primary", function () { if (!chosen) return; var v = rq.value() || chosen.quote; savePick({ review: chosen.key, own: ownList(v, chosen.quotes || [chosen.quote]), reviewText: Object.assign({}, pickDoc().reviewText || {}, { quote: v }) }); }));
     } else if (n.kind === "voices") {
-      var sels = [0, 1, 2].map(function (i) {
-        var se = el("select", "btn"); se.setAttribute("aria-label", "Голос " + (i + 1));
+      // у каждого голоса — врач и выбор цитаты из его отзыва (или своя фраза)
+      var opts = n.options || [], slots = [0, 1, 2].map(function (i) {
+        var box = el("div", "deck-voice"), se = el("select", "btn"); se.setAttribute("aria-label", "Голос " + (i + 1));
         se.append(el("option", null, "— не ставить —"));
-        var curShort = n.current ? n.current[i] : null;
-        (n.options || []).forEach(function (o, k) { var op = el("option", null, o.short + ": «" + o.quote + "»"); op.value = String(k); if (curShort ? o.short === curShort : k === i) op.selected = true; se.append(op); });
-        return se;
+        var c0 = n.current ? n.current[i] : null, curShort = c0 && (c0.short || c0), qBox = el("div"), qp = null;
+        opts.forEach(function (o, k) { var op = el("option", null, o.short + ": «" + o.quote + "»"); op.value = String(k); if (curShort ? (c0.key ? o.key === c0.key : o.short === curShort) : (!n.current && k === i)) op.selected = true; se.append(op); });
+        var setQ = function (keep) { var o = opts[+se.value]; qBox.textContent = ""; qp = null; if (!o) return; qp = quotePicker(o.quotes && o.quotes.length ? o.quotes : [o.quote], keep && c0 && c0.quote || o.quote, n.band, "Цитата голоса " + (i + 1)); qBox.append(qp.box); };
+        se.addEventListener("change", function () { setQ(false); }); setQ(true);
+        box.append(el("b", null, "Голос " + (i + 1) + " "), se, qBox);
+        return { box: box, get: function () { var o = opts[+se.value]; if (!o || !qp) return null; return { short: o.short, quote: qp.value() || o.quote, key: o.key, opts: o.quotes || [o.quote] }; } };
       });
-      sels.forEach(function (x) { row.append(x); });
+      slots.forEach(function (x) { row.append(x.box); });
       row.append(btn("Подтвердить голоса", "primary", function () {
-        var v = sels.map(function (x) { var o = (n.options || [])[+x.value]; return isNaN(+x.value) || !o ? null : { short: o.short, quote: o.quote, key: o.key }; }).filter(Boolean);
-        savePick({ voices: v });
+        var v = slots.map(function (x) { return x.get(); }).filter(Boolean), ownAll = (pickDoc().own || []).slice();
+        v.forEach(function (x) { ownAll = ownList(x.quote, x.opts, ownAll); delete x.opts; });
+        savePick({ voices: v, own: ownAll });
       }));
     }
     return row;
   }
+  // выбор цитаты: варианты из отзыва + правка вручную, счётчик объёма
+  function quotePicker(options, current, band, label) {
+    var box = el("div", "deck-qp"), sel = el("select", "btn"); sel.setAttribute("aria-label", label);
+    var opts = (options || []).filter(Boolean).slice(); if (current && opts.indexOf(current) < 0) opts.unshift(current);
+    opts.forEach(function (q) { var o = el("option", null, q); if (q === current) o.selected = true; sel.append(o); });
+    var inp = el("input"); inp.type = "text"; inp.className = "deck-in"; inp.value = current || opts[0] || ""; inp.placeholder = "Цитата, сокращённая без изменения смысла"; inp.setAttribute("aria-label", label + ": текст");
+    var cnt = el("span", "hint"), upd = function () { var L = inp.value.trim().length, b = band; cnt.textContent = L + " знаков" + (b ? (L < b[0] || L > b[1] ? " — нужно " + b[0] + "–" + b[1] : " ✓") : ""); cnt.className = "hint" + (b && (L < b[0] || L > b[1]) ? " bad" : ""); };
+    sel.addEventListener("change", function () { inp.value = sel.value; upd(); }); inp.addEventListener("input", upd); upd();
+    if (opts.length > 1) box.append(el("span", "hint", opts.length + " " + DK().plural(opts.length, "вариант", "варианта", "вариантов") + ": "));
+    box.append(sel, inp, cnt);
+    return { box: box, value: function () { return inp.value.trim(); } };
+  }
+  // своя фраза (не из предложенных) — программа не оценивает её по смыслу при перепроверке
+  function ownList(v, options, base) { var o = (base || pickDoc().own || []).filter(function (x) { return x !== v; }); if (v && (options || []).indexOf(v) < 0) o.push(v); return o; }
   // всегда доступно: заменить фото и вернуть выбор
   function extraRow() {
     var d = el("details", "deck-extra"); d.append(el("summary", null, "Пересмотреть выбор: цитаты, отзыв недели, голоса, фото"));
@@ -246,8 +260,8 @@
       setHtml(inner, h); fr.append(inner); pv.append(fr); fit(fr, inner);
       var sec = inner.firstElementChild, id = sec.id, saved = edits[id];
       if (saved && saved.sig === sig(h)) setHtml(sec, saved.html);
-      sec.querySelectorAll("p,h1,h2").forEach(function (t) { if (t.textContent.trim()) { t.contentEditable = "true"; t.spellcheck = false; } });
-      sec.addEventListener("focusout", function () { var e = Object.assign({}, pickDoc().edits || {}); e[id] = { sig: sig(h), html: sec.innerHTML }; savePickQuiet({ edits: e }); check(); });
+      editable(sec);
+      sec.addEventListener("focusout", function () { clean(sec); var e = Object.assign({}, pickDoc().edits || {}); e[id] = { sig: sig(h), html: sec.innerHTML }; savePickQuiet({ edits: e }); check(); });
       all.push(sec);
     });
     function check() {
@@ -270,6 +284,33 @@
     // подгонка — на неуменьшенной копии (в превью слайд уменьшен), результат переносим в превью
     var fitAll = function () { all.forEach(function (sec) { if (sec.id !== "where") return; var tmp = el("div", "deck-measure"); document.body.append(tmp); var c = cloneSec(sec); tmp.append(c); DK().fitSlide(c); setHtml(sec, c.innerHTML); tmp.remove(); }); };
     Promise.all([].concat.apply([], all.map(function (sec) { return [].map.call(sec.querySelectorAll("img"), function (im) { return im.complete ? 0 : new Promise(function (r) { im.onload = im.onerror = r; }); }); }))).then(function () { return document.fonts.ready; }).then(function () { fitAll(); check(); });
+  }
+  /* правка прямо на слайде — только текст. Вставка из другого места приносила своё оформление (мелкий шрифт), Enter — новые
+     блоки: часть цитаты становилась другого размера (28.10). Теперь вставляется простой текст, Enter не разрывает абзац,
+     а всё чужое, что всё же попало внутрь, при выходе из правки превращается в текст абзаца */
+  function editable(sec) {
+    var keep = [];
+    sec.querySelectorAll("p,h1,h2").forEach(function (t) {
+      if (!t.textContent.trim()) return;
+      t.contentEditable = "plaintext-only"; if (t.contentEditable !== "plaintext-only") t.contentEditable = "true"; t.spellcheck = false;
+      // сохранённая раньше правка могла принести чужое оформление — убираем его
+      [].forEach.call(t.querySelectorAll("*"), function (x) { if (/^(DIV|P|FONT|H\d)$/.test(x.tagName) || /font-size|font-family|line-height/.test(x.getAttribute("style") || "") || x.style && (x.style.fontSize || x.style.fontFamily)) unwrap(x); });
+      t.normalize();
+      [].forEach.call(t.querySelectorAll("*"), function (x) { keep.push(x); });
+      t.addEventListener("paste", function (e) { e.preventDefault(); var tx = ((e.clipboardData || window.clipboardData).getData("text/plain") || "").replace(/\s+/g, " "); document.execCommand("insertText", false, tx); });
+      t.addEventListener("drop", function (e) { e.preventDefault(); });
+      t.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); t.blur(); } });
+    });
+    sec.__keep = keep;
+  }
+  function unwrap(x) { if (!x.parentNode) return; x.parentNode.replaceChild(document.createTextNode((/^(BR|DIV|P)$/.test(x.tagName) ? " " : "") + x.textContent), x); }
+  function clean(sec) {
+    var keep = sec.__keep || [];
+    sec.querySelectorAll("[contenteditable]").forEach(function (t) {
+      var bad = [].filter.call(t.querySelectorAll("*"), function (x) { return keep.indexOf(x) < 0; });
+      bad.forEach(function (x) { if (t.contains(x)) unwrap(x); });
+      t.normalize();
+    });
   }
   function sig(h) { var x = 0; for (var i = 0; i < h.length; i++) x = (x * 31 + h.charCodeAt(i)) | 0; return x; }
   function savePickQuiet(patch) { if (!cur) return; var id = cur.data.start; picks[id] = Object.assign({}, picks[id] || {}, patch); db.collection("deckPicks").doc(id).set(picks[id]).catch(function () {}); }
