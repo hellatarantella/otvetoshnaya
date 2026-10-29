@@ -203,10 +203,18 @@
     var avail = col.getBoundingClientRect().height;
     var content = function () { var h = 0, kids = [].filter.call(col.children, function (k) { return k !== sp; }); kids.forEach(function (k) { h += k.getBoundingClientRect().height; }); return h + 22 * (col.children.length - 1); };
     var rows = list ? [].slice.call(list.children, 1) : [];
-    var setRows = function (fs, bar, gap) { if (!list) return; list.style.gap = gap + "px"; rows.forEach(function (r) { var p = r.querySelector("p"); if (p) p.style.fontSize = fs + "px"; var b = r.querySelector("div > div"); if (b) b.style.height = bar + "px"; }); };
+    var setRows = function (fs, bar, gap) { if (!list) return; list.style.rowGap = gap + "px"; rows.forEach(function (r) { var p = r.querySelector("p"); if (p) p.style.fontSize = fs + "px"; var b = r.children[1] && r.children[1].children[0]; if (b) b.style.height = bar + "px"; }); };
     var steps = [[30, 32, 14], [28, 30, 10], [26, 26, 6], [24, 24, 4], [22, 20, 2]], i = 0;
     setRows.apply(null, steps[0]);
     while (content() > avail + 1 && ++i < steps.length) setRows.apply(null, steps[i]);
+    // очень длинный список «по одной» (29.10: 20+ отделений): две колонки в той же левой части — фото и компоновка те же
+    if (content() > avail + 1 && list && rows.length > 8) {
+      list.style.display = "grid"; list.style.gridTemplateColumns = "minmax(0px, 1fr) minmax(0px, 1fr)"; list.style.columnGap = "28px"; list.setAttribute("data-cols", "2");
+      list.children[0].style.gridColumn = "1 / -1";
+      rows.forEach(function (r) { r.style.gridTemplateColumns = "minmax(0px, 1fr) auto"; r.style.gap = "10px"; var b = r.children[1] && r.children[1].children[0]; if (b) b.style.width = "36px"; var p = r.querySelector("p"); if (p) p.style.whiteSpace = "normal"; });
+      i = 0; setRows.apply(null, steps[0]);
+      while (content() > avail + 1 && ++i < steps.length) setRows.apply(null, steps[i]);
+    }
     if (content() > avail + 1 && goldB) { [].forEach.call(goldB.querySelectorAll('[data-fit="prow"]'), function (g) { g.style.padding = "6px 0px"; }); [].forEach.call(goldB.querySelectorAll('[data-fit="chip"]'), function (p) { p.style.fontSize = "22px"; p.style.padding = "4px 12px"; }); [].forEach.call(goldB.querySelectorAll('[data-fit="prow"] > div:nth-child(2)'), function (d) { d.style.gap = "6px"; }); }
     spread(sec);
   }
@@ -216,12 +224,13 @@
     if (!col) return;
     var avail = col.getBoundingClientRect().height, rows = list ? [].slice.call(list.children, 1) : [];
     var content = function () { var h = 0, kids = [].filter.call(col.children, function (k) { return k !== sp; }); kids.forEach(function (k) { h += k.getBoundingClientRect().height; }); return h + 22 * (col.children.length - 1); };
-    if (list && rows.length) { var free = avail - content(); if (free > 0) { var g0 = parseFloat(list.style.gap) || 14, g1 = Math.min(28, g0 + free / (rows.length + 1)); list.style.gap = g1 + "px"; } }
+    var nRows = list && list.getAttribute("data-cols") === "2" ? Math.ceil(rows.length / 2) : rows.length;
+    if (list && rows.length) { var free = avail - content(); if (free > 0) { var g0 = parseFloat(list.style.rowGap) || 14, g1 = Math.min(28, g0 + free / (nRows + 1)); list.style.rowGap = g1 + "px"; } }
     // короткая неделя: остаток — в строки мест и списка (свободнее и крупнее), а что осталось — поровну сверху и снизу, без дыры внизу
     var prows = goldB ? [].slice.call(goldB.querySelectorAll('[data-fit="prow"]')) : [], left = avail - content();
     if (left > 40) {
       if (prows.length) { var add = Math.min(22, left / 2 / (prows.length * 2)); prows.forEach(function (g) { g.style.padding = (14 + add) + "px 0px"; }); }
-      if (list && rows.length) { left = avail - content(); var g2 = Math.min(48, (parseFloat(list.style.gap) || 14) + left / 2 / (rows.length + 1)); list.style.gap = g2 + "px"; }
+      if (list && rows.length) { left = avail - content(); var g2 = Math.min(48, (parseFloat(list.style.rowGap) || 14) + left / 2 / (rows.length + 1)); list.style.rowGap = g2 + "px"; }
       left = avail - content();
       if (left > 40 && sp && !sec.querySelector('[data-fit="general"]')) { sp.style.flex = "none"; col.style.justifyContent = "center"; }
     }
