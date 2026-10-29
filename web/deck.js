@@ -276,7 +276,8 @@
       var name = "«" + e.textContent.trim().slice(0, 40) + "»";
       if (x + r.width > W + 1 || y + r.height > H + 1 || x < -1) out.push(name + " выходит за край слайда");
       else if (!isFoot && y + r.height > foot + 2 && !/^(cover|end)$/.test(sec.id)) out.push(name + " налезает на подвал");
-      if (e.scrollWidth > e.clientWidth + 2 && getComputedStyle(e).whiteSpace === "nowrap") out.push(name + " не помещается по ширине");
+      // слово шире своей ячейки (не переносится) — наезжает на соседний элемент (29.10: «Колопроктология» на полоску)
+      if (e.scrollWidth > e.clientWidth + 2 && (getComputedStyle(e).whiteSpace === "nowrap" || getComputedStyle(e).display !== "inline")) out.push(name + " не помещается по ширине");
       // текст или плашка выходит за свою карточку (ближайший блок с фоном)
       for (var a = e.parentElement; a && a !== sec; a = a.parentElement) {
         var bg = getComputedStyle(a).backgroundColor;
