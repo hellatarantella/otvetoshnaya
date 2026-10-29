@@ -1,0 +1,31 @@
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `node scripts/build-page.mjs`
+dist/index.html готов: 255642 символов
+[1m[92m    Updating[0m crates.io index
+[1m[92m   Compiling[0m otvetoshnaya v0.1.0 (/Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 4m 35s
+       Built application at: /Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/otvetoshnaya
+    Bundling Ответошная.app (/Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app)
+     Signing with identity "-"
+Signing with identity "-"
+Signing /Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app/Contents/MacOS/llama-server
+/Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app/Contents/MacOS/llama-server: replacing existing signature
+Signing with identity "-"
+Signing /Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app/Contents/MacOS/otvetoshnaya
+/Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app/Contents/MacOS/otvetoshnaya: replacing existing signature
+Signing with identity "-"
+Signing /Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app
+/Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app: replacing existing signature
+        Warn skipping app notarization, no APPLE_ID & APPLE_PASSWORD & APPLE_TEAM_ID or APPLE_API_KEY & APPLE_API_ISSUER & APPLE_API_KEY_PATH environment variables found
+    Bundling Ответошная_0.2.63_aarch64.dmg (/Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Ответошная_0.2.63_aarch64.dmg)
+     Running bundle_dmg.sh
+    Bundling /Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app.tar.gz (/Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app.tar.gz)
+    Finished 2 bundles at:
+        /Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app (27.32 MiB)
+        /Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Ответошная_0.2.63_aarch64.dmg (9.79 MiB)
+        /Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app.tar.gz (updater) (9.93 MiB)
+
+        Warn The updater secret key from `TAURI_SIGNING_PRIVATE_KEY` does not match the public key from `plugins > updater > pubkey`. If you are not rotating keys, this means your configuration is wrong and won't be accepted at runtime when performing update.
+    Finished 1 updater signature at:
+        /Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Ответошная.app.tar.gz.sig
+
