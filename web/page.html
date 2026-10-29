@@ -961,7 +961,9 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
       c.pubDone.hidden = queued;
       if (c.pubDone.dataset.armed !== "1") c.pubDone.textContent = "Я опубликовала";
     }
-    c.pubErr.textContent = (pub && s(r.publishError)) ? "Не опубликовано: " + nd(r.publishError) : (isStale(r) ? "Публикация не прошла. Нажмите «Опубликовать ещё раз»" : "");
+    // замечание проверки — заранее, до кнопки; публиковать или нет, решаете вы
+    var warn = (pub && st === "approved" && !s(r.publishError) && !isStale(r) && window.__otvPubGuard) ? window.__otvPubGuard(r) : "";
+    c.pubErr.textContent = (pub && s(r.publishError)) ? "Не опубликовано: " + nd(r.publishError) : (isStale(r) ? "Публикация не прошла. Нажмите «Опубликовать ещё раз»" : (warn ? "Проверьте ответ: " + warn + ". Если всё верно — публикуйте" : ""));
     c.pubErr.hidden = !c.pubErr.textContent;
     var isFix = st === "fix";
     c.revBox.hidden = !isFix;

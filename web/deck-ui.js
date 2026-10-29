@@ -282,7 +282,8 @@
       buttons.forEach(function (b) { b.disabled = dis; b.title = dis ? "Сначала подтвердите всё в «Нужно ваше решение» и уберите замечания по вёрстке" : ""; });
     }
     // подгонка — на неуменьшенной копии (в превью слайд уменьшен), результат переносим в превью
-    var fitAll = function () { all.forEach(function (sec) { if (sec.id !== "where") return; var tmp = el("div", "deck-measure"); document.body.append(tmp); var c = cloneSec(sec); tmp.append(c); DK().fitSlide(c); setHtml(sec, c.innerHTML); tmp.remove(); }); };
+    // все слайды: «Отделения» — своя подгонка колонки, затем общее правило (текст ступенями до −20%, расположение то же)
+    var fitAll = function () { all.forEach(function (sec) { var tmp = el("div", "deck-measure"); document.body.append(tmp); var c = cloneSec(sec); tmp.append(c); DK().fitSlide(c); DK().fitText(c); setHtml(sec, c.innerHTML); tmp.remove(); editable(sec); }); };
     Promise.all([].concat.apply([], all.map(function (sec) { return [].map.call(sec.querySelectorAll("img"), function (im) { return im.complete ? 0 : new Promise(function (r) { im.onload = im.onerror = r; }); }); }))).then(function () { return document.fonts.ready; }).then(function () { fitAll(); check(); });
   }
   /* правка прямо на слайде — только текст. Вставка из другого места приносила своё оформление (мелкий шрифт), Enter — новые

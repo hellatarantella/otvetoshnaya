@@ -1360,17 +1360,19 @@
       var t = srcState[x.id]; return { name: x.name, ok: !!t.ok, okAt: t.okAt || (t.ok ? t.at : ""), needLogin: !!t.needLogin, down: !!t.down };
     });
   };
+  // проверка ответа к этому отзыву: замечание видно на карточке заранее. Публикацию по вашей кнопке не запрещает (решение 29.10):
+  // нажали «Опубликовать» — ответ публикуется, замечание пишется в журнал
   // перед публикацией: ответ должен относиться именно к этому отзыву (имя в приветствии — автора, люди в тексте — из отзыва, тон — по отзыву)
   function pubGuard(r) {
     var reg = (window.__otvAll("registry") || {})[r.id] || {};
     var author = s0(reg.author || r.author), review = s0(reg.fullText || reg.text || r.review), ans = s0(r.answer);
     var nm = (ans.match(/^\s*Здравствуйте,\s*([А-ЯЁA-Z][а-яёa-z]+)/) || [])[1];
     var low = function (x) { return x.toLowerCase().replace(/ё/g, "е"); };
-    if (nm && low(author).indexOf(low(nm).slice(0, 3)) < 0 && low(review).indexOf(low(nm).slice(0, 4)) < 0) return "в ответе обращение «" + nm + "», а автор отзыва «" + (author || "без имени") + "». Ответ не к этому отзыву, не публикую";
+    if (nm && low(author).indexOf(low(nm).slice(0, 3)) < 0 && low(review).indexOf(low(nm).slice(0, 4)) < 0) return "в ответе обращение «" + nm + "», а автор отзыва «" + (author || "без имени") + "»";
     var rating = reg.rating == null ? r.rating : reg.rating;
     var tone = rating != null && rating !== "" && +rating < 4 ? "negative" : (rating != null && rating !== "" ? "positive" : "");
     var g = window.__otvGen && window.__otvGen.check ? window.__otvGen.check(ans, { review: review }, tone) : { ok: true };
-    if (!g.ok) return "ответ не подходит к отзыву: " + g.why.join("; ") + ". Не публикую";
+    if (!g.ok) return g.why.join("; ");
     return "";
   }
   window.__otvPubGuard = pubGuard;   // для проверок
@@ -1386,8 +1388,9 @@
     window.__otvBar.show("Публикую ответы: " + todo.length + "…", "", []);
     todo.reduce(function (p, r) {
       return p.then(function () {
-        var bad0 = pubGuard(r);
-        return (bad0 ? Promise.resolve({ ok: false, error: bad0 }) : publishOne(r)).catch(function (e) { return { ok: false, error: String(e && e.message || e) }; }).then(function (res) {
+        var warn = pubGuard(r);
+        if (warn) jlog("публикация " + r.platform + " " + r.id + ": замечание проверки (публикую по вашей кнопке): " + warn);
+        return publishOne(r).catch(function (e) { return { ok: false, error: String(e && e.message || e) }; }).then(function (res) {
           var ref = db.collection("answers").doc(r.id);
           jlog("публикация " + r.platform + " " + r.id + ": " + (res.ok && res.items && (res.items.ok || res.items.already) ? (res.items.already ? "ответ уже был" : "опубликовано") : "НЕ вышло: " + (res.needLogin ? "нужен вход" : (res.error || (res.items && res.items.error) || "?")) + (res.url ? " · " + String(res.url).split("?")[0] : "")));
           if (res.ok && res.items && (res.items.ok || res.items.already)) {

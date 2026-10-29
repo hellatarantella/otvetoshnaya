@@ -111,8 +111,8 @@
     var ph = small ? 180 : 220;
     return '<div style="display:flex;flex-direction:column;align-items:center;gap:' + (small ? 10 : 12) + 'px;background:' + C.gold + ';border:3px solid ' + C.goldB + ';border-radius:24px;padding:' + (small ? "28px 20px 24px 20px" : "36px 30px 30px 30px") + '">' +
       photo(c.photo, "width:" + ph + "px;height:" + ph + "px;border-radius:50%;border:6px solid " + C.goldB, "Фото: " + c.short) +
-      '<p style="font-size:26px;' + B + 'color:' + C.goldT + ';text-align:center">' + nb(c.dept) + '</p>' +
-      '<p style="font-size:' + (small ? 40 : 44) + 'px;' + B + 'line-height:1.1;color:' + C.ink + ';text-align:center">' + esc(c.sur) + '</p>' +
+      '<p data-eqh="dept" style="display:flex;align-items:flex-end;justify-content:center;font-size:26px;' + B + 'color:' + C.goldT + ';text-align:center">' + nb(c.dept) + '</p>' +
+      '<p data-fitw="sur" style="max-width:100%;white-space:nowrap;font-size:' + (small ? 40 : 44) + 'px;' + B + 'line-height:1.1;color:' + C.ink + ';text-align:center">' + esc(c.sur) + '</p>' +
       '<p style="font-size:28px;line-height:1.25;color:' + C.ink + ';text-align:center">' + esc(c.name) + '</p>' +
       '<div style="display:flex;flex-direction:row;align-items:baseline;gap:14px"><p style="position:relative;top:0.05em;font-size:' + (small ? 76 : 88) + 'px;' + B + 'line-height:1.05;color:' + C.goldT + ';white-space:nowrap">' + c.n + '</p><p style="font-size:30px;' + B + 'color:' + C.goldT + '">' + esc(pw(c.n, W_THX)) + '</p></div>' +
       (c.quote ? '<p style="font-size:' + (small ? 24 : 26) + 'px;font-style:italic;line-height:1.4;color:' + C.blue + ';text-align:center">«' + nb(c.quote) + '»</p>' : '') +
@@ -133,7 +133,7 @@
     // 3–4 карточки: карточки в ряд, остальные — строкой во всю ширину под ними
     var strip = h.rest.length ? '<div style="grid-column:1 / -1;display:flex;flex-direction:column;gap:6px;background:' + C.ice + ';border-radius:20px;padding:16px 28px">' +
       '<p style="font-size:24px;line-height:1.35;color:' + C.ink + '"><b style="color:' + C.blue + '">' + nb(h.restTitle) + ':</b> ' + h.rest.map(function (r) { return nbName(r.short); }).join(", ") + '</p></div>' : '';
-    return '<section id="heroes" style="' + SEC + 'padding:204px 80px 96px 80px;display:grid;grid-template-columns:repeat(' + k + ', 1fr);grid-template-rows:1fr auto;gap:20px 24px">' + frame("heroes", "Лидеры по благодарностям за неделю", n, D.foot) +
+    return '<section id="heroes" style="' + SEC + 'padding:204px 80px 96px 80px;display:grid;grid-template-columns:repeat(' + k + ', minmax(0px, 1fr));grid-template-rows:1fr auto;gap:20px 24px">' + frame("heroes", "Лидеры по благодарностям за неделю", n, D.foot) +
       h.cards.map(function (c) { return goldCard(c, true); }).join("") + strip + '</section>';
   }
   function sReview(D, n) {
@@ -151,7 +151,7 @@
       '<p style="font-size:24px;' + B + 'color:' + C.blue + '">' + esc(r.date) + '</p></div>' +
       '<div style="flex:1"></div>' +
       (r.voices.length ? '<p style="font-size:26px;' + B + 'color:' + C.pale + '">' + nb(r.voicesTitle) + '</p>' +
-      '<div style="display:grid;grid-template-columns:repeat(' + r.voices.length + ', 1fr);gap:20px">' + r.voices.map(function (v) {
+      '<div style="display:grid;grid-template-columns:repeat(' + r.voices.length + ', minmax(0px, 1fr));gap:20px">' + r.voices.map(function (v) {
         return '<div style="display:flex;flex-direction:column;gap:10px;background:#FFFFFF;border-radius:20px;padding:24px 26px">' +
           '<p style="font-size:24px;font-style:italic;line-height:1.38;color:' + C.ink + '">«' + nb(v.quote) + '»</p><div style="flex:1"></div>' +
           '<p style="font-size:24px;' + B + 'line-height:1.25;color:' + C.blue + '">' + esc(v.short) + '</p>' +
@@ -208,7 +208,14 @@
     setRows.apply(null, steps[0]);
     while (content() > avail + 1 && ++i < steps.length) setRows.apply(null, steps[i]);
     if (content() > avail + 1 && goldB) { [].forEach.call(goldB.querySelectorAll('[data-fit="prow"]'), function (g) { g.style.padding = "6px 0px"; }); [].forEach.call(goldB.querySelectorAll('[data-fit="chip"]'), function (p) { p.style.fontSize = "22px"; p.style.padding = "4px 12px"; }); [].forEach.call(goldB.querySelectorAll('[data-fit="prow"] > div:nth-child(2)'), function (d) { d.style.gap = "6px"; }); }
-    // свободное место — поровну в промежутки списка (не больше 28 px), чтобы не было дыры над плашкой
+    spread(sec);
+  }
+  // свободное место — поровну в промежутки списка (не больше 28 px), чтобы не было дыры над плашкой
+  function spread(sec) {
+    var col = sec.querySelector('[data-fit="col"]'), list = sec.querySelector('[data-fit="list"]'), goldB = sec.querySelector('[data-fit="gold"]'), sp = sec.querySelector('[data-fit="spacer"]');
+    if (!col) return;
+    var avail = col.getBoundingClientRect().height, rows = list ? [].slice.call(list.children, 1) : [];
+    var content = function () { var h = 0, kids = [].filter.call(col.children, function (k) { return k !== sp; }); kids.forEach(function (k) { h += k.getBoundingClientRect().height; }); return h + 22 * (col.children.length - 1); };
     if (list && rows.length) { var free = avail - content(); if (free > 0) { var g0 = parseFloat(list.style.gap) || 14, g1 = Math.min(28, g0 + free / (rows.length + 1)); list.style.gap = g1 + "px"; } }
     // короткая неделя: остаток — в строки мест и списка (свободнее и крупнее), а что осталось — поровну сверху и снизу, без дыры внизу
     var prows = goldB ? [].slice.call(goldB.querySelectorAll('[data-fit="prow"]')) : [], left = avail - content();
@@ -218,6 +225,37 @@
       left = avail - content();
       if (left > 40 && sp && !sec.querySelector('[data-fit="general"]')) { sp.style.flex = "none"; col.style.justifyContent = "center"; }
     }
+  }
+  /* общее правило для всех слайдов (29.10): расположение блоков не меняется, а если текст не помещается — обычный текст
+     (до 34 px: цитаты, имена, подписи, списки) уменьшается ступенями, одинаково на всём слайде, но не больше чем на 20%.
+     Заголовки и большие цифры не трогаем. Исходный размер хранится в элементе, повторная подгонка начинается с него */
+  function fitText(sec) {
+    if (!sec || /^(cover|end)$/.test(sec.id)) return 1;
+    var els = [].filter.call(sec.querySelectorAll("p,b,span"), function (e) {
+      if (!e.hasAttribute("data-fs0")) { var f = parseFloat(getComputedStyle(e).fontSize) || 0; if (!e.style.fontSize && e.tagName !== "P") return false; e.setAttribute("data-fs0", f); }
+      var f0 = +e.getAttribute("data-fs0"); return f0 > 0 && f0 <= 34 && getComputedStyle(e).position !== "absolute";
+    });
+    var set = function (k) { els.forEach(function (e) { e.style.fontSize = (Math.round(+e.getAttribute("data-fs0") * k * 10) / 10) + "px"; }); };
+    // длинное слово в узкой карточке (фамилия): вся группа уменьшается одинаково, ровно чтобы поместилось самое длинное
+    var widthFit = function () {
+      var groups = {};
+      [].forEach.call(sec.querySelectorAll("[data-fitw]"), function (e) { if (!e.hasAttribute("data-fs0")) e.setAttribute("data-fs0", parseFloat(getComputedStyle(e).fontSize) || 0); e.style.fontSize = e.getAttribute("data-fs0") + "px"; (groups[e.getAttribute("data-fitw")] = groups[e.getAttribute("data-fitw")] || []).push(e); });
+      Object.keys(groups).forEach(function (g) {
+        var r = Math.max.apply(null, groups[g].map(function (e) { return e.clientWidth ? e.scrollWidth / e.clientWidth : 1; }));
+        if (r > 1) groups[g].forEach(function (e) { e.style.fontSize = Math.max(+e.getAttribute("data-fs0") * 0.6, Math.floor(+e.getAttribute("data-fs0") / r * 0.98)) + "px"; });
+      });
+    };
+    // подписи разной длины в однотипных карточках: высота по самой высокой, чтобы число и цитата стояли на одном уровне
+    var eqH = function () {
+      var groups = {};
+      [].forEach.call(sec.querySelectorAll("[data-eqh]"), function (e) { e.style.minHeight = ""; (groups[e.getAttribute("data-eqh")] = groups[e.getAttribute("data-eqh")] || []).push(e); });
+      Object.keys(groups).forEach(function (g) { var h = Math.max.apply(null, groups[g].map(function (e) { return e.getBoundingClientRect().height; })); groups[g].forEach(function (e) { e.style.minHeight = h + "px"; }); });
+    };
+    var steps = [1, 0.95, 0.9, 0.85, 0.8], i = 0;
+    set(1); widthFit(); eqH();
+    while (layoutIssues(sec).length && ++i < steps.length) { set(steps[i]); widthFit(); eqH(); }
+    if (sec.id === "where") spread(sec);
+    return steps[Math.min(i, steps.length - 1)];
   }
   /* самопроверка вёрстки: текст за краем слайда, на подвале или налезает на соседний блок — выгрузка запрещена */
   function layoutIssues(sec) {
@@ -287,5 +325,5 @@
   function slidesHtml(D) { return ORDER.filter(function (x) { return !(D.skip || {})[x[0]]; }).map(function (x, i) { return x[1](D, i + 1); }); }
 
   window.__otvDeck = window.__otvDeck || {};
-  Object.assign(window.__otvDeck, { nbText: nbText, slidesHtml: slidesHtml, fitSlide: fitSlide, layoutIssues: layoutIssues, nb: nb, pw: pw, plural: plural, human: human, dm: dm, dmShort: dmShort, pct: pct, signed: signed, ordinal: ordinal, W: W, H: H, C: C, W_POS: W_POS, W_NEG: W_NEG, W_THX: W_THX, MON: MON });
+  Object.assign(window.__otvDeck, { spread: spread, fitText: fitText, nbText: nbText, slidesHtml: slidesHtml, fitSlide: fitSlide, layoutIssues: layoutIssues, nb: nb, pw: pw, plural: plural, human: human, dm: dm, dmShort: dmShort, pct: pct, signed: signed, ordinal: ordinal, W: W, H: H, C: C, W_POS: W_POS, W_NEG: W_NEG, W_THX: W_THX, MON: MON });
 })();

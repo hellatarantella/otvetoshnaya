@@ -327,6 +327,16 @@
   var THANKS_ONLY = /т[её]пл\S* слов|высок\S* оценк|спасибо за (добрые|т[её]плые|высокую)|благодарим за т[её]пл|передадим (ваши )?(слова )?благодарност/i;
   var COMPLAINT_ONLY = /разобраться в ситуации|разберёмся|сожалеем|прин(осим|ести) извинени|приносим извинения|ответственными подразделениями/i;
   function stem(w, n) { return norm(w).slice(0, n); }
+  // «Антонова» в отзыве = «Владислава Игоревна» в ответе: по «Списку врачей» (фамилия в любом падеже)
+  function staffNamed(raw, first, pat) {
+    var R = window.__otvReports; if (!R || !R.person) return false;
+    var words = s(raw).match(/[А-ЯЁ][а-яё-]{2,}/g) || [];
+    return words.some(function (w) {
+      return [w, w.replace(/(ой|ую|е|у)$/, "а"), w.replace(/(ым|ом|у|е|а)$/, "")].some(function (v) {
+        var p = R.person(v); return p && !p.ambiguous && stem(p.name, 4) === stem(first, 4) && stem(p.pat, 5) === stem(pat, 5);
+      });
+    });
+  }
   function check(text, it, tone) {
     var t = s(text), review = norm(s(it && it.review)), why = [];
     var body = t.replace(/^\s*(Здравствуйте|Добрый день)[^\n.!]*[.!]?/i, "");   // приветствие с именем автора не проверяем
@@ -334,7 +344,7 @@
     while ((m = re.exec(body))) {
       // «Анна Сергеевна» в ответе = «Иванчина А.С.» в отзыве (те же инициалы)
       var ini = new RegExp("[а-яё]{3,}\\s+" + m[1].charAt(0).toLowerCase() + "\\.\\s?" + m[2].charAt(0).toLowerCase() + "\\.").test(s(it && it.review).toLowerCase().replace(/ё/g, "е"));
-      if (!ini && (review.indexOf(stem(m[1], 4)) < 0 || review.indexOf(stem(m[2], 5)) < 0)) why.push("в отзыве нет «" + m[1] + " " + m[2] + "»");
+      if (!ini && (review.indexOf(stem(m[1], 4)) < 0 || review.indexOf(stem(m[2], 5)) < 0) && !staffNamed(it && it.review, m[1], m[2])) why.push("в отзыве нет «" + m[1] + " " + m[2] + "»");
     }
     var re2 = /([А-ЯЁ][а-яё]{3,})\s+[А-ЯЁ]\.\s?[А-ЯЁ]\./g;
     while ((m = re2.exec(body))) { if (review.indexOf(stem(m[1], 5)) < 0) why.push("в отзыве нет «" + m[1] + "»"); }
