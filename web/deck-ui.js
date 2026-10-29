@@ -32,10 +32,21 @@
     return p ? { src: p.src, pos: "center center" } : null;
   }
   function pickDoc() { return cur ? (picks[cur.data.start] || {}) : {}; }
-  function savePick(patch) {
-    if (!cur) return Promise.resolve();
+  // каждое нажатие даёт видимый ответ: «Сохранено…» или причину (29.10: казалось, что кнопки не работают)
+  function bar(t, kind) { if (window.__otvBar) window.__otvBar.show(t, kind || "", [["Закрыть", window.__otvBar.hide]]); }
+  function savePick(patch, msg) {
+    if (!cur) { bar("Не выбрана неделя презентации", "err"); return Promise.resolve(); }
     var id = cur.data.start, d = Object.assign({}, picks[id] || {}, patch, { at: new Date().toISOString() });
-    picks[id] = d; return db.collection("deckPicks").doc(id).set(d).then(rebuild);
+    picks[id] = d;
+    return db.collection("deckPicks").doc(id).set(d).then(function () { rebuild(); bar((msg || "Сохранено") + ". Презентация пересобрана", "ok"); })
+      .catch(function (e) { log("решение не сохранилось: " + (e && e.stack || e)); bar("Не сохранилось: " + (e && e.message || e) + ". Журнал записан", "err"); });
+  }
+  // фраза до сохранения: объём и законченность. Не подходит — сразу говорим, что не так (раньше молча заменялась прежней)
+  function quoteProblem(v, band) {
+    if (!v) return "впишите или выберите цитату";
+    if (band && (v.length < band[0] || v.length > band[1])) return v.length + " знаков, нужно " + band[0] + "–" + band[1];
+    if (band && DK().okQuote && !DK().okQuote(v, band)) return "фраза обрывочная: нужно законченное предложение от 6 слов";
+    return "";
   }
   function person(tok) { return window.__otvReports && window.__otvReports.person ? window.__otvReports.person(tok) : null; }
 
@@ -56,7 +67,7 @@
     var hist = DK().history(Object.keys(snaps).map(function (k) { return snaps[k]; }));
     try { res = DK().build(cur.data, hist, { person: person, photoOf: photoOf, pick: pickDoc() }); }
     catch (e) { res = null; log("не собралась: " + (e && e.stack || e)); }
-    paint(ws);
+    try { paint(ws); } catch (e) { log("отрисовка: " + (e && e.stack || e)); root.append(el("p", "ctl-st err", "Ошибка отрисовки презентации: " + (e && e.message || e) + ". Журнал записан")); }
   }
   function paintEmpty() { root.textContent = ""; root.append(el("p", "hint", "Нет данных недели: подключите Google во вкладке «Отчёты» и обновите отчёт.")); }
 
@@ -67,7 +78,16 @@
     ws.forEach(function (w) { var o = el("option", null, w.label); o.value = w.key; if (cur && w.key === cur.key) o.selected = true; weekSel.append(o); });
     weekSel.addEventListener("change", function () { cur = ws.filter(function (w) { return w.key === weekSel.value; })[0]; rebuild(); });
     // «Обновить презентацию»: перечитать отчёт из Google и пересобрать слайды со всеми текущими решениями и фото
-    acts.append(weekSel, btn("Обновить презентацию", "primary", function () { var r = window.__otvReports; (r && r.refresh ? r.refresh() : Promise.resolve()).then(rebuild, rebuild); }));
+    var bRef = btn("Обновить презентацию", "primary", function () {
+      var r = window.__otvReports, t0 = Date.now(); bRef.disabled = true; bRef.textContent = "Обновляю…"; bar("Перечитываю отчёт из Google и пересобираю презентацию…");
+      var slow = new Promise(function (ok) { setTimeout(function () { ok("slow"); }, 30000); });
+      Promise.race([(r && r.refresh ? r.refresh() : Promise.resolve()).then(function () { return "ok"; }, function (e) { log("обновление: " + (e && e.message || e)); return "err"; }), slow]).then(function (how) {
+        rebuild();
+        bar(how === "ok" ? "Презентация обновлена: свежий отчёт из Google, все решения и фото на месте" : how === "slow" ? "Google не ответил за 30 секунд — пересобрала по последним данным" : "Отчёт из Google не перечитался — пересобрала по последним данным. Журнал записан", how === "ok" ? "ok" : "err");
+        log("обновление презентации: " + how + ", " + Math.round((Date.now() - t0) / 1000) + " с");
+      });
+    });
+    acts.append(weekSel, bRef);
     top.append(acts); root.append(top);
     if (!res) { root.append(el("p", "ctl-st err", "Не удалось собрать презентацию. Журнал записан.")); return; }
 
@@ -121,7 +141,7 @@
       if (kind === "face") row.append(btn("Фото нет: перенести в строку «Ещё…»", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick({ gold: g }); }));
     } else if (n.kind === "quote") {
       var qp = quotePicker(n.options, n.current, n.band, "Цитата");
-      row.append(qp.box, btn("Подтвердить цитату", "primary", function () { var v = qp.value(); if (!v) return; var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q, own: ownList(v, n.options) }); }));
+      row.append(qp.box, btn("Подтвердить цитату", "primary", function () { var v = qp.value(), bad = quoteProblem(v, n.band); if (bad) { bar("Цитата для " + n.short + " не принята: " + bad, "err"); return; } var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q, own: ownList(v, n.options) }, "Цитата для " + n.short + " сохранена"); }));
     } else if (n.kind === "review") {
       var list = el("div", "deck-opts"), chosen = null, rq = null, rqBox = el("div");
       var setQ = function (o, cur0) { rq = quotePicker(o.quotes && o.quotes.length ? o.quotes : [o.quote], cur0 || o.quote, n.band, "Цитата отзыва недели"); rqBox.textContent = ""; rqBox.append(rq.box); };
@@ -132,7 +152,7 @@
         list.append(lab);
       });
       if (chosen) setQ(chosen);
-      row.append(list, rqBox, btn("Выбрать отзыв недели", "primary", function () { if (!chosen) return; var v = rq.value() || chosen.quote; savePick({ review: chosen.key, own: ownList(v, chosen.quotes || [chosen.quote]), reviewText: Object.assign({}, pickDoc().reviewText || {}, { quote: v }) }); }));
+      row.append(list, rqBox, btn("Выбрать отзыв недели", "primary", function () { if (!chosen) { bar("Выберите отзыв недели", "err"); return; } var v = rq.value() || chosen.quote, bad = quoteProblem(v, n.band); if (bad) { bar("Цитата отзыва недели не принята: " + bad, "err"); return; } savePick({ review: chosen.key, own: ownList(v, chosen.quotes || [chosen.quote]), reviewText: Object.assign({}, pickDoc().reviewText || {}, { quote: v }) }); }));
     } else if (n.kind === "voices") {
       // у каждого голоса — врач и выбор цитаты из его отзыва (или своя фраза)
       var opts = n.options || [], slots = [0, 1, 2].map(function (i) {
@@ -149,7 +169,9 @@
       row.append(btn("Подтвердить голоса", "primary", function () {
         var v = slots.map(function (x) { return x.get(); }).filter(Boolean), ownAll = (pickDoc().own || []).slice();
         v.forEach(function (x) { ownAll = ownList(x.quote, x.opts, ownAll); delete x.opts; });
-        savePick({ voices: v, own: ownAll });
+        var bad = v.map(function (x, i) { var p = quoteProblem(x.quote, n.band); return p ? "голос " + (i + 1) + " (" + x.short + "): " + p : ""; }).filter(Boolean);
+        if (bad.length) { bar("Голоса не приняты: " + bad.join("; "), "err"); return; }
+        savePick({ voices: v, own: ownAll }, "Голоса недели сохранены");
       }));
     }
     return row;
@@ -284,7 +306,7 @@
     // подгонка — на неуменьшенной копии (в превью слайд уменьшен), результат переносим в превью
     // все слайды: «Отделения» — своя подгонка колонки, затем общее правило (текст ступенями до −20%, расположение то же)
     var fitAll = function () { all.forEach(function (sec) { var tmp = el("div", "deck-measure"); document.body.append(tmp); var c = cloneSec(sec); tmp.append(c); DK().fitSlide(c); DK().fitText(c); setHtml(sec, c.innerHTML); tmp.remove(); editable(sec); }); };
-    Promise.all([].concat.apply([], all.map(function (sec) { return [].map.call(sec.querySelectorAll("img"), function (im) { return im.complete ? 0 : new Promise(function (r) { im.onload = im.onerror = r; }); }); }))).then(function () { return document.fonts.ready; }).then(function () { fitAll(); check(); });
+    Promise.all([].concat.apply([], all.map(function (sec) { return [].map.call(sec.querySelectorAll("img"), function (im) { return im.complete ? 0 : new Promise(function (r) { im.onload = im.onerror = r; }); }); }))).then(function () { return document.fonts.ready; }).then(function () { fitAll(); check(); }).catch(function (e) { log("предпросмотр: " + (e && e.stack || e)); issuesBox.textContent = ""; issuesBox.append(el("p", "bad", "Ошибка предпросмотра: " + (e && e.message || e) + ". Журнал записан")); });
   }
   /* правка прямо на слайде — только текст. Вставка из другого места приносила своё оформление (мелкий шрифт), Enter — новые
      блоки: часть цитаты становилась другого размера (28.10). Теперь вставляется простой текст, Enter завершает правку,

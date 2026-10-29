@@ -147,7 +147,8 @@
     var year = +week.start.slice(0, 4), Y = H.filter(function (w) { return +w.start.slice(0, 4) === year; });
     var prev = H.length > 1 ? H[H.length - 2] : null;
     var sumY = Y.reduce(function (a, w) { return a + w.pos; }, 0), negY = Y.reduce(function (a, w) { return a + w.neg; }, 0);
-    var avgExact = sumY / Y.length, avg = Math.floor(avgExact);
+    // средняя неделя — округлённая по правилам (29.10); сравнение «к средней неделе» — с тем же числом, что на слайде
+    var avgExact = sumY / Y.length, avg = Math.round(avgExact);
     var place = 1 + Y.filter(function (w) { return w.pos > pos; }).length;
     var share = pos + neg ? Math.round(pos / (pos + neg) * 100) : 100, shareY = sumY + negY ? Math.round(sumY / (sumY + negY) * 100) : 100;
 
@@ -166,9 +167,9 @@
     var foot = dk.human(week.start, week.end);
     var D = { coverLabel: "Неделя: " + dk.dm(week.start) + "–" + dk.dm(week.end) + "." + week.end.slice(0, 4), foot: foot, skip: {}, photos: {},
       week: { title: "Неделя в цифрах: " + share + "% отзывов позитивные", pos: pos, place: dk.ordinal(place) + " место из " + Y.length + " " + dk.plural(Y.length, "недели", "недель", "недель") + " " + year + " года",
-        vsPrev: prev ? dk.signed(dk.pct(pos, prev.pos)) + " к прошлой неделе" : "первая неделя", vsAvg: dk.signed(dk.pct(pos, avgExact)) + " к средней неделе " + year,
+        vsPrev: !prev ? "первая неделя" : dk.pct(pos, prev.pos) === 0 ? "как на прошлой неделе" : dk.signed(dk.pct(pos, prev.pos)) + " к прошлой неделе", vsAvg: dk.pct(pos, avg) === 0 ? "на уровне средней недели " + year : dk.signed(dk.pct(pos, avg)) + " к средней неделе " + year,
         neg: neg, negLine: negLine, share: share, shareLine: "в среднем за год " + shareY + "%", bars: bars, platforms: tiles } };
-    var numbers = { pos: pos, neg: neg, prevPos: prev && prev.pos, prevNeg: prev && prev.neg, avg: avgExact, place: place, weeks: Y.length, share: share, shareY: shareY, byPlatform: byP, negByPlatform: negP };
+    var numbers = { pos: pos, neg: neg, prevPos: prev && prev.pos, prevNeg: prev && prev.neg, avg: avg, avgExact: avgExact, place: place, weeks: Y.length, share: share, shareY: shareY, byPlatform: byP, negByPlatform: negP };
 
     // врачи: каждая строка отчёта с врачом — благодарность (одна строка на площадке = одна благодарность)
     var docs = {}, unresolved = [];
@@ -319,7 +320,7 @@
   function dateHuman(d) { d = s(d); var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d) || /^(\d{2})\.(\d{2})\.(\d{4})/.exec(d); if (!m) return d; var day = m[1].length === 4 ? +m[3] : +m[1], mon = m[1].length === 4 ? +m[2] : +m[2]; return day + " " + DK().MON[mon - 1]; }
   function notesOf(D, n) {
     return {
-      week: "Неделя " + D.foot + " (по дате поступления, отчётность закрыта в четверг в 15:00): " + n.pos + " позитивных и " + n.neg + " негативных. Средняя неделя года: " + n.avg.toFixed(1).replace(".", ",") + ". Место: " + n.place + " из " + n.weeks + ". Доля позитива за год " + n.shareY + "%, на этой неделе " + n.share + "%.",
+      week: "Неделя " + D.foot + " (по дате поступления, отчётность закрыта в четверг в 15:00): " + n.pos + " позитивных и " + n.neg + " негативных. Средняя неделя года: " + n.avg + " (точно " + n.avgExact.toFixed(1).replace(".", ",") + "). К средней неделе — от " + n.avg + ". Место: " + n.place + " из " + n.weeks + ". Доля позитива за год " + n.shareY + "%, на этой неделе " + n.share + "%.",
       heroes: "Благодарности врачам по строкам недельного отчёта. Имена, должности и отделения — по «Списку врачей». Цитаты сокращены без изменения смысла.",
       where: "Позитивные отзывы недели по отделениям (по графе «Отделение» отчёта).",
       year: "Позитивные и негативные отзывы по недельным отчётам " + D.year.year + " года."
@@ -327,5 +328,5 @@
   }
 
   window.__otvDeck = window.__otvDeck || {};
-  Object.assign(window.__otvDeck, { instr: instr, slideDept: slideDept, praise: praise, BAND: BAND, build: build, history: history, quotes: quotes, platKey: platKey, roleOf: roleOf, deptLow: deptLow, whereLine: whereLine, countPos: countPos, countNeg: countNeg, SEED_2026: SEED_2026 });
+  Object.assign(window.__otvDeck, { okQuote: okQuote, instr: instr, slideDept: slideDept, praise: praise, BAND: BAND, build: build, history: history, quotes: quotes, platKey: platKey, roleOf: roleOf, deptLow: deptLow, whereLine: whereLine, countPos: countPos, countNeg: countNeg, SEED_2026: SEED_2026 });
 })();

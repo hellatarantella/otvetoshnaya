@@ -46,6 +46,21 @@ async def main():
         }""")
         ok4 = s2['hasQuoteSelect'] and s2['slots'] == 3 and s2['v0'] == 'Иван Ильич нашёл время для каждого вопроса нашей семьи' and s2['need'] == 0
         print(('OK  ' if ok4 else 'FAIL') + ' голос: выбор врача и цитаты, своя фраза сохраняется', s2 if not ok4 else '')
+        # кнопки дают видимый ответ: короткая цитата не принимается с причиной, «Обновить презентацию» сообщает результат (29.10)
+        s2b = await pg.evaluate("""async () => {
+          const d = [...document.querySelectorAll('.deck-extra')].find(x => /Пересмотреть выбор/.test(x.textContent)); d.open = true;
+          const row = [...d.querySelectorAll('.deck-need')].find(r => /Цитата для карточки/.test(r.textContent));
+          const inp = row.querySelector('input.deck-in'); inp.value = 'Спасибо врачу'; inp.dispatchEvent(new Event('input'));
+          [...row.querySelectorAll('button')].find(b => /Подтвердить цитату/.test(b.textContent)).click();
+          await new Promise(r => setTimeout(r, 300));
+          const t1 = (document.getElementById('otvBar') || {}).textContent || '';
+          [...document.querySelectorAll('.deck-ui button')].find(b => b.textContent === 'Обновить презентацию').click();
+          await new Promise(r => setTimeout(r, 2500));
+          const t2 = (document.getElementById('otvBar') || {}).textContent || '';
+          return { t1, t2 };
+        }""")
+        okb = 'не принята' in s2b['t1'] and 'знаков' in s2b['t1'] and ('обновлена' in s2b['t2'] or 'пересобрала' in s2b['t2'])
+        print(('OK  ' if okb else 'FAIL') + ' кнопки отвечают: короткая цитата — с причиной, «Обновить презентацию» — с итогом', s2b if not okb else '')
         # правка на слайде: вставка с оформлением и Enter не меняют размер шрифта
         await pg.evaluate("""() => { const t = [...document.querySelectorAll('.deck-slide-in section#review p')].find(x => x.textContent.startsWith('«')); t.scrollIntoView(); t.focus();
           const r = document.createRange(); r.selectNodeContents(t); r.collapse(false); const sl = getSelection(); sl.removeAllRanges(); sl.addRange(r); }""")
@@ -74,5 +89,5 @@ async def main():
         print(('OK  ' if ok7 else 'FAIL') + ' «Отделения»: таблица мест с заголовками, отделения плашками; на слайде 4 подписи — фамилия и отделение', s5 if not ok7 else '')
         ok8 = not errs
         print(('OK  ' if ok8 else 'FAIL') + ' без ошибок на странице', errs[:3] if errs else '')
-        await b.close(); print('ALL OK' if all([ok1, ok2, ok3, ok4, ok5, ok6, ok7, ok8]) else 'SOME FAILED')
+        await b.close(); print('ALL OK' if all([okb, ok1, ok2, ok3, ok4, ok5, ok6, ok7, ok8]) else 'SOME FAILED')
 asyncio.run(main())

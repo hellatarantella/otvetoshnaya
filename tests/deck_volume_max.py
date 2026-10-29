@@ -59,7 +59,16 @@ async def main():
         if '--shot' in sys.argv:
             for i in (2, 3, 4):
                 el = pg.locator('.deck-slide').nth(i); await el.scroll_into_view_if_needed(); await el.screenshot(path='/tmp/claude-0/-home-claude/8b71b450-7313-51fa-9702-f77ccc1a59a9/scratchpad/vol_%d.png' % (i + 1))
-        ok3 = not errs
+        # две колонки читаются слева направо: левая сверху вниз, потом правая — по убыванию, как список
+        oo = await pg.evaluate("""() => { const sec = document.querySelector('.deck-slide-in section#where'), list = sec.querySelector('[data-fit="list"]');
+          const names = window.__otvDeckUi._state().res.D.where.one.map(x => x.name), rows = [...list.children].slice(1);
+          const pos = names.map(n => { const r = rows.find(x => x.querySelector('p').textContent.replace(/\\u00a0/g, ' ') === n); const b = r.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top)]; });
+          return { cols: list.getAttribute('data-cols'), pos }; }""")
+        half = (len(oo['pos']) + 1) // 2
+        L, Rr = oo['pos'][:half], oo['pos'][half:]
+        ok4 = oo['cols'] == '2' and len(set(x for x, _ in L)) == 1 and len(set(x for x, _ in Rr)) == 1 and L[0][0] < Rr[0][0] and all(L[i][1] < L[i + 1][1] for i in range(len(L) - 1)) and all(Rr[i][1] < Rr[i + 1][1] for i in range(len(Rr) - 1))
+        print(('OK  ' if ok4 else 'FAIL') + ' «Отделения», две колонки: сначала левая сверху вниз, потом правая', oo if not ok4 else '')
+        ok3 = not errs and ok4
         print(('OK  ' if ok3 else 'FAIL') + ' без ошибок на странице', errs[:3] if errs else '')
         await b.close(); print('ALL OK' if ok1 and ok2 and ok3 else 'SOME FAILED')
 asyncio.run(main())

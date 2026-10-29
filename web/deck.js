@@ -32,7 +32,8 @@
   function dm(iso) { var d = d0(iso); return ("0" + d.getDate()).slice(-2) + "." + ("0" + (d.getMonth() + 1)).slice(-2); }
   function dmShort(iso) { var d = d0(iso); return d.getDate() + "." + ("0" + (d.getMonth() + 1)).slice(-2); }
   function human(a, b) { var x = d0(a), y = d0(b); return x.getMonth() === y.getMonth() ? x.getDate() + "–" + y.getDate() + " " + MON[y.getMonth()] + " " + y.getFullYear() : x.getDate() + " " + MON[x.getMonth()] + " – " + y.getDate() + " " + MON[y.getMonth()] + " " + y.getFullYear(); }
-  function pct(a, b) { if (!b) return 0; return Math.round((a / b - 1) * 100); }
+  // процент изменения, округление по правилам: половина — от нуля (−7,5% → −8%, а не −7%)
+  function pct(a, b) { if (!b) return 0; var x = (a / b - 1) * 100; x = Math.round(x * 1e6) / 1e6; return (x < 0 ? -1 : 1) * Math.round(Math.abs(x)); }
   function signed(n) { return (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n) + "%"; }
 
   /* ---------- общие части слайда ---------- */
@@ -211,6 +212,9 @@
     if (content() > avail + 1 && list && rows.length > 8) {
       list.style.display = "grid"; list.style.gridTemplateColumns = "minmax(0px, 1fr) minmax(0px, 1fr)"; list.style.columnGap = "28px"; list.setAttribute("data-cols", "2");
       list.children[0].style.gridColumn = "1 / -1";
+      // читаем слева направо: левая колонка сверху вниз, потом правая (по убыванию, как в списке)
+      var half = Math.ceil(rows.length / 2);
+      for (var k = 0; k < half; k++) { list.appendChild(rows[k]); if (rows[k + half]) list.appendChild(rows[k + half]); }
       rows.forEach(function (r) { r.style.gridTemplateColumns = "minmax(0px, 1fr) auto"; r.style.gap = "10px"; var b = r.children[1] && r.children[1].children[0]; if (b) b.style.width = "36px"; var p = r.querySelector("p"); if (p) p.style.whiteSpace = "normal"; });
       i = 0; setRows.apply(null, steps[0]);
       while (content() > avail + 1 && ++i < steps.length) setRows.apply(null, steps[i]);
