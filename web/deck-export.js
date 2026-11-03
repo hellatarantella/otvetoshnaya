@@ -99,11 +99,11 @@
     if (!nodes.length && !(e.children.length && !hasBlockKids && e.textContent.trim())) return;
     if (hasBlockKids) { if (nodes.length) runsOf(e, nodes, base, out, null); return; }
     // блок с текстом (p, h1, h2): собираем все строчные куски, включая <b>, <span>, <br>
-    var runs = [], words = [];
+    var runs = [], words = [], wsBefore = false;
     (function walk(n) {
       [].forEach.call(n.childNodes, function (c) {
-        if (c.nodeType === 3) { if (c.nodeValue) { var ps = getComputedStyle(c.parentElement); runs.push(style(ps, c.nodeValue)); wordsOf(c, ps, base, words); } }
-        else if (c.tagName === "BR") runs.push({ br: true });
+        if (c.nodeType === 3) { if (c.nodeValue) { var ps = getComputedStyle(c.parentElement); runs.push(style(ps, c.nodeValue)); wordsOf(c, ps, base, words, wsBefore); wsBefore = /[\s\u00a0]$/.test(c.nodeValue); } }
+        else if (c.tagName === "BR") { runs.push({ br: true }); wsBefore = false; }
         else if (c.nodeType === 1) walk(c);
       });
     })(e);
@@ -114,7 +114,7 @@
   function runsOf(e, nodes, base, out) { nodes.forEach(function (n) { var ps = getComputedStyle(n.parentElement), w = []; wordsOf(n, ps, base, w); if (!w.length) return; var x0 = Math.min.apply(null, w.map(function (q) { return q.x; })), y0 = Math.min.apply(null, w.map(function (q) { return q.top; })); out.push({ t: "text", x: x0, y: y0, w: Math.max.apply(null, w.map(function (q) { return q.x + q.w; })) - x0, h: px(ps.lineHeight) || px(ps.fontSize) * 1.2, align: "left", nowrap: true, lh: px(ps.lineHeight) || px(ps.fontSize) * 1.2, runs: [style(ps, n.nodeValue.trim())], words: w }); }); }
   function style(cs, text) { var c = rgba(cs.color) || { hex: "000000" }; return { text: text, size: px(cs.fontSize), bold: isBold(cs), italic: cs.fontStyle === "italic", color: c.hex }; }
   var probeCache = {};
-  function wordsOf(node, cs, base, out) {
+  function wordsOf(node, cs, base, out, wsBefore) {
     var txt = node.nodeValue, re = /[^\s ]+/g, m, rg = document.createRange();
     var key = cs.fontFamily + "|" + cs.fontSize + "|" + cs.fontStyle, asc = probeCache[key];
     if (asc == null) {
@@ -130,7 +130,9 @@
       var rs = rg.getClientRects(); if (!rs.length) continue;
       // слово с переносом на две строки не бывает: берём первый прямоугольник
       var r = rs[0];
-      out.push({ text: m[0].replace(/ /g, " "), x: r.left - base.left, top: r.top - base.top, w: r.width, base: r.top - base.top + asc, size: st.size, bold: st.bold, italic: st.italic, color: st.color });
+      // sp: в самом тексте перед словом есть пробел (обычный или неразрывный) — по нему, а не по отрисовке, ставится пробел в файле
+      var sp = m.index > 0 ? /[\s\u00a0]/.test(txt.charAt(m.index - 1)) : !!wsBefore;
+      out.push({ text: m[0].replace(/ /g, " "), x: r.left - base.left, top: r.top - base.top, w: r.width, base: r.top - base.top + asc, size: st.size, bold: st.bold, italic: st.italic, color: st.color, sp: sp });
     }
   }
 
@@ -160,6 +162,7 @@
         } else if (p.t === "img") {
           if (p.data) doc.addImage(p.data, p.fmt, p.x * k, p.y * k, p.w * k, p.h * k, undefined, "FAST");
         } else if (p.t === "text") {
+          unglue(p.words, function (q) { doc.setFont(q.bold ? "CeraB" : "CeraR", "normal"); doc.setFontSize(q.size * k); return doc.getTextWidth(" ") / k; });
           p.words.forEach(function (q) {
             doc.setFont(q.bold ? "CeraB" : "CeraR", "normal"); doc.setFontSize(q.size * k); doc.setTextColor(hex(q.color));
             // ширину слова подгоняем под браузерную, чтобы строки совпали один в один
@@ -175,6 +178,20 @@
       });
     });
     return doc;
+  }
+  /* слова, между которыми в тексте есть пробел, а в отрисовке окна программы они стоят вплотную (29.10: «отзывовпозитивные»,
+     «среднейнеделе», «благодарностямза», «колопроктология7» — движок Safari), раздвигаем на ширину пробела; вместе с ними
+     сдвигается остаток строки, чтобы следующие слова не налезли */
+  function unglue(words, spaceW) {
+    var shift = 0, prev = null;
+    words.forEach(function (q) {
+      var same = prev && Math.abs(q.base - prev.base) < q.size * 0.5;
+      if (!same) shift = 0;
+      q.x += shift;
+      if (same && q.sp) { var need = spaceW(q) * 0.85, gap = q.x - (prev.x + prev.w); if (gap < need * 0.5) { var add = need - gap; q.x += add; shift += add; } }
+      prev = q;
+    });
+    return words;
   }
   function roundPath(doc, x, y, w, h, r, mode) {
     if (!r.some(function (v) { return v > 0; })) { doc.rect(x, y, w, h, mode); return; }
@@ -218,7 +235,7 @@
             var sameStyle = prev && sameLine && prev.bold === q.bold && prev.italic === q.italic && prev.color === q.color && prev.size === q.size;
             if (prev && !sameLine) runs[runs.length - 1].options.breakLine = true;
             // пробел — только там, где он есть в предпросмотре («Валериевну,» без пробела перед запятой)
-            var sp = sameLine && q.x - (prev.x + prev.w) > q.size * 0.12 ? " " : "";
+            var sp = sameLine && (q.sp || q.x - (prev.x + prev.w) > q.size * 0.12) ? " " : "";
             if (sameStyle) runs[runs.length - 1].text += sp + q.text;
             else runs.push({ text: sp + q.text, options: { fontFace: q.bold ? "Cera Round Bold" : "Cera Round", fontSize: q.size * pt, color: q.color, italic: q.italic, bold: false } });
             prev = q;
@@ -235,5 +252,5 @@
   }
 
   window.__otvDeck = window.__otvDeck || {};
-  Object.assign(window.__otvDeck, { measure: measure, toPdf: toPdf, toPptx: toPptx });
+  Object.assign(window.__otvDeck, { unglue: unglue, measure: measure, toPdf: toPdf, toPptx: toPptx });
 })();
