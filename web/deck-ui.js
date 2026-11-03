@@ -4,39 +4,41 @@
 (function () {
   "use strict";
   var DK = function () { return window.__otvDeck; };
+  /* Общая основа вкладок «Неделя» и «Месяц»: подтверждения, фото, правка на слайде, самопроверка, подгонка, PDF и PPTX
+     одинаковые; различаются только данные (K.list, K.build) и слайды (K.slides) */
+  function makeDeckUi(K) {
   var openReview = false, db = null, root = null, weekSel = null, cur = null, res = null, fonts = null, photos = {}, picks = {}, snaps = {}, busy = false, fontFaces = false;
   function s(x) { return x == null ? "" : String(x); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function btn(text, cls, fn) { var b = el("button", "btn" + (cls ? " " + cls : ""), text); b.type = "button"; b.addEventListener("click", fn); return b; }
   function log(m) { if (window.__otvLog) window.__otvLog("презентация: " + m); }
   // фото отделения хранится крупно (4:3): слайд сам обрезает его под вертикальную или горизонтальную ячейку
-  var KIND_SIZE = { face: [600, 600], tall: [960, 1350], dept: [1400, 1050], cover: [1920, 1080], end: [1920, 1080] };
+  var KIND_SIZE = { face: [600, 600], tall: [960, 1350], dept: [1400, 1050], cover: [1920, 1080], end: [1920, 1080], mcover: [1920, 1080], mend: [1920, 1080] };
+  // постоянные фото (обложка, закрывающий слайд недели и месяца): по умолчанию — из утверждённых презентаций
+  var FIXED = { cover: "coverDefault", end: "endDefault", mcover: "monthCoverDefault", mend: "monthEndDefault" };
+  function isFixed(kind) { return !!FIXED[kind]; }
   // обложка и закрывающий слайд постоянные (загружены один раз, можно заменить); фото отделений — по названию отделения, копятся в библиотеке
 
   /* ---------- данные ---------- */
-  function weeks() {
-    var list = [], st = window.__otvReports && window.__otvReports.state && window.__otvReports.state();
-    Object.keys(snaps).sort().reverse().forEach(function (k) { list.push({ key: k, label: "Неделя " + DK().dm(snaps[k].start) + "–" + DK().dm(snaps[k].end) + " (сохранённый отчёт)", data: snaps[k] }); });
-    if (st && st.start) list.unshift({ key: "cur", label: "Текущий отчёт: " + s(st.period), data: { start: st.start, end: st.end, positive: st.positive || [], negative: st.negative || [] } });
-    return list;
-  }
+  function weeks() { return K.list(snaps); }
   function photoKey(k, kind) { return kind + "|" + k; }
   function photoOf(k, kind, slot) {
     var p = photos[photoKey(k, kind)];
     // обложка и закрывающий слайд — фото утверждённых презентаций (как раньше); своё ставится только кнопкой «Заменить»
-    if (kind === "cover" || kind === "end") {
+    if (isFixed(kind)) {
       if (p && p.override) return { src: p.src, pos: "center center" };
-      var A = window.__otvDeckAssets || {}, d = A[kind === "cover" ? "coverDefault" : "endDefault"];
+      var A = window.__otvDeckAssets || {}, d = A[FIXED[kind]];
       return d ? { src: d, pos: "center center" } : null;
     }
     return p ? { src: p.src, pos: "center center" } : null;
   }
-  function pickDoc() { return cur ? (picks[cur.data.start] || {}) : {}; }
+  function pickId() { return K.pickId ? K.pickId(cur) : cur.data.start; }
+  function pickDoc() { return cur ? (picks[pickId()] || {}) : {}; }
   // каждое нажатие даёт видимый ответ: «Сохранено…» или причину (29.10: казалось, что кнопки не работают)
   function bar(t, kind) { if (window.__otvBar) window.__otvBar.show(t, kind || "", [["Закрыть", window.__otvBar.hide]]); }
   function savePick(patch, msg) {
-    if (!cur) { bar("Не выбрана неделя презентации", "err"); return Promise.resolve(); }
-    var id = cur.data.start, d = Object.assign({}, picks[id] || {}, patch, { at: new Date().toISOString() });
+    if (!cur) { bar("Не выбран период презентации", "err"); return Promise.resolve(); }
+    var id = pickId(), d = Object.assign({}, picks[id] || {}, patch, { at: new Date().toISOString() });
     picks[id] = d;
     return db.collection("deckPicks").doc(id).set(d).then(function () { rebuild(); bar((msg || "Сохранено") + ". Презентация пересобрана", "ok"); })
       .catch(function (e) { log("решение не сохранилось: " + (e && e.stack || e)); bar("Не сохранилось: " + (e && e.message || e) + ". Журнал записан", "err"); });
@@ -61,7 +63,7 @@
 
   /* ---------- сборка ---------- */
   var rbTimer = null, rbDirty = false;
-  function visible() { var p = document.getElementById("tab-deckw"); return !!(p && !p.hidden && p.offsetParent !== null && !document.hidden); }
+  function visible() { var p = document.getElementById("tab-" + K.tab); return !!(p && !p.hidden && p.offsetParent !== null && !document.hidden); }
   // пересборка по событиям данных: только когда вкладка открыта, и пачкой (несколько событий подряд — одна пересборка)
   function rebuildSoon() { if (!visible()) { rbDirty = true; return; } clearTimeout(rbTimer); rbTimer = setTimeout(rebuild, 300); }
   function rebuild() {
@@ -69,17 +71,16 @@
     clearTimeout(rbTimer); rbDirty = false; rebuild.count = (rebuild.count || 0) + 1;
     var ws = weeks(); if (!ws.length) { paintEmpty(); return; }
     if (!cur || !ws.some(function (w) { return w.key === cur.key; })) cur = ws[0]; else cur = ws.filter(function (w) { return w.key === cur.key; })[0];
-    var hist = DK().history(Object.keys(snaps).map(function (k) { return snaps[k]; }));
-    try { res = DK().build(cur.data, hist, { person: person, photoOf: photoOf, pick: pickDoc() }); }
+    try { res = K.build(cur.data, snaps, { person: person, photoOf: photoOf, pick: pickDoc() }); }
     catch (e) { res = null; log("не собралась: " + (e && e.stack || e)); }
     try { paint(ws); } catch (e) { log("отрисовка: " + (e && e.stack || e)); root.append(el("p", "ctl-st err", "Ошибка отрисовки презентации: " + (e && e.message || e) + ". Журнал записан")); }
   }
-  function paintEmpty() { root.textContent = ""; root.append(el("p", "hint", "Нет данных недели: подключите Google во вкладке «Отчёты» и обновите отчёт.")); }
+  function paintEmpty() { root.textContent = ""; root.append(el("p", "hint", K.empty)); }
 
   function paint(ws) {
     root.textContent = "";
     var top = el("div", "ctl"), acts = el("div", "actions");
-    weekSel = el("select", "btn"); weekSel.setAttribute("aria-label", "Неделя");
+    weekSel = el("select", "btn"); weekSel.setAttribute("aria-label", K.selLabel);
     ws.forEach(function (w) { var o = el("option", null, w.label); o.value = w.key; if (cur && w.key === cur.key) o.selected = true; weekSel.append(o); });
     weekSel.addEventListener("change", function () { cur = ws.filter(function (w) { return w.key === weekSel.value; })[0]; rebuild(); });
     // «Обновить презентацию»: перечитать отчёт из Google и пересобрать слайды со всеми текущими решениями и фото
@@ -141,7 +142,7 @@
   function needRow(n) {
     var row = el("div", "deck-need"); row.append(el("p", null, n.text));
     if (n.kind === "photo") {
-      var kind = n.slot === "cover" ? "cover" : n.slot === "end" ? "end" : n.slot === "dept" ? "dept" : n.tall ? "tall" : "face";
+      var kind = KIND_SIZE[n.slot] ? n.slot : n.tall ? "tall" : "face";
       row.append(photoPicker(n.who, kind));
       if (kind === "face") row.append(btn("Фото нет: перенести в строку «Ещё…»", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick({ gold: g }); }));
     } else if (n.kind === "quote") {
@@ -197,16 +198,14 @@
   function ownList(v, options, base) { var o = (base || pickDoc().own || []).filter(function (x) { return x !== v; }); if (v && (options || []).indexOf(v) < 0) o.push(v); return o; }
   // всегда доступно: заменить фото и вернуть выбор
   function extraRow() {
-    var d = el("details", "deck-extra"); d.append(el("summary", null, "Пересмотреть выбор: цитаты, отзыв недели, голоса, фото"));
+    var d = el("details", "deck-extra"); d.append(el("summary", null, K.reviewTitle));
     d.open = !!openReview; d.addEventListener("toggle", function () { openReview = d.open; });
     var D = res.D;
     // всё, что уже выбрано, можно поменять: варианты показаны с текущим выбором
     (res.choices || []).forEach(function (c) { d.append(needRow(c)); });
     d.append(el("h3", null, "Фото"));
-    (D.heroes.cards || []).forEach(function (c) { d.append(el("p", null, "Фото: " + c.short), photoPicker(fioOf(c.short), "face")); });
-    if (D.review) d.append(el("p", null, "Фото «Отзыва недели»: " + D.review.short), photoPicker(fioOf(D.review.short), "tall"));
-    [["Обложка", "cover"], ["Закрывающий слайд", "end"]].concat((D.where.slots || []).map(function (nm) { return [nm, "dept"]; })).forEach(function (x) { d.append(el("p", null, x[1] === "dept" ? "Фото отделения: " + x[0] : x[0]), photoPicker(x[0], x[1])); });
-    d.append(btn("Сбросить все решения этой недели", "", function () { if (!cur) return; picks[cur.data.start] = {}; db.collection("deckPicks").doc(cur.data.start).delete().then(rebuild); }));
+    K.photos(D, fioOf).forEach(function (x) { d.append(el("p", null, x[0]), photoPicker(x[1], x[2])); });
+    d.append(btn(K.resetText, "", function () { if (!cur) return; var id = pickId(); picks[id] = {}; db.collection("deckPicks").doc(id).delete().then(rebuild); }));
     return d;
   }
   function fioOf(short) { var x = (res.doctors || []).filter(function (d) { return d.short === short; })[0]; return x ? x.fio : short; }
@@ -214,13 +213,13 @@
   /* ---------- фото: загрузка и кадрирование ---------- */
   function photoPicker(key, kind) {
     var wrap = el("span", "deck-ph"), f = el("input"); f.type = "file"; f.accept = "image/jpeg,image/png,image/webp"; f.setAttribute("aria-label", "Фото: " + key);
-    var have = (kind === "cover" || kind === "end") ? photoOf(key, kind) : photos[photoKey(key, kind)];
+    var have = isFixed(kind) ? photoOf(key, kind) : photos[photoKey(key, kind)];
     if (have) { var im = el("img"); im.src = have.src; im.alt = key; im.className = kind === "face" ? "round" : ""; wrap.append(im); }
     f.addEventListener("change", function () { var file = f.files && f.files[0]; if (file) cropDialog(file, kind, function (data) { savePhoto(key, kind, data); }); });
     wrap.append(f); return wrap;
   }
   function savePhoto(key, kind, data) {
-    var id = photoKey(key, kind), doc = { key: key, kind: kind, week: "", src: data, at: new Date().toISOString(), override: kind === "cover" || kind === "end" };
+    var id = photoKey(key, kind), doc = { key: key, kind: kind, week: "", src: data, at: new Date().toISOString(), override: isFixed(kind) };
     photos[id] = doc;
     return db.collection("deckPhotos").doc(id.replace(/[^\wа-яё-]+/gi, "_")).set(doc).then(rebuild);
   }
@@ -243,9 +242,10 @@
       box.append(hint, cv, zoom, btn("Сохранить", "primary", function () {
         var out = el("canvas"); out.width = size[0]; out.height = size[1];
         var g = out.getContext("2d"), q = geom(size[0], size[1]);
-        if (kind === "cover" || kind === "end") {   // обложка: размытие и фирменный синий, как в утверждённом шаблоне
-          g.filter = kind === "cover" ? "blur(6px)" : "none"; g.drawImage(img, q.x - 12, q.y - 12, q.w + 24, q.h + 24); g.filter = "none";
-          g.fillStyle = kind === "cover" ? "rgba(30,46,70,0.72)" : "rgba(30,46,70,0.45)"; g.fillRect(0, 0, size[0], size[1]);
+        if (isFixed(kind)) {   // обложка: размытие и фирменный синий, как в утверждённом шаблоне; закрывающий — лёгкий синий тон
+          var isCover = /cover$/.test(kind);
+          g.filter = isCover ? "blur(6px)" : "none"; g.drawImage(img, q.x - 12, q.y - 12, q.w + 24, q.h + 24); g.filter = "none";
+          g.fillStyle = isCover ? "rgba(30,46,70,0.72)" : "rgba(30,46,70,0.45)"; g.fillRect(0, 0, size[0], size[1]);
         } else g.drawImage(img, q.x, q.y, q.w, q.h);
         var data = out.toDataURL("image/jpeg", 0.86);
         URL.revokeObjectURL(url); dlg.remove(); done(data);
@@ -287,7 +287,7 @@
   /* ---------- предпросмотр и самопроверка ---------- */
   var slides = [];
   function renderPreview(pv, issuesBox, buttons, blocked) {
-    dropObservers(); pv.textContent = ""; slides = DK().slidesHtml(res.D);
+    dropObservers(); pv.textContent = ""; slides = K.slides(res.D);
     var edits = (pickDoc().edits || {}), all = [];
     slides.forEach(function (h, i) {
       var fr = el("div", "deck-slide"), inner = el("div", "deck-slide-in");
@@ -365,14 +365,14 @@
     });
   }
   function sig(h) { var x = 0; for (var i = 0; i < h.length; i++) x = (x * 31 + h.charCodeAt(i)) | 0; return x; }
-  function savePickQuiet(patch) { if (!cur) return; var id = cur.data.start; picks[id] = Object.assign({}, picks[id] || {}, patch); db.collection("deckPicks").doc(id).set(picks[id]).catch(function () {}); }
+  function savePickQuiet(patch) { if (!cur) return; var id = pickId(); picks[id] = Object.assign({}, picks[id] || {}, patch); db.collection("deckPicks").doc(id).set(picks[id]).catch(function () {}); }
 
   /* ---------- выгрузка ---------- */
   function exportAs(kind, st) {
     if (busy) return; busy = true;
     st.hidden = false; st.className = "ctl-st"; st.textContent = kind === "pdf" ? "Готовлю PDF…" : "Готовлю PPTX…";
     var tmp = el("div", "deck-measure"); document.body.append(tmp);
-    var secs = [].map.call(document.querySelectorAll(".deck-slide-in > section"), function (s0) { return cloneSec(s0); });
+    var secs = [].map.call(root.querySelectorAll(".deck-slide-in > section"), function (s0) { return cloneSec(s0); });   // только слайды этой вкладки
     var prims = [];
     secs.reduce(function (p, sec) { return p.then(function () {
       tmp.textContent = ""; tmp.append(sec); sec.querySelectorAll("[contenteditable]").forEach(function (x) { x.removeAttribute("contenteditable"); });
@@ -380,7 +380,7 @@
       return DK().measure(sec).then(function (x) { prims.push(x); }); }); }, document.fonts.ready)
       .then(function () {
         tmp.remove();
-        var name = "Онлайн-обращения " + DK().dm(cur.data.start) + "–" + DK().dm(cur.data.end) + "." + cur.data.end.slice(0, 4);
+        var name = K.fileName(cur.data);
         if (kind === "pdf") return { name: name + ".pdf", blob: DK().toPdf(prims, fonts).output("blob") };
         var notes = secs.map(function (sec) { return (res.D.notes || {})[sec.id] || ""; });
         return DK().toPptx(prims, notes).write({ outputType: "blob" }).then(function (b) { return { name: name + ".pptx", blob: b }; });
@@ -395,7 +395,7 @@
 
   /* ---------- запуск ---------- */
   function mount() {
-    var panel = document.getElementById("tab-deckw"); if (!panel || root) return;
+    var panel = document.getElementById("tab-" + K.tab); if (!panel || root) return;
     [].forEach.call(panel.children, function (c) { c.hidden = true; });   // прежняя сборка через онлайн-сервис больше не нужна
     root = el("div", "deck-ui"); panel.append(root);
     window.claude.use("db").then(function (d) {
@@ -418,9 +418,35 @@
     });
     // при открытии вкладки — свежие данные отчёта из Google (строки, удалённые или поправленные вручную, сразу учитываются)
     function fresh() { var r = window.__otvReports; return (r && r.refresh ? r.refresh() : Promise.resolve()).catch(function (e) { log("отчёт не перечитан: " + (e && e.message || e)); }).then(rebuild); }
-    window.addEventListener("otv-tab", function (e) { if (e.detail === "deckw" && db) fresh(); });
+    window.addEventListener("otv-tab", function (e) { if (e.detail === K.tab && db) fresh(); });
   }
   function photoKey2(v) { return v.kind + "|" + v.key; }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount();
-  window.__otvDeckUi = { rebuild: function () { rebuild(); }, _state: function () { return { res: res, cur: cur, photos: photos, picks: picks, observers: observers.length, rebuilds: rebuild.count || 0 }; } };
+  return { rebuild: function () { rebuild(); }, _state: function () { return { res: res, cur: cur, photos: photos, picks: picks, observers: observers.length, rebuilds: rebuild.count || 0 }; } };
+  }
+
+  function s0(x) { return x == null ? "" : String(x); }
+  // неделя
+  window.__otvDeckUi = makeDeckUi({
+    tab: "deckw", selLabel: "Неделя", empty: "Нет данных недели: подключите Google во вкладке «Отчёты» и обновите отчёт.",
+    reviewTitle: "Пересмотреть выбор: цитаты, отзыв недели, голоса, фото", resetText: "Сбросить все решения этой недели",
+    list: function (snaps) {
+      var list = [], st = window.__otvReports && window.__otvReports.state && window.__otvReports.state();
+      Object.keys(snaps).sort().reverse().forEach(function (k) { list.push({ key: k, label: "Неделя " + DK().dm(snaps[k].start) + "–" + DK().dm(snaps[k].end) + " (сохранённый отчёт)", data: snaps[k] }); });
+      if (st && st.start) list.unshift({ key: "cur", label: "Текущий отчёт: " + s0(st.period), data: { start: st.start, end: st.end, positive: st.positive || [], negative: st.negative || [] } });
+      return list;
+    },
+    build: function (data, snaps, opt) { return DK().build(data, DK().history(Object.keys(snaps).map(function (k) { return snaps[k]; })), opt); },
+    slides: function (D) { return DK().slidesHtml(D); },
+    photos: function (D, fioOf) {
+      var out = [];
+      (D.heroes.cards || []).forEach(function (c) { out.push(["Фото: " + c.short, fioOf(c.short), "face"]); });
+      if (D.review) out.push(["Фото «Отзыва недели»: " + D.review.short, fioOf(D.review.short), "tall"]);
+      out.push(["Обложка", "Обложка", "cover"], ["Закрывающий слайд", "Закрывающий слайд", "end"]);
+      (D.where.slots || []).forEach(function (nm) { out.push(["Фото отделения: " + nm, nm, "dept"]); });
+      return out;
+    },
+    fileName: function (d) { return "Онлайн-обращения " + DK().dm(d.start) + "–" + DK().dm(d.end) + "." + d.end.slice(0, 4); }
+  });
+  window.__otvMakeDeckUi = makeDeckUi;   // месячная вкладка подключается из deck-month.js
 })();
