@@ -470,7 +470,7 @@
     return { tone: p.tone, type: p.type, list: out };
   }
   function polish(text, it) { return shape(text, it, toneOf(it), typeOf(it)); }
-  window.__otvGen = { check: check, answer: answer, appeal: appeal, noteSkip: noteSkip, notePick: notePick, toneOf: toneOf, typeOf: typeOf,
+  window.__otvGen = { learnedOf: function (k) { loadStats(); return learned1(k); }, check: check, answer: answer, appeal: appeal, noteSkip: noteSkip, notePick: notePick, toneOf: toneOf, typeOf: typeOf,
     examples: examples, polish: polish, NEG_ANS: NEG_ANS, nameOf: nameOf, isGeneric: isGeneric, thanksLine: thanksLine };
 
   /* ---------- связь с карточками: «↻ Ещё вариант» вызывает __otvVariant(req) ---------- */

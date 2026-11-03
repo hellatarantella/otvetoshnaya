@@ -62,12 +62,34 @@
     ],
     qMail: [["qm1", "Если удобнее письменно, напишите на " + MAIL + " — ответим."], ["qm2", "Также можно написать на " + MAIL + "."]]
   };
-  function pickOne(arr, c, rnd) { var a = arr.filter(function (x) { return !x[2] || x[2](c); }); return a.length ? a[Math.floor(rnd() * a.length)] : null; }
+  // ваши фразы из ответов (обучение на правках) — в те же места ответа, с большим весом
+  var MINE = { pOpen: ["pos", "open"], pMid: ["pos", "mid"], dOpen: ["pos", "open"], dMid: ["pos", "mid"], close: ["pos", "close"], nOpen: ["neg", "nOpen"], nConcern: ["neg", "concern"], nAsk: ["neg", "ask"], nPromise: ["neg", "promise"] };
+  function hid(t) { var h = 0; for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return "u" + (h >>> 0).toString(36); }
+  function bank(name, c) {
+    var arr = B[name].filter(function (x) { return !x[2] || x[2](c); }).map(function (x) { return { id: x[0], text: x[1], w: 1 }; });
+    var L = window.__otvLearn, m = MINE[name];
+    if (L && L.myPhrases && m && !(c.type === "doctor" && /mid/i.test(name) && false)) L.myPhrases(m[0], m[1]).forEach(function (p) {
+      if (c.type === "doctor" && /передад|больниц|стационар|отделени|наш\S* сотрудник/i.test(p.text)) return;   // правило страницы врача
+      if (arr.some(function (x) { return x.text.toLowerCase() === p.text.toLowerCase(); })) return;
+      arr.push({ id: hid(p.text), text: p.text, w: 1.5 + Math.min(3, p.n) * 0.5 + (p.mine ? 1 : 0) });
+    });
+    // ваш стиль: любимое первое слово вступления — чаще
+    var st = L && L.style ? L.style() : null, fav = st && st.open[0] && st.open[0].n >= 3 ? st.open[0].word : "";
+    if (fav && /Open$/.test(name)) arr.forEach(function (x) { if (x.text.toLowerCase().replace(/ё/g, "е").indexOf(fav) === 0) x.w *= 2; });
+    var G = window.__otvGen; if (G && G.learnedOf) arr.forEach(function (x) { x.w *= Math.exp(Math.max(-2, Math.min(2, G.learnedOf("cs:" + x.id)))); });
+    return arr;
+  }
+  function pickOne(name, c, rnd) {
+    var a = bank(name, c); if (!a.length) return null;
+    var sum = a.reduce(function (t, x) { return t + x.w; }, 0), r = rnd() * sum;
+    for (var i = 0; i < a.length; i++) { r -= a[i].w; if (r <= 0) return [a[i].id, a[i].text]; }
+    var z = a[a.length - 1]; return [z.id, z.text];
+  }
   function rng(seed) { var x = seed || 1; return function () { x = (x * 1103515245 + 12345) & 0x7fffffff; return x / 0x7fffffff; }; }
 
   // один вариант по ситуации; parts — id фраз (по ним учимся)
   function one(c, rnd) {
-    var parts = [], add = function (bank) { var p = pickOne(B[bank], c, rnd); if (p) parts.push(p); };
+    var parts = [], add = function (bank) { var p = pickOne(bank, c, rnd); if (p) parts.push(p); };
     if (c.type === "question") {
       add("qOpen");
       (c.facts || []).slice(0, rnd() < 0.5 ? 2 : 1).forEach(function (f) { parts.push([f.id, f.text]); });   // факты из справки — по смыслу вопроса
@@ -81,7 +103,10 @@
     } else if (c.type === "doctor") {
       add("dOpen"); if (c.len > 120 && rnd() < 0.7) add("dMid"); add("close");
     } else {
-      add("pOpen"); var mids = c.len > 400 ? 1 : c.len > 120 ? (rnd() < 0.6 ? 1 : 0) : 0; if (mids) add("pMid"); add("close");
+      // длина — по вашему стилю: обычно сколько предложений в ваших ответах на благодарности
+      var L = window.__otvLearn, st = L && L.style ? L.style() : null, want = st && st.total >= 5 ? st.posLen : 0;
+      var mids = want ? Math.max(0, Math.min(2, want - 2 + (c.len > 400 ? 1 : 0) - (c.len < 80 ? 1 : 0))) : c.len > 400 ? 1 : c.len > 120 ? (rnd() < 0.6 ? 1 : 0) : 0;
+      add("pOpen"); for (var mi = 0; mi < mids; mi++) add("pMid"); add("close");
     }
     return { key: "cmp:" + c.tone + ":" + parts.map(function (p) { return p[0]; }).join("."), parts: parts.map(function (p) { return p[0]; }), text: parts.map(function (p) { return p[1]; }).join(" ") };
   }

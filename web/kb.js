@@ -213,8 +213,26 @@
   var learnOpen = false;
   function learnBlock() {
     var L = window.__otvLearn ? window.__otvLearn.rules() : [];
-    var lb = el("details", "card"); lb.id = "kbLearn"; lb.open = learnOpen; lb.addEventListener("toggle", function () { learnOpen = lb.open; }); lb.append(el("summary", null, "Чему программа научилась на ваших правках: " + L.filter(function (r) { return !r.off; }).length));
+    var lb = el("details", "card"); lb.id = "kbLearn"; lb.open = learnOpen; lb.addEventListener("toggle", function () { learnOpen = lb.open; }); lb.append(el("summary", null, "Чему программа научилась на ваших правках и ответах: правил " + L.filter(function (r) { return !r.off; }).length + (window.__otvLearn && window.__otvLearn.style ? ", ваших фраз " + window.__otvLearn.style().phrases.length : "")));
     if (!L.length) lb.append(el("p", "meta", "Пока нет: правило появляется, когда вы хотя бы дважды убираете одну и ту же фразу, меняете одно слово на другое или дописываете своё предложение."));
+    var ST = window.__otvLearn && window.__otvLearn.style ? window.__otvLearn.style() : null;
+    if (ST && ST.total) {
+      var sw = function (n, a, b, c) { var m = n % 100, k = n % 10; return n + " " + (m > 10 && m < 15 ? c : k === 1 ? a : k > 1 && k < 5 ? b : c); };
+      var by = {}; ST.phrases.forEach(function (p) { by[p.slot] = (by[p.slot] || 0) + 1; });
+      var SL = { open: "вступлений", mid: "фраз в середину", close: "концовок", nOpen: "начал ответа на жалобу", concern: "фраз о рассмотрении", ask: "просьб написать", promise: "обещаний ответить" };
+      lb.append(el("h4", null, "Ваш стиль — по " + sw(ST.total, "вашему ответу", "вашим ответам", "вашим ответам")));
+      var ul = el("ul", "kb-style");
+      if (ST.posLen) ul.append(el("li", null, "Ответ на благодарность — обычно " + sw(ST.posLen, "предложение", "предложения", "предложений") + (ST.negLen ? ", на жалобу — " + sw(ST.negLen, "предложение", "предложения", "предложений") : "")));
+      if (ST.open.length) ul.append(el("li", null, "Чаще начинаете с: " + ST.open.map(function (o) { return "«" + o.word.charAt(0).toUpperCase() + o.word.slice(1) + "…» (" + o.n + ")"; }).join(", ")));
+      ul.append(el("li", null, "По имени обращаетесь в " + ST.byName + "% ответов" + (ST.excl ? ", восклицательный знак — в " + ST.excl + "%" : ", без восклицательных знаков")));
+      if (ST.phrases.length) ul.append(el("li", null, "Ваши фразы в копилке: " + ST.phrases.length + " — " + Object.keys(by).map(function (k) { return (SL[k] || k) + " " + by[k]; }).join(", ") + ". Программа подмешивает их в новые ответы, свои любимые — чаще"));
+      lb.append(ul);
+      if (ST.phrases.length) {
+        var dd = el("details"); dd.append(el("summary", null, "Показать копилку фраз"));
+        ST.phrases.slice().sort(function (a, b) { return b.n - a.n; }).slice(0, 80).forEach(function (p) { dd.append(el("p", "meta", (p.tone === "neg" ? "жалоба · " : "благодарность · ") + (SL[p.slot] || p.slot) + ": «" + p.text + "»" + (p.n > 1 ? " — " + p.n + " раза" : ""))); });
+        lb.append(dd);
+      }
+    }
     var times = function (n) { return n + " " + (n % 10 === 1 && n % 100 !== 11 ? "раз" : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? "раза" : "раз"); };
     [["remove", "Убираете"], ["replace", "Заменяете"], ["add", "Дописываете сами"]].forEach(function (g) {
       var G = L.filter(function (r) { return r.type === g[0]; }); if (!G.length) return;

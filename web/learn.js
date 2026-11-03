@@ -128,7 +128,59 @@
     return t;
   }
   function bonus(text, c) { var n = norm(text); return active(c, "add").filter(function (r) { return n.indexOf(r.k) >= 0; }).length * 0.6; }
+  /* ---------- ваш стиль и ваши фразы: из ваших ответов (поправленные вами, загруженные, согласованные) ---------- */
+  var OK_CAPS = /^(ГКБ|Москв|ЕМИАС|ПроДокторов|Яндекс|ДокТу|Госуслуг|ОМС|ДМС|МРТ|КТ|УЗИ|ЭКГ|Единый|Единого|СКП|КДО|МОРС|ОРИТ)/;
+  function clean(x) {   // своя фраза без имён и подробностей пациента: только её можно переносить в другие ответы
+    var w = x.split(/\s+/);
+    if (w.slice(1).some(function (y) { y = y.replace(/^[«"(]+/, ""); return /^[А-ЯЁ]/.test(y) && !OK_CAPS.test(y); })) return false;
+    if (/\d{2,}|[А-ЯЁ]\.\s?[А-ЯЁ]\./.test(x) && !/gkb24@|8-495/.test(x)) return false;
+    return x.length >= 18 && x.length <= 170;
+  }
+  function slotOf(x, i, n, tone) {
+    var l = x.toLowerCase();
+    if (/^желаем/.test(l)) return "close";
+    if (/@/.test(l)) return tone === "neg" ? "ask" : "";
+    if (i === 0 && /спасибо|благодар/.test(l)) return tone === "neg" ? "nOpen" : "open";
+    if (tone === "neg") return /свяж|провер|ответ(им|ственн)|подразделен/.test(l) ? "promise" : /разобра|рассмотр|обеспокои|внимани/.test(l) ? "concern" : "";
+    if (/передад|переда[её]м/.test(l)) return "";   // кого благодарят — ставит программа по списку сотрудников
+    return i > 0 && i < n - 1 || (i > 0 && !/^желаем/.test(l)) ? "mid" : "";
+  }
+  var styleCache = { v: -1, st: null };
+  function style() {
+    var v = window.__otvVer ? window.__otvVer("kb") : 0;
+    if (styleCache.st && styleCache.v === v) return styleCache.st;
+    var kb = (window.__otvAll && window.__otvAll("kb")) || {}, phrases = {}, lens = { pos: [], neg: [] }, open = {}, names = [0, 0], excl = 0, total = 0;
+    Object.keys(kb).forEach(function (id) {
+      var e = kb[id]; if (!e || !s(e.answer).trim() || e.kind === "appeal" || e.kind === "question") return;
+      var mine = e.edited || e.source === "загружено" || e.source === "обучение" || e.status === "published" || e.status === "approved";
+      if (!mine || e.source === "площадка") return;
+      var c = ctxOf(e), A = sents(e.answer); if (!A.length) return;
+      total++; lens[c.tone].push(A.length);
+      var first = norm(A[0]).split(" ")[0]; if (first) open[first] = (open[first] || 0) + 1;
+      names[/^Здравствуйте,\s*[А-ЯЁ]/m.test(s(e.answer)) ? 0 : 1]++;
+      if (/!/.test(A.join(" "))) excl++;
+      A.forEach(function (x, i) {
+        var sl = slotOf(x, i, A.length, c.tone); if (!sl || !clean(x)) return;
+        var k = c.tone + "|" + sl + "|" + norm(x), p = phrases[k] = phrases[k] || { tone: c.tone, slot: sl, text: x.replace(/!+$/, ".").replace(/([^.?])$/, "$1."), n: 0, mine: 0 };
+        p.n++; if (e.edited || e.source === "загружено") p.mine++;
+      });
+    });
+    var med = function (a) { if (!a.length) return 0; a = a.slice().sort(function (x, y) { return x - y; }); return a[Math.floor(a.length / 2)]; };
+    var hidden = {}; active(null, "remove").forEach(function (r) { hidden[r.k] = 1; });
+    var list = Object.keys(phrases).map(function (k) { return phrases[k]; }).filter(function (p) {
+      var n = norm(p.text); return !Object.keys(hidden).some(function (h) { return n.indexOf(h) >= 0; });   // убранное вами — не берём
+    });
+    var topOpen = Object.keys(open).sort(function (a, b) { return open[b] - open[a]; }).slice(0, 3);
+    var st = { total: total, posLen: med(lens.pos), negLen: med(lens.neg), open: topOpen.map(function (w) { return { word: w, n: open[w] }; }),
+      byName: names[0] + names[1] ? Math.round(names[0] * 100 / (names[0] + names[1])) : 0, excl: total ? Math.round(excl * 100 / total) : 0, phrases: list };
+    styleCache = { v: v, st: st };
+    return st;
+  }
+  // ваши фразы для сборщика: ситуация (pos/neg) и место в ответе
+  function myPhrases(tone, slot) { return style().phrases.filter(function (p) { return p.tone === tone && p.slot === slot; }); }
+
   window.__otvLearn = {
+    style: style, myPhrases: myPhrases,
     rules: function () { return compute().map(function (r) { return Object.assign({ off: off(r) }, r); }); },
     active: function (c, type) { return active(c, type || "remove"); },
     replaces: function (c) { return active(c, "replace"); },

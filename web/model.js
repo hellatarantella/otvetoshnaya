@@ -92,6 +92,13 @@
     if (bans.length) sys += "\n\nНЕ ПИШИ фразы, которые сотрудница регулярно убирает из ответов: " + bans.map(function (r) { return "«" + r.phrase + "»"; }).join("; ") + ".";
     if (reps.length) sys += "\n\nСЛОВА СОТРУДНИЦЫ — пиши так, как она исправляет: " + reps.map(function (r) { return "«" + r.to + "» вместо «" + r.from + "»"; }).join("; ") + ".";
     if (favs.length) sys += "\n\nФРАЗЫ, КОТОРЫЕ СОТРУДНИЦА ЧАСТО ДОБАВЛЯЕТ САМА (уместно — используй): " + favs.map(function (r) { return "«" + r.phrase + "»"; }).join("; ") + ".";
+    var ST = L && L.style ? L.style() : null;
+    if (ST && ST.total >= 5) {
+      var tn = ex.tone === "negative" ? "neg" : "pos", ln = tn === "neg" ? ST.negLen : ST.posLen;
+      var mine = ST.phrases.filter(function (p) { return p.tone === tn; }).sort(function (a, b) { return b.n - a.n; }).slice(0, 6);
+      sys += "\n\nСТИЛЬ СОТРУДНИЦЫ (по её ответам): " + (ln ? "обычно " + ln + " предложения; " : "") + (ST.open[0] ? "чаще начинает с «" + ST.open[0].word + "…»; " : "") + (ST.excl ? "" : "без восклицательных знаков; ") +
+        (mine.length ? "её фразы (можно брать, меняя порядок): " + mine.map(function (p) { return "«" + p.text + "»"; }).join("; ") : "");
+    }
     if (ex.list.length) {
       sys += "\n\nОБРАЗЦЫ, КОТОРЫЕ СОТРУДНИЦА СОГЛАСОВАЛА (повторяй стиль, длину и тон, но не копируй дословно):\n" +
         ex.list.map(function (e) { return (e.situation ? "Отзыв: «" + e.situation.slice(0, 300) + "»\nОтвет: " : "— ") + e.body; }).join("\n");
