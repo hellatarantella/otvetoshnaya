@@ -991,7 +991,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
       if (!alIsNeg(a)) return;
       negIds.add(a.id); var ar = rows.length ? answerForAlert(a) : null;
       if (ar) negIds.add(ar.id);
-      if (a.incident) { incIds.add(a.id); if (ar) incIds.add(ar.id); }
+      if (a.incident && a.status !== "done") { incIds.add(a.id); if (ar) incIds.add(ar.id); }
     });
     var sideRows = rows.filter(function(r){ return rowSide(r) === side; });
     $("ansBlock").hidden = side === "neg";
