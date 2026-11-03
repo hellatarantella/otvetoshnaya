@@ -178,6 +178,16 @@ textarea.comment{min-height:70px}
 .an-row{cursor:pointer}
 .an-row:hover,.an-row:focus{background:var(--pub-bg);outline:none}
 .an-cur td{font-weight:600}
+.an-top{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:6px 24px}
+.an-top h3{grid-column:1/-1}
+.an-topcol h4{margin:0 0 6px;font-size:14px}
+.an-toplist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.an-toplist li{display:flex;gap:8px;align-items:baseline;font-size:14px;padding:3px 0;border-bottom:1px solid var(--border)}
+.an-toplist li.res{opacity:.85}
+.an-pl{min-width:68px;color:var(--muted);font-size:12px}
+.an-nm{font-weight:600}
+.an-n{margin-left:auto;white-space:nowrap;font-weight:600}
+.an-res{margin:8px 0 4px;font-size:13px;color:#d6a33a}
 .an-sub{color:var(--muted);font-size:12px}
 .an-bad{color:var(--err-text);font-size:12px}
 .an-muted{color:var(--muted);font-size:13px;margin:6px 0 0}

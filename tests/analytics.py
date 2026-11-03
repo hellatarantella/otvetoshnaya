@@ -59,6 +59,13 @@ async def main():
         M = await pg.evaluate("""async () => { const ms = document.getElementById('anMode'); ms.value = 'placed'; ms.dispatchEvent(new Event('change')); await new Promise(r => setTimeout(r, 200));
           return [...document.querySelectorAll('#tab-analytics .an-kv')].map(x => x.textContent)[0]; }""")
         res.append((M == '5', 'переключатель «по дате размещения» работает', M))
+        TP = await pg.evaluate("""async () => { document.getElementById('anTopBtn').click(); await new Promise(r => setTimeout(r, 200));
+          const box = document.getElementById('anTop'); if (!box) return null;
+          const cols = [...box.querySelectorAll('.an-topcol')].map(c => ({ main: [...c.querySelectorAll('ol')[0].querySelectorAll('li')].map(l => l.textContent), res: c.querySelectorAll('ol').length > 1 }));
+          const T = window.__otvAnalytics.top([{ name: 'А', pos: 5 }, { name: 'Б', pos: 3 }, { name: 'В', pos: 3 }, { name: 'Г', pos: 3 }, { name: 'О больнице в целом', pos: 9 }], 2);
+          return { cols, tie: [T.main.map(x => x.name + x.place), T.reserve.map(x => x.name + x.place)] }; }""")
+        ok = TP and len(TP['cols']) == 2 and len(TP['cols'][0]['main']) == 2 and any('Хирургия' in x for x in TP['cols'][0]['main']) and all('1 место' in x for x in TP['cols'][0]['main']) and TP['tie'] == [['А1', 'Б2'], ['В2', 'Г2']]
+        res.append((ok, 'по кнопке — топ-3 отделения и топ-10 врачей; при равенстве на границе — резерв, «о больнице в целом» не участвует', TP))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         for ok, t, d in res: print(('OK  ' if ok else 'FAIL') + ' ' + t, '' if ok else d)
         await b.close(); print('ALL OK' if all(r[0] for r in res) else 'SOME FAILED')

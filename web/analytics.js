@@ -76,8 +76,19 @@
     return { rg: rg, pos: P.length, neg: N.length, prev: prev, depts: depts, docs: docs, plats: plats, themes: themes, negT: negT, months: months, checks: checks, minD: minD, year: y, uniq: uP.length };
   }
 
+  /* ---------- лучшие: N первых по благодарностям; кто набрал столько же, сколько последний, — в резерв ---------- */
+  function top(list, n) {
+    var L = list.filter(function (x) { return x.pos > 0 && !x.note && x.name !== "О больнице в целом"; })
+      .sort(function (a, b) { return b.pos - a.pos || a.name.localeCompare(b.name, "ru"); });
+    var main = L.slice(0, n), edge = main.length === n ? main[n - 1].pos : -1;
+    var reserve = L.slice(n).filter(function (x) { return x.pos === edge; });
+    var place = 0, prev = null;   // место: одинаковое число — одно место (1, 2, 2, 3)
+    main.concat(reserve).forEach(function (x) { if (x.pos !== prev) { place++; prev = x.pos; } x.place = place; x.tie = !!reserve.length && x.pos === edge; });
+    return { main: main, reserve: reserve, edge: edge };
+  }
+
   /* ---------- вкладка ---------- */
-  var root, db, snaps = {}, mode = "placed", preset = "lastm", own = {}, open = null, timer = 0;
+  var root, db, snaps = {}, mode = "placed", preset = "lastm", own = {}, open = null, timer = 0, showTop = false;
   try { var sv = JSON.parse(localStorage.getItem("otv-an") || "{}"); if (sv.preset) preset = sv.preset; if (sv.mode) mode = sv.mode; if (sv.own) own = sv.own; } catch (e) {}
   function keep() { try { localStorage.setItem("otv-an", JSON.stringify({ preset: preset, mode: mode, own: own })); } catch (e) {} }
   function visible() { var p = document.getElementById("tab-analytics"); return p && !p.hidden; }
@@ -99,6 +110,29 @@
     });
     box.append(t); return box;
   }
+  function topBlock(A) {
+    var box = el("section", "an-card an-top"); box.id = "anTop";
+    box.append(el("h3", null, "Лучшие по благодарностям · " + dm(A.rg.start) + " – " + dm(A.rg.end)));
+    [["Отделения — топ-3", top(A.depts, 3), false], ["Врачи — топ-10", top(A.docs, 10), true]].forEach(function (g) {
+      var t = g[1], col = el("div", "an-topcol"); col.append(el("h4", null, g[0]));
+      if (!t.main.length) { col.append(el("p", "an-muted", "Нет благодарностей за период")); box.append(col); return; }
+      var ol = el("ol", "an-toplist");
+      var item = function (x, res) {
+        var li = el("li", res ? "res" : null); li.append(el("span", "an-pl", x.place + " место"), el("span", "an-nm", x.name));
+        if (g[2] && x.sub) li.append(el("span", "an-sub", " · " + x.sub));
+        li.append(el("span", "an-n", x.pos + " " + plural(x.pos, "благодарность", "благодарности", "благодарностей")));
+        return li;
+      };
+      t.main.forEach(function (x) { ol.append(item(x, false)); }); col.append(ol);
+      if (t.reserve.length) {
+        col.append(el("p", "an-res", "Резерв — столько же благодарностей (" + t.edge + "), сколько у последнего в списке; выберите, кого показать:"));
+        var rl = el("ol", "an-toplist"); t.reserve.forEach(function (x) { rl.append(item(x, true)); }); col.append(rl);
+      }
+      box.append(col);
+    });
+    return box;
+  }
+  function plural(n, a, b, c) { var m = n % 100, k = n % 10; return m > 10 && m < 15 ? c : k === 1 ? a : k > 1 && k < 5 ? b : c; }
   function nameCell(x) { var f = document.createDocumentFragment(); f.append(el("span", null, x.name)); if (x.sub) f.append(el("span", "an-sub", " · " + x.sub)); if (x.note) f.append(el("span", "an-bad", " · " + x.note)); return f; }
   function reviews(rows) {
     var w = el("div", "an-rev");
@@ -127,6 +161,9 @@
     [["placed", "по дате в отчёте"], ["arrival", "по дате поступления"]].forEach(function (p) { var o = el("option", null, p[1]); o.value = p[0]; if (p[0] === mode) o.selected = true; ms.append(o); });
     ms.addEventListener("change", function () { mode = ms.value; keep(); render(); });
     act.append(el("b", null, "Считать:"), ms);
+    var tb = el("button", "btn primary", showTop ? "Скрыть лучших" : "Лучшие: 3 отделения и 10 врачей"); tb.type = "button"; tb.id = "anTopBtn";
+    tb.addEventListener("click", function () { showTop = !showTop; render(); });
+    act.append(tb);
     ctl.append(el("p", "ctl-p", "Период " + dm(rg.start) + " – " + dm(rg.end) + " · из недельных отчётов программы, без повторов"), act);
     root.append(ctl);
     if (!rows.length) { root.append(el("p", "an-muted", "Нет данных: аналитика считается по недельным отчётам программы. Подключите Google во вкладке «Отчёты» и соберите неделю.")); return; }
@@ -142,6 +179,7 @@
 
     var ch = el("ul", "an-checks"); A.checks.forEach(function (c) { ch.append(el("li", c.bad ? "bad" : "ok", (c.bad ? "⚠ " : "✓ ") + c.text)); }); root.append(ch);
 
+    if (showTop) root.append(topBlock(A));
     var grid = el("div", "an-grid");
     grid.append(table("Отделения", ["Отделение", "Благодарности", "Жалобы"], A.depts, [nameCell, function (x) { return x.pos; }, function (x) { return x.neg || ""; }], "d"));
     grid.append(table("Врачи", ["Врач", "Благодарности", "Жалобы"], A.docs, [nameCell, function (x) { return x.pos; }, function (x) { return x.neg || ""; }], "v"));
@@ -166,6 +204,6 @@
     });
     if (visible()) soon();
   }
-  window.__otvAnalytics = { compute: compute, range: range, render: function () { render(); } };
+  window.__otvAnalytics = { compute: compute, range: range, top: top, render: function () { render(); } };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 })();
