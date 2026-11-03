@@ -214,6 +214,8 @@ async fn ensure_server(app: &tauri::AppHandle) -> Result<u16, String> {
         }
         let child = cmd.spawn().map_err(|e| format!("сервер модели не запустился: {e}"))?;
         *g = Some((child, port));
+        // в журнал: модель занимает около 3 ГБ памяти — помогает разбирать вылеты
+        if let Some(store) = app.try_state::<crate::Store>() { crate::journal_line(&store.dir, "модель запущена (около 3 ГБ памяти)"); }
     }
     let port = st.server.lock().map_err(|_| "занято")?.as_ref().map(|x| x.1).unwrap_or(0);
     let client = reqwest::Client::new();
@@ -287,6 +289,7 @@ pub fn start_idle_watch(app: tauri::AppHandle) {
         let running = st.server.lock().map(|g| g.is_some()).unwrap_or(false);
         if idle && running {
             st.stop();
+            if let Some(store) = app.try_state::<crate::Store>() { crate::journal_line(&store.dir, "модель выключена: 10 минут без работы, память освобождена"); }
         }
     });
 }

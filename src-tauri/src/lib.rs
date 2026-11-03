@@ -23,7 +23,7 @@ const KEY_SOURCE_FILE: &str = "key-source";
 const KEY_FILE: &str = "data.key";
 const BACKUPS_KEEP: usize = 14;
 
-struct Store {
+pub(crate) struct Store {
     dir: PathBuf,
     key: Result<[u8; 32], String>,
     lock: Mutex<()>,
@@ -659,7 +659,7 @@ fn log_append(store: State<Store>, line: String) -> Result<(), String> {
 }
 
 // запись в журнал из самой программы (запуск, вылет прошлого сеанса, внутренняя ошибка)
-fn journal_line(dir: &Path, line: &str) {
+pub(crate) fn journal_line(dir: &Path, line: &str) {
     if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(dir.join(LOG_FILE)) {
         let _ = writeln!(f, "{} {}", now_stamp(), line);
     }
