@@ -658,6 +658,38 @@ fn log_append(store: State<Store>, line: String) -> Result<(), String> {
     writeln!(f, "{} {}", now_stamp(), clean).map_err(|e| e.to_string())
 }
 
+// запись в журнал из самой программы (запуск, вылет прошлого сеанса, внутренняя ошибка)
+fn journal_line(dir: &Path, line: &str) {
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(dir.join(LOG_FILE)) {
+        let _ = writeln!(f, "{} {}", now_stamp(), line);
+    }
+}
+
+/* Вылеты (03.11): метка сеанса ставится при запуске и снимается при нормальном закрытии. Если при запуске метка
+   осталась — прошлый сеанс оборвался (вылет или принудительное закрытие): это пишется в журнал с размером данных.
+   Внутренняя ошибка программы (panic) тоже пишется в журнал с местом в коде */
+fn session_start(dir: &Path, version: &str) {
+    let lock = dir.join("session.lock");
+    let data_mb = fs::metadata(dir.join(DATA_FILE)).map(|m| m.len() as f64 / 1_048_576.0).unwrap_or(0.0);
+    if let Ok(prev) = fs::read_to_string(&lock) {
+        journal_line(dir, &format!("ВЫЛЕТ: прошлый сеанс ({}) не закрылся нормально — программа упала или была закрыта принудительно", prev.trim()));
+    }
+    let _ = fs::write(&lock, format!("запуск {}, версия {}", now_stamp(), version));
+    journal_line(dir, &format!("запуск программы {version}, данные {data_mb:.1} МБ"));
+    let d = dir.to_path_buf();
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let place = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+        let msg = info.payload().downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_default();
+        journal_line(&d, &format!("ВНУТРЕННЯЯ ОШИБКА программы: {} @{}", msg.chars().take(300).collect::<String>(), place));
+        prev_hook(info);
+    }));
+}
+fn session_end(dir: &Path) {
+    journal_line(dir, "программа закрыта нормально");
+    let _ = fs::remove_file(dir.join("session.lock"));
+}
+
 #[tauri::command]
 fn log_read(store: State<Store>) -> Result<String, String> {
     let old = fs::read_to_string(store.dir.join("journal.old.txt")).unwrap_or_default();
@@ -740,6 +772,7 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir().expect("нет папки данных");
             fs::create_dir_all(&dir)?;
+            session_start(&dir, &app.package_info().version.to_string());
             let key = load_or_create_key(&dir);
             app.manage(Store { dir, key, lock: Mutex::new(()) });
             app.manage(AllowedHosts(Mutex::new(Default::default())));
@@ -788,6 +821,9 @@ pub fn run() {
             if let tauri::RunEvent::Exit = ev {
                 if let Some(st) = app.try_state::<model::ModelState>() {
                     st.stop();
+                }
+                if let Some(store) = app.try_state::<Store>() {
+                    session_end(&store.dir);
                 }
             }
         });

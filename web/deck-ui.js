@@ -60,8 +60,13 @@
   function readB64(file) { return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(String(r.result).split(",")[1]); }; r.onerror = rej; r.readAsDataURL(file); }); }
 
   /* ---------- сборка ---------- */
+  var rbTimer = null, rbDirty = false;
+  function visible() { var p = document.getElementById("tab-deckw"); return !!(p && !p.hidden && p.offsetParent !== null && !document.hidden); }
+  // пересборка по событиям данных: только когда вкладка открыта, и пачкой (несколько событий подряд — одна пересборка)
+  function rebuildSoon() { if (!visible()) { rbDirty = true; return; } clearTimeout(rbTimer); rbTimer = setTimeout(rebuild, 300); }
   function rebuild() {
     if (!root) return;
+    clearTimeout(rbTimer); rbDirty = false; rebuild.count = (rebuild.count || 0) + 1;
     var ws = weeks(); if (!ws.length) { paintEmpty(); return; }
     if (!cur || !ws.some(function (w) { return w.key === cur.key; })) cur = ws[0]; else cur = ws.filter(function (w) { return w.key === cur.key; })[0];
     var hist = DK().history(Object.keys(snaps).map(function (k) { return snaps[k]; }));
@@ -267,23 +272,34 @@
   // стили слайда действительно применились (иначе слайд рассыпается, а выгрузка дала бы кривой файл)
   function styled(sec) { var t = sec.querySelector("h1,h2"); return !t || getComputedStyle(t).position === "absolute"; }
   // масштаб превью — из ширины окна (формула в CSS не работает в Safari)
+  // наблюдатели размера снимаются при каждой пересборке: раньше копились и держали в памяти старые слайды с фото (вылеты, 03.11)
+  var observers = [];
+  function dropObservers() { observers.forEach(function (o) { try { o(); } catch (e) {} }); observers = []; }
   function fit(fr, inner) {
     var go = function () { var w = fr.clientWidth; if (w) inner.style.transform = "scale(" + (w / 1920) + ")"; };
-    go(); if (window.ResizeObserver) new ResizeObserver(go).observe(fr); else window.addEventListener("resize", go);
+    go();
+    if (window.ResizeObserver) { var ro = new ResizeObserver(go); ro.observe(fr); observers.push(function () { ro.disconnect(); }); }
+    else { window.addEventListener("resize", go); observers.push(function () { window.removeEventListener("resize", go); }); }
   }
+  // правка слайда хранится без встроенных фото (раньше каждая правка копировала фото в данные — данные пухли)
+  function lightHtml(h) { return String(h).replace(/(<img\b[^>]*?\bsrc=")data:[^"]*"/gi, '$1"'); }
 
   /* ---------- предпросмотр и самопроверка ---------- */
   var slides = [];
   function renderPreview(pv, issuesBox, buttons, blocked) {
-    pv.textContent = ""; slides = DK().slidesHtml(res.D);
+    dropObservers(); pv.textContent = ""; slides = DK().slidesHtml(res.D);
     var edits = (pickDoc().edits || {}), all = [];
     slides.forEach(function (h, i) {
       var fr = el("div", "deck-slide"), inner = el("div", "deck-slide-in");
       setHtml(inner, h); fr.append(inner); pv.append(fr); fit(fr, inner);
       var sec = inner.firstElementChild, id = sec.id, saved = edits[id];
-      if (saved && saved.sig === sig(h)) setHtml(sec, saved.html);
+      if (saved && saved.sig === sig(h)) {
+        var srcs = [].map.call(sec.querySelectorAll("img"), function (im) { return im.getAttribute("src"); });
+        setHtml(sec, saved.html);
+        [].forEach.call(sec.querySelectorAll("img"), function (im, k) { if (!im.getAttribute("src") && srcs[k]) im.setAttribute("src", srcs[k]); });
+      }
       editable(sec);
-      sec.addEventListener("focusout", function () { clean(sec); var e = Object.assign({}, pickDoc().edits || {}); e[id] = { sig: sig(h), html: sec.innerHTML }; savePickQuiet({ edits: e }); check(); });
+      sec.addEventListener("focusout", function () { clean(sec); var e = Object.assign({}, pickDoc().edits || {}); e[id] = { sig: sig(h), html: lightHtml(sec.innerHTML) }; savePickQuiet({ edits: e }); check(); });
       all.push(sec);
     });
     function check() {
@@ -384,12 +400,21 @@
     root = el("div", "deck-ui"); panel.append(root);
     window.claude.use("db").then(function (d) {
       db = d;
-      var n = 0, go = function () { if (++n >= 4) rebuild(); };
-      db.collection("weeks").onSnapshot(function (sn) { snaps = {}; sn.docs.forEach(function (x) { var v = x.data() || {}; if (v.start) snaps[v.start] = v; }); if (n >= 4) rebuild(); go(); }, go);
+      var n = 0, go = function () { if (++n >= 4) rebuildSoon(); };
+      db.collection("weeks").onSnapshot(function (sn) { snaps = {}; sn.docs.forEach(function (x) { var v = x.data() || {}; if (v.start) snaps[v.start] = v; }); if (n >= 4) rebuildSoon(); go(); }, go);
       // одна запись на фото: если одно и то же загружали в разные недели — берём последнее
-      db.collection("deckPhotos").onSnapshot(function (sn) { photos = {}; sn.docs.forEach(function (x) { var v = x.data() || {}, k = photoKey2(v); if (!photos[k] || String(v.at || "") > String(photos[k].at || "")) photos[k] = v; }); if (n >= 4) rebuild(); go(); }, go);
-      db.collection("deckPicks").onSnapshot(function (sn) { picks = {}; sn.docs.forEach(function (x) { picks[x.id] = x.data() || {}; }); go(); }, go);
-      db.collection("settings").onSnapshot(function (sn) { var f = null; sn.docs.forEach(function (x) { if (x.id === "deckFonts") f = x.data() || null; }); if ((f && f.at) !== (fonts && fonts.at) || !!f !== !!fonts) { fonts = f; fontFaces = false; if (n >= 4) rebuild(); } go(); }, go);
+      db.collection("deckPhotos").onSnapshot(function (sn) { photos = {}; sn.docs.forEach(function (x) { var v = x.data() || {}, k = photoKey2(v); if (!photos[k] || String(v.at || "") > String(photos[k].at || "")) photos[k] = v; }); if (n >= 4) rebuildSoon(); go(); }, go);
+      db.collection("deckPicks").onSnapshot(function (sn) {
+        picks = {};
+        sn.docs.forEach(function (x) {
+          var v = x.data() || {}, heavy = false;
+          Object.keys(v.edits || {}).forEach(function (k) { var e = v.edits[k]; if (e && /src="data:/.test(e.html || "")) { e.html = lightHtml(e.html); heavy = true; } });
+          picks[x.id] = v;
+          if (heavy) db.collection("deckPicks").doc(x.id).set(v).then(function () { log("правки слайдов облегчены (без фото внутри)"); }).catch(function () {});
+        });
+        go();
+      }, go);
+      db.collection("settings").onSnapshot(function (sn) { var f = null; sn.docs.forEach(function (x) { if (x.id === "deckFonts") f = x.data() || null; }); if ((f && f.at) !== (fonts && fonts.at) || !!f !== !!fonts) { fonts = f; fontFaces = false; if (n >= 4) rebuildSoon(); } go(); }, go);
     });
     // при открытии вкладки — свежие данные отчёта из Google (строки, удалённые или поправленные вручную, сразу учитываются)
     function fresh() { var r = window.__otvReports; return (r && r.refresh ? r.refresh() : Promise.resolve()).catch(function (e) { log("отчёт не перечитан: " + (e && e.message || e)); }).then(rebuild); }
@@ -397,5 +422,5 @@
   }
   function photoKey2(v) { return v.kind + "|" + v.key; }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount();
-  window.__otvDeckUi = { rebuild: function () { rebuild(); }, _state: function () { return { res: res, cur: cur, photos: photos, picks: picks }; } };
+  window.__otvDeckUi = { rebuild: function () { rebuild(); }, _state: function () { return { res: res, cur: cur, photos: photos, picks: picks, observers: observers.length, rebuilds: rebuild.count || 0 }; } };
 })();

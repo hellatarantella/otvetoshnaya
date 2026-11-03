@@ -87,7 +87,22 @@ async def main():
           return { heads: /Место/.test(sec.textContent) && /Благодарностей/.test(sec.textContent), roles: st.res.D.review.voices.map(v => v.role).concat([st.res.D.review.lineAfter]), chips, panels: sec.querySelectorAll('[data-fit="gold"]').length, ui: document.querySelector('.deck-ui').innerText.includes('Вёрстка проверена') }; }""")
         ok7 = s5['heads'] and not any(('зав.' in r or 'хирург' in r or 'невролог,' in r) for r in s5['roles']) and s5['panels'] == 1 and 'ОРИТ №2' in [c.replace(' ', ' ') for c in s5['chips']] and len(s5['chips']) >= 5 and not any('·' in c for c in s5['chips'])
         print(('OK  ' if ok7 else 'FAIL') + ' «Отделения»: таблица мест с заголовками, отделения плашками; на слайде 4 подписи — фамилия и отделение', s5 if not ok7 else '')
-        ok8 = not errs
+        # вылеты (03.11): пересборки не копят наблюдателей и старые слайды; правка слайда хранится без фото; на закрытой вкладке не пересобираем
+        mem = await pg.evaluate("""async () => {
+          for (let i = 0; i < 15; i++) window.__otvDeckUi.rebuild();
+          await new Promise(r => setTimeout(r, 1500));
+          const st = window.__otvDeckUi._state(), ed = JSON.stringify((st.picks['2026-10-23'] || {}).edits || {});
+          const before = st.rebuilds;
+          window.__otvShowTab('kb'); await new Promise(r => setTimeout(r, 200));
+          const db = await window.__otvRt.use('db'); await db.collection('deckPhotos').doc('x_test').set({ key: 'x', kind: 'dept', src: 'data:image/png;base64,AA', at: 'z' });
+          await new Promise(r => setTimeout(r, 900));
+          const after = window.__otvDeckUi._state().rebuilds;
+          window.__otvShowTab('deckw'); await new Promise(r => setTimeout(r, 300));
+          return { obs: st.observers, slides: document.querySelectorAll('.deck-slide').length, edHasData: /src=\\?"data:/.test(ed), edLen: ed.length, hidden: after - before };
+        }""")
+        okm = mem['obs'] == mem['slides'] and not mem['edHasData'] and mem['hidden'] == 0
+        print(('OK  ' if okm else 'FAIL') + ' память: после 15 пересборок наблюдателей столько же, сколько слайдов; правка без фото; на закрытой вкладке не пересобирается', mem if not okm else '')
+        ok8 = not errs and okm
         print(('OK  ' if ok8 else 'FAIL') + ' без ошибок на странице', errs[:3] if errs else '')
         await b.close(); print('ALL OK' if all([okb, ok1, ok2, ok3, ok4, ok5, ok6, ok7, ok8]) else 'SOME FAILED')
 asyncio.run(main())

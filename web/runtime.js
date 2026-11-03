@@ -30,6 +30,9 @@
     if (!dirty || loadError) return saving;
     dirty = false;
     var json = JSON.stringify(data);
+    // большие данные — заметка в журнал (раз в сеанс на каждые 10 МБ): помогает разбирать вылеты
+    var mb = Math.floor(json.length / 10485760) * 10;
+    if (mb >= 30 && mb > (flush.warned || 0)) { flush.warned = mb; try { if (window.__otvLog) window.__otvLog("данные программы больше " + mb + " МБ"); } catch (e) {} }
     saving = saving.then(function () {
       if (IN_APP) return invoke("db_save", { json: json });
       try { localStorage.setItem("otv-data", json); } catch (e) {}
@@ -39,7 +42,7 @@
   function scheduleSave() {
     dirty = true;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(flush, 150);
+    saveTimer = setTimeout(flush, 400);   // пачкой: при частых записях файл не переписывается каждые 0,15 с
   }
   window.addEventListener("pagehide", flush);
   document.addEventListener("visibilitychange", function () { if (document.hidden) flush(); });
