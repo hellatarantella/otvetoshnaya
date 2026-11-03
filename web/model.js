@@ -82,8 +82,11 @@
     var sys = "Ты пишешь ответы на отзывы и вопросы пациентов от имени администрации ГКБ №24 (24 Московская больница).\n" +
       "Пиши только основной текст ответа по-русски: 1–4 предложения, без приветствия и без подписи — их добавит программа. Только текст ответа, без пояснений и кавычек.\n\n" +
       styleRules() + "\n\n" + BASE_RULES + COMMON + situationRules(mixedOf(req, ex.tone), ex.type);
-    var bans = window.__otvLearn ? window.__otvLearn.active().slice(0, 10) : [];
+    var L = window.__otvLearn, lc = { tone: ex.tone, platform: req.platform };
+    var bans = L ? L.active(lc).slice(0, 10) : [], reps = L && L.replaces ? L.replaces(lc).slice(0, 10) : [], favs = L && L.favorites ? L.favorites(lc).slice(0, 5) : [];
     if (bans.length) sys += "\n\nНЕ ПИШИ фразы, которые сотрудница регулярно убирает из ответов: " + bans.map(function (r) { return "«" + r.phrase + "»"; }).join("; ") + ".";
+    if (reps.length) sys += "\n\nСЛОВА СОТРУДНИЦЫ — пиши так, как она исправляет: " + reps.map(function (r) { return "«" + r.to + "» вместо «" + r.from + "»"; }).join("; ") + ".";
+    if (favs.length) sys += "\n\nФРАЗЫ, КОТОРЫЕ СОТРУДНИЦА ЧАСТО ДОБАВЛЯЕТ САМА (уместно — используй): " + favs.map(function (r) { return "«" + r.phrase + "»"; }).join("; ") + ".";
     if (ex.list.length) {
       sys += "\n\nОБРАЗЦЫ, КОТОРЫЕ СОТРУДНИЦА СОГЛАСОВАЛА (повторяй стиль, длину и тон, но не копируй дословно):\n" +
         ex.list.map(function (e) { return (e.situation ? "Отзыв: «" + e.situation.slice(0, 300) + "»\nОтвет: " : "— ") + e.body; }).join("\n");

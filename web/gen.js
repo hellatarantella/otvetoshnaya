@@ -358,9 +358,10 @@
     var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform);
     (opts.exclude || []).forEach(function (k) { ex[k] = 1; });
     var cands = p.list.filter(function (c) { return !ex[c.key]; }).map(function (c) {
-      var tx = shape(c.raw, it, p.tone, p.type);
-      // обучение на правках: варианты с фразами, которые вы регулярно убираете, уходят вниз
-      return { key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && window.__otvLearn ? window.__otvLearn.penalty(tx) : 0) };
+      var tx = shape(c.raw, it, p.tone, p.type), L = window.__otvLearn, lc = { tone: p.tone, platform: it.platform };
+      // обучение на правках: ваши замены слов — сразу в тексте; фразы, которые вы убираете, — вниз; ваши частые фразы — вверх
+      if (tx && L && L.rewrite) tx = L.rewrite(tx, lc);
+      return { key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) };
     }).filter(function (c) {
       if (!c.text) return false;
       var body = norm(c.text.replace(/^Здравствуйте[^\n]*\n/, ""));

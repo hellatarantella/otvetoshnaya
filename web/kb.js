@@ -124,20 +124,33 @@
       var ia = el("div", "actions"); ia.append(imp); top.append(ia);
     }
     box.append(top);
-    // чему программа научилась на ваших правках
-    var L = window.__otvLearn ? window.__otvLearn.rules() : [];
-    var lb = el("details", "card"); lb.append(el("summary", null, "Чему программа научилась на ваших правках: " + L.filter(function (r) { return !r.off; }).length));
-    if (!L.length) lb.append(el("p", "meta", "Пока нет: правило появляется, когда вы убираете одну и ту же фразу из черновика хотя бы дважды."));
-    L.forEach(function (r) {
-      var row = el("div", "actions"), b = el("button", "link", r.off ? "Вернуть правило" : "Отменить"); b.type = "button";
-      b.addEventListener("click", function () { window.__otvLearn.setDisabled(r.key, !r.off).then(render, render); });
-      row.append(el("span", null, (r.off ? "(отменено) " : "") + "Не предлагать «" + r.phrase + "» — вы убрали " + r.removed + " раз" + (r.kept ? ", оставили " + r.kept : "")), b);
-      lb.append(row);
-    });
-    box.append(lb);
+    box.append(learnBlock());
     var res = el("div"); res.id = "kbList"; box.append(res);
     list();
   }
+  // чему программа научилась на ваших правках — обновляется вместе с базой (раньше рисовался один раз за сеанс)
+  var learnOpen = false;
+  function learnBlock() {
+    var L = window.__otvLearn ? window.__otvLearn.rules() : [];
+    var lb = el("details", "card"); lb.id = "kbLearn"; lb.open = learnOpen; lb.addEventListener("toggle", function () { learnOpen = lb.open; }); lb.append(el("summary", null, "Чему программа научилась на ваших правках: " + L.filter(function (r) { return !r.off; }).length));
+    if (!L.length) lb.append(el("p", "meta", "Пока нет: правило появляется, когда вы хотя бы дважды убираете одну и ту же фразу, меняете одно слово на другое или дописываете своё предложение."));
+    var times = function (n) { return n + " " + (n % 10 === 1 && n % 100 !== 11 ? "раз" : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? "раза" : "раз"); };
+    [["remove", "Убираете"], ["replace", "Заменяете"], ["add", "Дописываете сами"]].forEach(function (g) {
+      var G = L.filter(function (r) { return r.type === g[0]; }); if (!G.length) return;
+      lb.append(el("h4", null, g[1] + ": " + G.length));
+      G.forEach(function (r) {
+        var row = el("div", "actions"), b = el("button", "link", r.off ? "Вернуть правило" : "Отменить"); b.type = "button";
+        b.addEventListener("click", function () { window.__otvLearn.setDisabled(r.key, !r.off).then(render, render); });
+        var t = r.type === "remove" ? "Не предлагать «" + r.phrase + "» — вы убрали " + times(r.yes) + (r.no ? ", оставили " + r.no : "")
+          : r.type === "replace" ? "Писать «" + r.to + "» вместо «" + r.from + "» — вы заменили " + times(r.yes) + (r.no ? ", оставили " + r.no : "")
+          : "Предлагать «" + r.phrase + "» — вы дописали " + times(r.yes);
+        row.append(el("span", null, (r.off ? "(отменено) " : "") + t + (r.scope !== "all" ? " · " + r.scopeName : "")), b);
+        lb.append(row);
+      });
+    });
+    return lb;
+  }
+  function refreshLearn() { var old = document.getElementById("kbLearn"); if (old) old.replaceWith(learnBlock()); }
 
   function list() {
     var res = document.getElementById("kbList"); if (!res) return;
@@ -174,7 +187,7 @@
       db = d;
       db.collection("kb").onSnapshot(function (snap) {
         rows = snap.docs.map(function (x) { var o = x.data() || {}; o.id = x.id; return o; });
-        if (document.getElementById("kbList")) list(); else render();
+        if (document.getElementById("kbList")) { list(); refreshLearn(); } else render();
       });
       return scanAll();
     }).then(render, render);
