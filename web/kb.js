@@ -34,7 +34,18 @@
       kind: KINDS[tab] ? tab : "thanks", platform: "", page: "", date: s(d.createdAt).slice(0, 10),
       situation: s(d.label), answer: ans, draft: "", edited: false, status: "draft", note: s(d.note), source: "drafts/" + id } };
   }
-  var MAP = { answers: fromAnswer, mail: fromMail, drafts: fromDraft };
+  // программа сама ищет, на чём учиться: настоящие ответы больницы, которые она видит на площадках при сборе.
+  // Берём только написанные хорошо (речевая проверка по Ильяхову не ниже 6 из 10) и не короче 60 знаков
+  function fromRegistry(id, d) {
+    if (!d) return null;
+    var ans = s(d.reply).trim(), sit = s(d.fullText || d.text).trim();
+    if (ans.length < 60 || sit.length < 20) return null;
+    var SP = window.__otvSpeech; if (SP && SP.audit(ans).score < 6) return null;
+    return { key: "site-" + id, data: {
+      kind: "review", platform: s(d.platform), page: s(d.page), date: s(d.date || d.placed || "").slice(0, 10),
+      situation: sit, answer: ans, draft: "", edited: false, status: "published", note: "ответ больницы с площадки (найден при сборе)", source: "площадка" } };
+  }
+  var MAP = { answers: fromAnswer, mail: fromMail, drafts: fromDraft, registry: fromRegistry };
 
   function remember(entry) {
     if (!entry || !db) return Promise.resolve(false);
@@ -83,6 +94,54 @@
   }
   window.__otvKbImportTraining = function (d) { return importTraining(d); };
 
+  /* ---------- свои ответы: файл (.txt, .docx, .csv) или вставка ---------- */
+  // Пары «Отзыв: … / Ответ: …» — с ситуацией; иначе каждый абзац-блок (через пустую строку) — отдельный ответ
+  function parseOwn(text) {
+    var t = s(text).replace(/\r/g, "").replace(/\u00a0/g, " "), out = [];
+    if (/^\s*(Отзыв|Вопрос|Жалоба)\s*[:：]/im.test(t) && /^\s*Ответ\s*[:：]/im.test(t)) {
+      var re = /^\s*(?:Отзыв|Вопрос|Жалоба)\s*[:：]\s*([\s\S]*?)^\s*Ответ\s*[:：]\s*([\s\S]*?)(?=^\s*(?:Отзыв|Вопрос|Жалоба)\s*[:：]|(?![\s\S]))/gim, m;
+      while ((m = re.exec(t))) { var a = m[2].trim(); if (a.length >= 30) out.push({ situation: m[1].trim(), answer: a }); }
+      return out;
+    }
+    t.split(/\n\s*\n+/).forEach(function (b) { b = b.trim(); if (b.length >= 40) out.push({ situation: "", answer: b }); });
+    return out;
+  }
+  function parseCsv(text) {
+    var rows = [], row = [], cur = "", q = false, sep = /;/.test(s(text).split("\n")[0]) ? ";" : ",";
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (q) { if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+      else if (ch === '"') q = true; else if (ch === sep) { row.push(cur); cur = ""; } else if (ch === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; } else if (ch !== "\r") cur += ch;
+    }
+    if (cur || row.length) { row.push(cur); rows.push(row); }
+    var head = (rows[0] || []).map(function (h) { return h.toLowerCase(); }), ri = head.findIndex(function (h) { return /отзыв|вопрос|ситуац/.test(h); }), ai = head.findIndex(function (h) { return /ответ/.test(h); });
+    if (ai < 0) { ri = rows[0] && rows[0].length > 1 ? 0 : -1; ai = rows[0] && rows[0].length > 1 ? 1 : 0; } else rows = rows.slice(1);
+    return rows.map(function (r) { return { situation: ri >= 0 ? s(r[ri]).trim() : "", answer: s(r[ai]).trim() }; }).filter(function (x) { return x.answer.length >= 30; });
+  }
+  function docxText(buf) {
+    if (!window.JSZip) return Promise.reject(new Error("не удалось открыть .docx"));
+    return window.JSZip.loadAsync(buf).then(function (z) { var f = z.file("word/document.xml"); if (!f) throw new Error("в файле нет текста Word"); return f.async("string"); }).then(function (x) {
+      var d = new DOMParser().parseFromString(x, "application/xml"), W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+      return [].map.call(d.getElementsByTagNameNS(W, "p"), function (p) { return [].map.call(p.getElementsByTagNameNS(W, "t"), function (t) { return t.textContent; }).join(""); }).join("\n");
+    });
+  }
+  function importOwn(items, label) {
+    var NEG = window.__otvGen && window.__otvGen.NEG_ANS, jobs = items.map(function (it) {
+      var q = /\?/.test(it.situation) && !/спасибо|благодар/i.test(it.situation);
+      return { key: "own-" + hash(it.answer), data: { kind: q ? "question" : "review", platform: "", page: "", date: "", situation: it.situation, answer: it.answer, draft: "", edited: true,
+        status: "approved", note: "загружено вами" + (label ? ": " + label : "") + (NEG && NEG.test(it.answer) ? " · ответ на жалобу" : ""), source: "загружено" } };
+    });
+    return jobs.reduce(function (p, e) { return p.then(function (n) { return remember(e).then(function (x) { return n + (x ? 1 : 0); }); }); }, Promise.resolve(0));
+  }
+  function readOwnFile(f) {
+    var nm = s(f.name).toLowerCase();
+    if (/\.docx$/.test(nm)) return f.arrayBuffer().then(docxText).then(parseOwn);
+    if (/\.csv$/.test(nm)) return f.text().then(parseCsv);
+    if (/\.json$/.test(nm)) return f.text().then(function (t) { var d = JSON.parse(t); if (!Array.isArray(d)) throw new Error("ожидался список ответов"); return d.map(function (x) { return typeof x === "string" ? { situation: "", answer: x } : { situation: s(x["отзыв"] || x.review || x.situation), answer: s(x["ответ"] || x.answer || x.reply) }; }).filter(function (x) { return x.answer.length >= 30; }); });
+    return f.text().then(parseOwn);
+  }
+  window.__otvKbOwn = { parse: parseOwn, csv: parseCsv, importOwn: importOwn, readFile: readOwnFile };
+
   /* ---------- вкладка «База ответов» ---------- */
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function copy(text, btn) {
@@ -118,6 +177,27 @@
       tr.value = "";
     });
     var ta = el("div", "actions"); ta.append(trB, tr, trMsg); top.append(ta);
+    // свои ответы — генератор и модель учатся на них как на согласованных
+    var ow = el("input"); ow.type = "file"; ow.multiple = true; ow.accept = ".txt,.docx,.csv,.json,.md"; ow.hidden = true;
+    var owB = el("button", "btn", "Загрузить свои ответы (Word, текст, таблица)"); owB.type = "button";
+    var owP = el("button", "btn", "Вставить свои ответы"); owP.type = "button";
+    var owMsg = el("span", "meta"); owMsg.id = "kbOwnMsg";
+    var owBox = el("div", "kb-own"); owBox.hidden = true;
+    var owTa = el("textarea"); owTa.placeholder = "Вставьте ответы. Каждый ответ — через пустую строку.\nМожно парами:\nОтзыв: …\nОтвет: …"; owTa.rows = 8;
+    var owGo = el("button", "btn primary", "Добавить в обучение"); owGo.type = "button";
+    owBox.append(owTa, owGo);
+    var done = function (n, all) { owMsg.textContent = all ? "Добавлено в обучение: " + n + " из " + all + (n < all ? " (остальные уже были)" : "") : "Не нашла ответов: нужен текст от 30 знаков; в Word — по абзацам через пустую строку или парами «Отзыв: / Ответ:»"; };
+    var fail = function (e) { owMsg.textContent = "Не загрузилось: " + (e && e.message || e); };
+    owB.addEventListener("click", function () { ow.click(); });
+    ow.addEventListener("change", function () {
+      var fs = [].slice.call(ow.files || []); ow.value = ""; if (!fs.length) return;
+      owMsg.textContent = "Читаю…";
+      fs.reduce(function (p, f) { return p.then(function (acc) { return readOwnFile(f).then(function (items) { return importOwn(items, f.name).then(function (n) { return [acc[0] + n, acc[1] + items.length]; }); }); }); }, Promise.resolve([0, 0]))
+        .then(function (r) { done(r[0], r[1]); }, fail);
+    });
+    owP.addEventListener("click", function () { owBox.hidden = !owBox.hidden; if (!owBox.hidden) owTa.focus(); });
+    owGo.addEventListener("click", function () { var items = parseOwn(owTa.value); owMsg.textContent = "Добавляю…"; importOwn(items, "вставка").then(function (n) { done(n, items.length); if (items.length) owTa.value = ""; }, fail); });
+    var oa = el("div", "actions"); oa.append(owB, owP, ow, owMsg); top.append(oa, owBox);
     if (window.__otvImport) {
       var imp = el("button", "btn", "Загрузить архив ответов"); imp.type = "button";
       imp.addEventListener("click", function () { window.__otvImport(); });

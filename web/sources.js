@@ -1375,6 +1375,8 @@
     var tone = rating != null && rating !== "" && +rating < 4 ? "negative" : (rating != null && rating !== "" ? "positive" : "");
     var g = window.__otvGen && window.__otvGen.check ? window.__otvGen.check(ans, { review: review }, tone) : { ok: true };
     if (!g.ok) return g.why.join("; ");
+    var miss = window.__otvSpeech ? window.__otvSpeech.covers(ans, review) : [];   // ответ закрывает жалобу и вопрос автора
+    if (miss.length) return miss.join("; ");
     return "";
   }
   window.__otvPubGuard = pubGuard;   // для проверок

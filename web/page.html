@@ -72,6 +72,12 @@ section.group>h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;co
 textarea{width:100%;display:block;font:inherit;font-size:15px;line-height:1.5;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;resize:vertical;min-height:120px;field-sizing:content}
 textarea[readonly]{background:var(--surface-2);color:var(--text);resize:none}
 textarea.comment{min-height:70px}
+.kb-own{margin:8px 0 0;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.speech{margin:6px 0 0;font-size:13px;color:var(--muted)}
+.speech[data-score="good"]::before{content:"● ";color:var(--ok)}
+.speech[data-score="mid"]::before{content:"● ";color:#d6a33a}
+.speech[data-score="low"]::before{content:"● ";color:var(--err-text)}
+.speech.an{margin:4px 0 8px}
 .lint{margin:6px 0 0;padding:0;list-style:none;font-size:13px;color:var(--err-text)}
 .lint li::before{content:"⚠ "}
 .fixbox{margin:12px 0 0}
@@ -804,6 +810,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     lbl.append(c.varBtn);
     c.ta = el("textarea"); c.ta.setAttribute("aria-label","Текст ответа"); c.ta.spellcheck = true;
     c.lint = el("ul","lint");
+    c.anEl = el("p","speech an"); c.spEl = el("p","speech");   // разбор отзыва и речевая проверка ответа (Ильяхов)
     c.ta.addEventListener("input", function(){
       c.dirty = true; c.savedEl.textContent = "";
       renderLint(c);
@@ -874,7 +881,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     });
 
     c.actions.prepend(c.selfCopy);
-    card.append(head, c.author, c.review, links, c.note, lbl, c.ta, c.lint, c.fixbox, c.actions, c.decided, c.revBox, c.pubRow, c.pubErr, c.errEl);
+    card.append(head, c.author, c.review, c.anEl, links, c.note, lbl, c.ta, c.spEl, c.lint, c.fixbox, c.actions, c.decided, c.revBox, c.pubRow, c.pubErr, c.errEl);
 
     c.pubNowBtn.addEventListener("click", function(){ approveAndMaybePublish(c, c.pubNowBtn, true); });
     c.approveBtn.addEventListener("click", function(){ approveAndMaybePublish(c, c.approveBtn, false); });
@@ -924,6 +931,16 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.lint.textContent = "";
     warns.forEach(function(w){ c.lint.append(el("li",null,w)); });
     c.lint.hidden = !warns.length;
+    var SP = window.__otvSpeech, v = s(c.ta.value).trim();
+    if (SP && c.spEl) {
+      c.spEl.textContent = v ? SP.scoreLine(v) : ""; c.spEl.hidden = !v;
+      var a = SP.audit(v); c.spEl.dataset.score = a.score >= 8 ? "good" : a.score >= 6 ? "mid" : "low";
+      c.spEl.title = a.issues.slice(0, 8).map(function(i){ return "«" + i.word + "» — " + i.hint; }).join("\n");
+      var miss = v ? SP.covers(v, s((c.row||{}).review)) : [];
+      if (miss.length) c.spEl.textContent += " · " + miss.join(", ");
+      var an = SP.summary(SP.analyze(s((c.row||{}).review)));
+      c.anEl.textContent = an ? "Разбор: " + an : ""; c.anEl.hidden = !an;
+    }
   }
 
   function updateCard(c, r){

@@ -299,7 +299,8 @@
       if (type === "hospital" && /врача/i.test(s(e.page))) return;
       if (type === "letter" && s(e.platform) !== "Сайт") return;
       if (it.kbId && (k === it.kbId || norm(e.situation) === norm(it.review))) return;     // на экзамене — без подсказки своим же ответом
-      list.push({ key: "kb:" + k, raw: e.answer, sit: s(e.situation), edited: !!e.edited, score: 1 + sim(it.review, e.situation) * 2 + (s(e.platform) === s(it.platform) ? 0.3 : 0) });
+      var SPq = window.__otvSpeech, q = SPq ? (SPq.audit(e.answer).score - 7) * 0.08 : 0;   // хорошо написанные образцы — выше
+      list.push({ key: "kb:" + k, raw: e.answer, sit: s(e.situation), edited: !!e.edited, score: 1 + sim(it.review, e.situation) * 2 + (s(e.platform) === s(it.platform) ? 0.3 : 0) + q - (e.source === "площадка" ? 0.2 : 0) + (e.source === "загружено" ? 0.2 : 0) });
     });
     approved().forEach(function (a, i) {
       if (type === "question" ? a.type !== "question" : (a.type === "question" || a.tone !== tone)) return;
@@ -361,7 +362,11 @@
       var tx = shape(c.raw, it, p.tone, p.type), L = window.__otvLearn, lc = { tone: p.tone, platform: it.platform };
       // обучение на правках: ваши замены слов — сразу в тексте; фразы, которые вы убираете, — вниз; ваши частые фразы — вверх
       if (tx && L && L.rewrite) tx = L.rewrite(tx, lc);
-      return { key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) };
+      var SP = window.__otvSpeech;
+      if (tx && SP) tx = SP.tidy(tx, L && L.favorites ? L.favorites(lc).map(function (r) { return r.phrase; }) : []);
+      // речь по Ильяхову и «ответ закрывает части отзыва» влияют на выбор варианта
+      var sp = tx && SP ? SP.penalty(tx) + 0.8 * SP.covers(tx, it.review).length : 0;
+      return { key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) - sp };
     }).filter(function (c) {
       if (!c.text) return false;
       var body = norm(c.text.replace(/^Здравствуйте[^\n]*\n/, ""));

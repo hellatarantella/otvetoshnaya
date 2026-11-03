@@ -66,6 +66,7 @@
   function mixedOf(req, tone) {
     if (tone !== "negative") return tone;
     var r = s(req.review);
+    if (window.__otvSpeech && window.__otvSpeech.analyze(r).tone === "mixed") return "mixed";
     return /(спасибо|благодар|отдельн\S* благодарн|врачи (грамотн|внимательн|хорош)|все отлично|всё отлично|претензий нет)/i.test(r) ? "mixed" : tone;
   }
   function itemOf(req) {
@@ -82,6 +83,8 @@
     var sys = "Ты пишешь ответы на отзывы и вопросы пациентов от имени администрации ГКБ №24 (24 Московская больница).\n" +
       "Пиши только основной текст ответа по-русски: 1–4 предложения, без приветствия и без подписи — их добавит программа. Только текст ответа, без пояснений и кавычек.\n\n" +
       styleRules() + "\n\n" + BASE_RULES + COMMON + situationRules(mixedOf(req, ex.tone), ex.type);
+    var SP = window.__otvSpeech;
+    if (SP) { sys += "\n\n" + SP.PROMPT; var br = SP.brief(req.review).text; if (br) sys += "\n\n" + br; }
     var L = window.__otvLearn, lc = { tone: ex.tone, platform: req.platform };
     var bans = L ? L.active(lc).slice(0, 10) : [], reps = L && L.replaces ? L.replaces(lc).slice(0, 10) : [], favs = L && L.favorites ? L.favorites(lc).slice(0, 5) : [];
     if (bans.length) sys += "\n\nНЕ ПИШИ фразы, которые сотрудница регулярно убирает из ответов: " + bans.map(function (r) { return "«" + r.phrase + "»"; }).join("; ") + ".";
@@ -128,14 +131,20 @@
       return generate(m.messages, temp).then(function (out) {
         var t = bodyOf(s(out).replace(/<think>[\s\S]*?<\/think>/g, "")).replace(/^[«"]+|[»"]+$/g, "").trim();
         if (!valid(t)) return null;
-        var p = window.__otvGen.polish(t, m.it);
+        var p = window.__otvGen.polish(t, m.it), SP = window.__otvSpeech, L = window.__otvLearn;
+        if (p && SP) p = SP.tidy(p, L && L.favorites ? L.favorites({ tone: m.tone, platform: req.platform }).map(function (r) { return r.phrase; }) : []);
         if (!p || bodyOf(p).length < 40) return null;
         if (req.current && same(bodyOf(p), bodyOf(req.current))) return null;          // тот же вариант — не годится
         return p;
       });
     };
     st.running = true; render();
-    return tryOnce(0.7).then(function (r) { return r || tryOnce(0.5); }).then(function (r) { refresh(); return r; }, function (e) { refresh(); throw e; });
+    // два черновика, если первый слабый по речи (Ильяхов) или не закрыл части отзыва; берём лучший
+    var SPk = window.__otvSpeech, grade = function (t) { return !t ? -99 : SPk ? SPk.audit(t).score - 2 * SPk.covers(t, req.review).length : 0; };
+    return tryOnce(0.7).then(function (r) {
+      if (r && (!SPk || grade(r) >= 7.5)) return r;
+      return tryOnce(0.5).then(function (r2) { return grade(r2) > grade(r) ? r2 : r; }, function () { return r; });
+    }).then(function (r) { refresh(); return r; }, function (e) { refresh(); throw e; });
   }
   // модель пишет варианты, только если проверка вслепую показала «не хуже» хотя бы в 60% (не меньше 10 отзывов)
   var PASS = 0.6;
