@@ -70,7 +70,7 @@
     if (!root) return;
     clearTimeout(rbTimer); rbDirty = false; rebuild.count = (rebuild.count || 0) + 1;
     var ws = weeks(); if (!ws.length) { paintEmpty(); return; }
-    if (!cur || !ws.some(function (w) { return w.key === cur.key; })) cur = ws[0]; else cur = ws.filter(function (w) { return w.key === cur.key; })[0];
+    if (!cur || !ws.some(function (w) { return w.key === cur.key; })) cur = ws.filter(function (w) { return w.def; })[0] || ws[0]; else cur = ws.filter(function (w) { return w.key === cur.key; })[0];
     try { res = K.build(cur.data, snaps, { person: person, photoOf: photoOf, pick: pickDoc() }); }
     catch (e) { res = null; log("не собралась: " + (e && e.stack || e)); }
     try { paint(ws); } catch (e) { log("отрисовка: " + (e && e.stack || e)); root.append(el("p", "ctl-st err", "Ошибка отрисовки презентации: " + (e && e.message || e) + ". Журнал записан")); }
@@ -159,6 +159,14 @@
       });
       if (chosen) setQ(chosen);
       row.append(list, rqBox, btn("Выбрать отзыв недели", "primary", function () { if (!chosen) { bar("Выберите отзыв недели", "err"); return; } var v = rq.value() || chosen.quote, bad = quoteProblem(v, n.band); if (bad) { bar("Цитата отзыва недели не принята: " + bad, "err"); return; } savePick({ review: chosen.key, own: ownList(v, chosen.quotes || [chosen.quote]), reviewText: Object.assign({}, pickDoc().reviewText || {}, { quote: v }) }); }));
+    } else if (n.kind === "choice") {
+      // выбор одного из вариантов (например, как считать месяц) — сохраняется в решениях периода
+      var box = el("div", "deck-opts"), val = n.current, nm = "ch" + Math.random().toString(36).slice(2, 7);
+      (n.options || []).forEach(function (o) {
+        var lab = el("label", "deck-opt"), rb = el("input"); rb.type = "radio"; rb.name = nm; rb.value = o.key; rb.checked = o.key === n.current;
+        rb.addEventListener("change", function () { val = o.key; }); lab.append(rb, el("span", null, " " + o.label)); box.append(lab);
+      });
+      row.append(box, btn("Подтвердить", "primary", function () { var patch = {}; patch[n.field] = val; savePick(patch, "Сохранено: " + ((n.options || []).filter(function (o) { return o.key === val; })[0] || {}).label); }));
     } else if (n.kind === "voices") {
       // у каждого голоса — врач и выбор цитаты из его отзыва (или своя фраза)
       var opts = n.options || [], slots = [0, 1, 2].map(function (i) {

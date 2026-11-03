@@ -41,7 +41,7 @@
     return '<div style="position:absolute;left:0px;top:172px;width:1920px;height:2px;background:' + C.line + '"></div>' +
       '<h2 style="position:absolute;left:80px;top:66px;width:1480px;font-size:54px;' + B + 'line-height:1.1;color:' + C.blue + '">' + nb(title) + '</h2>' +
       '<img src="' + A("logo24") + '" alt="Логотип «24+»" style="position:absolute;left:1638px;top:60px;width:202px;height:72px;object-fit:contain">' +
-      '<p style="position:absolute;left:80px;top:1010px;width:900px;font-size:24px;color:' + C.mute + '">ГБУЗ «ГКБ №&#160;24 ДЗМ» · ' + esc(foot) + '</p>' +
+      '<p style="position:absolute;left:80px;top:1010px;width:900px;font-size:24px;color:' + C.mute + '">ГБУЗ «ГКБ №&#160;24 ДЗМ»' + (foot ? ' · ' + esc(foot) : '') + '</p>' +
       '<p style="position:absolute;left:1640px;top:1010px;width:200px;font-size:24px;' + B + 'color:' + C.mute + ';text-align:right">' + ("0" + n).slice(-2) + '</p>';
   }
   var SEC = 'background:#FFFFFF;color:' + C.ink + ';font-family:\'Cera Round\', Arial, sans-serif;';
@@ -243,7 +243,7 @@
      (до 34 px: цитаты, имена, подписи, списки) уменьшается ступенями, одинаково на всём слайде, но не больше чем на 20%.
      Заголовки и большие цифры не трогаем. Исходный размер хранится в элементе, повторная подгонка начинается с него */
   function fitText(sec) {
-    if (!sec || /^(cover|end)$/.test(sec.id)) return 1;
+    if (!sec || /^m?(cover|end)$/.test(sec.id)) return 1;
     var els = [].filter.call(sec.querySelectorAll("p,b,span"), function (e) {
       if (!e.hasAttribute("data-fs0")) { var f = parseFloat(getComputedStyle(e).fontSize) || 0; if (!e.style.fontSize && e.tagName !== "P") return false; e.setAttribute("data-fs0", f); }
       var f0 = +e.getAttribute("data-fs0"); return f0 > 0 && f0 <= 34 && getComputedStyle(e).position !== "absolute";
@@ -279,7 +279,7 @@
       var r = rg.getBoundingClientRect(), x = r.left - base.left, y = r.top - base.top, isFoot = y >= foot - 2;
       var name = "«" + e.textContent.trim().slice(0, 40) + "»";
       if (x + r.width > W + 1 || y + r.height > H + 1 || x < -1) out.push(name + " выходит за край слайда");
-      else if (!isFoot && y + r.height > foot + 2 && !/^(cover|end)$/.test(sec.id)) out.push(name + " налезает на подвал");
+      else if (!isFoot && y + r.height > foot + 2 && !/^m?(cover|end)$/.test(sec.id)) out.push(name + " налезает на подвал");
       // слово шире своей ячейки (не переносится) — наезжает на соседний элемент (29.10: «Колопроктология» на полоску)
       if (e.scrollWidth > e.clientWidth + 2 && (getComputedStyle(e).whiteSpace === "nowrap" || getComputedStyle(e).display !== "inline")) out.push(name + " не помещается по ширине");
       // текст или плашка выходит за свою карточку (ближайший блок с фоном)
@@ -339,5 +339,5 @@
   function slidesHtml(D) { return ORDER.filter(function (x) { return !(D.skip || {})[x[0]]; }).map(function (x, i) { return x[1](D, i + 1); }); }
 
   window.__otvDeck = window.__otvDeck || {};
-  Object.assign(window.__otvDeck, { spread: spread, fitText: fitText, nbText: nbText, slidesHtml: slidesHtml, fitSlide: fitSlide, layoutIssues: layoutIssues, nb: nb, pw: pw, plural: plural, human: human, dm: dm, dmShort: dmShort, pct: pct, signed: signed, ordinal: ordinal, W: W, H: H, C: C, W_POS: W_POS, W_NEG: W_NEG, W_THX: W_THX, MON: MON });
+  Object.assign(window.__otvDeck, { frame: frame, esc: esc, nbName: nbName, platLogo: platLogo, photo: photo, B: B, SEC: SEC, A: A, MON1: MON1, PLAT: PLAT, spread: spread, fitText: fitText, nbText: nbText, slidesHtml: slidesHtml, fitSlide: fitSlide, layoutIssues: layoutIssues, nb: nb, pw: pw, plural: plural, human: human, dm: dm, dmShort: dmShort, pct: pct, signed: signed, ordinal: ordinal, W: W, H: H, C: C, W_POS: W_POS, W_NEG: W_NEG, W_THX: W_THX, MON: MON });
 })();
