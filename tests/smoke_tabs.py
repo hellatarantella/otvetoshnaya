@@ -3,7 +3,7 @@
 import asyncio, sys, os
 from playwright.async_api import async_playwright
 P = "file://" + sys.argv[1]
-TABS = ["pos", "neg", "check", "sources", "kb", "model", "appeal", "ethics", "thanks", "question", "qa", "deckw", "deckm"]
+TABS = ["pos", "neg", "check", "sources", "kb", "model", "appeal", "ethics", "thanks", "question", "qa", "deckw", "deckm", "analytics"]
 SKIP = r"Опубликовать|Удалить|Сбросить|Начать нов|Отправить|Подключить|Выгрузить|Перенести|Скачать|Загрузить|Вставить|Войти|Обновить отч|Собрать|Сохранить|Отключить|Скопировать"
 async def main():
     async with async_playwright() as p:

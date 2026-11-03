@@ -150,6 +150,36 @@ textarea.comment{min-height:70px}
 .hist-meta{font-size:12px;color:var(--muted);margin:0 0 4px}
 .hist-text{white-space:pre-wrap;font-size:14px;max-height:9em;overflow:auto;background:var(--surface-2);border-radius:8px;padding:8px 10px}
 /* сверка */
+.an{display:flex;flex-direction:column;gap:14px}
+.an-ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.an-ctl select,.an-ctl input{font-weight:400}
+.an-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.an-k{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px}
+.an-kl{font-size:13px;color:var(--muted)}
+.an-kv{font-size:28px;font-weight:700;line-height:1.2}
+.an-k.neg .an-kv{color:var(--err-text)}
+.an-ks{font-size:12px;color:var(--muted)}
+.an-checks{list-style:none;margin:0;padding:0;font-size:13px;display:flex;flex-wrap:wrap;gap:4px 16px}
+.an-checks .bad{color:var(--err-text)}
+.an-checks .ok{color:var(--ok)}
+.an-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px;align-items:start}
+.an-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;min-width:0}
+.an-card h3{margin:0 0 8px;font-size:16px}
+.an-t{width:100%;border-collapse:collapse;font-size:14px}
+.an-t th{text-align:left;font-weight:600;color:var(--muted);font-size:12px;padding:4px 6px;border-bottom:1px solid var(--border)}
+.an-t td{padding:5px 6px;border-bottom:1px solid var(--border);vertical-align:top;overflow-wrap:anywhere}
+.an-t .num{text-align:right;white-space:nowrap;width:1%}
+.an-row{cursor:pointer}
+.an-row:hover,.an-row:focus{background:var(--pub-bg);outline:none}
+.an-cur td{font-weight:600}
+.an-sub{color:var(--muted);font-size:12px}
+.an-bad{color:var(--err-text);font-size:12px}
+.an-muted{color:var(--muted);font-size:13px;margin:6px 0 0}
+.an-rev{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow:auto;padding:4px 0}
+.an-ri{border-left:3px solid var(--ok);padding:2px 8px}
+.an-ri.neg{border-left-color:var(--err-text)}
+.an-rh{font-size:12px;color:var(--muted)}
+.an-rt{font-size:13px;white-space:pre-wrap}
 .ctl{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:0 0 16px}
 .ctl-p{margin:0;font-size:15px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}
 .ctl-p b{font-weight:650}
@@ -464,6 +494,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     <div class="plan" data-plan="month"></div>
     <div class="lib" data-lib="m"></div>
   </section>
+  <section class="tab-panel" id="tab-analytics" hidden aria-label="Аналитика"></section>
   <section class="tab-panel" id="tab-sources" hidden aria-label="Источники отзывов"><div id="srcBox"></div></section>
   <section class="tab-panel" id="tab-kb" hidden aria-label="База ответов"><div id="kbBox"></div></section>
   <section class="tab-panel" id="tab-model" hidden aria-label="Встроенная модель"><div id="modelBox"></div></section>
@@ -2333,6 +2364,7 @@ gkb24@zdrav.mos.ru
     ["answers","Отзывы",[["pos","Позитив"],["neg","Негатив"],["qa","Вопросы"]]],
     ["check","Отчёты"],
     ["decks","Презентации",[["deckw","Неделя"],["deckm","Месяц"]]],
+    ["analytics","Аналитика"],
     ["replies","Ответы",[["thanks","Написать спасибо"],["question","Ответить на вопрос"]]],
     ["appeals","Обжалование",[["appeal","Обжалование отзыва"],["ethics","Этический комитет"]]]
   ];

@@ -311,7 +311,7 @@
   }
   function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }   // 1 479
 
-  window.__otvDeckMonth = { build: build, slidesHtml: slidesHtml, list: list, allRows: allRows, SEED: SEED };
+  window.__otvDeckMonth = { build: build, slidesHtml: slidesHtml, list: list, allRows: allRows, SEED: SEED, THEMES: THEMES, NEG_THEMES: NEG_THEMES, monthTotals: monthTotals, MON_SHORT: MON_SHORT, MON_NOM: MON_NOM };
   // вкладка «Презентации → Месяц» — та же основа, что у недели
   function start() {
     if (!window.__otvMakeDeckUi || !window.__otvDeck) return;
