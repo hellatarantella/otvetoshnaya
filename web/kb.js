@@ -205,6 +205,7 @@
     }
     box.append(top);
     box.append(learnBlock());
+    if (window.__otvFacts) box.append(window.__otvFacts.block());
     var res = el("div"); res.id = "kbList"; box.append(res);
     list();
   }

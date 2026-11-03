@@ -83,6 +83,8 @@
     var sys = "Ты пишешь ответы на отзывы и вопросы пациентов от имени администрации ГКБ №24 (24 Московская больница).\n" +
       "Пиши только основной текст ответа по-русски: 1–4 предложения, без приветствия и без подписи — их добавит программа. Только текст ответа, без пояснений и кавычек.\n\n" +
       styleRules() + "\n\n" + BASE_RULES + COMMON + situationRules(mixedOf(req, ex.tone), ex.type);
+    var FX = req.kind === "question" && window.__otvFacts ? window.__otvFacts.forQuestion(s(req.review), 4) : [];
+    if (FX.length) sys += "\n\nФАКТЫ ДЛЯ ОТВЕТА (бери только их, ничего не добавляй от себя):\n" + FX.map(function (f) { return "— " + f.text; }).join("\n");
     var SP = window.__otvSpeech;
     if (SP) { sys += "\n\n" + SP.PROMPT; var br = SP.brief(req.review).text; if (br) sys += "\n\n" + br; }
     var L = window.__otvLearn, lc = { tone: ex.tone, platform: req.platform };
@@ -110,9 +112,10 @@
     var rest = t.replace(/\S+@\S+|https?:\/\/\S+/g, "");
     if (/[a-z]{4,}/i.test(rest)) return false;                                       // латиница — сбой модели
     var phones = (t.match(/\+?\d[\d\s()\-]{8,}\d/g) || []).map(function (x) { return x.replace(/\D/g, "").replace(/^7/, "8"); });
-    if (phones.some(function (p) { return !PHONES.some(function (a) { return p.indexOf(a) === 0; }); })) return false; // выдуманный телефон
+    var FP = window.__otvFacts ? PHONES.concat(window.__otvFacts.phones()) : PHONES, FM = window.__otvFacts ? MAILS.concat(window.__otvFacts.mails()) : MAILS;
+    if (phones.some(function (p) { return !FP.some(function (a) { return p.indexOf(a) === 0; }); })) return false; // выдуманный телефон
     var mails = t.match(/[\w.+-]+@[\w.-]+\w/g) || [];
-    if (mails.some(function (m) { return MAILS.indexOf(m.toLowerCase()) < 0; })) return false;
+    if (mails.some(function (m) { return FM.indexOf(m.toLowerCase()) < 0; })) return false;
     return true;
   }
   function same(a, b) {

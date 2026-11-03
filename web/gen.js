@@ -168,6 +168,7 @@
     var body = s(text).replace(/\r/g, "").split("\n").map(function (l) { return l.trim(); }).filter(function (l) {
       return l && l.replace(/\.$/, "") !== SIGN;
     }).join(" ");
+    body = body.replace(/\s*С уважением,?\s*администрация[^.]*\.?\s*$/i, "");               // подпись в той же строке (ставим свою)
     body = body.replace(/([a-z0-9])([А-ЯЁ])/g, "$1. $2");                               // «...mos.ruТакже» в документе
     body = body.replace(/\[\s*(https?:\/\/[^\]\s]+)\s*\]\([^)]*\)/g, " $1").replace(/:\s+/g, ": "); // markdown-ссылки из документа
     body = body.replace(/\[\s*(\.{3}|…)?\s*\]/g, PH).replace(/\.{4}|…\./g, PH + ".").replace(/\.{3}|…/g, PH); // незаполненные места
@@ -246,9 +247,16 @@
     clearTimeout(saveT);
     saveT = setTimeout(function () { if (db) db.collection("gen_stats").doc("stats").set({ keys: stats, updatedAt: new Date().toISOString() }).catch(function () {}); }, 800);
   }
-  function learned(key) { var v = stats[key]; return v ? (v.p || 0) * 0.6 - (v.s || 0) * 0.25 : 0; }
-  function noteSkip(key) { if (!key) return; var v = stats[key] || (stats[key] = { p: 0, s: 0 }); v.s++; saveStats(); }
-  function notePick(key) { if (!key) return; var v = stats[key] || (stats[key] = { p: 0, s: 0 }); v.p++; saveStats(); }
+  function learned1(key) { var v = stats[key]; return v ? (v.p || 0) * 0.6 - (v.s || 0) * 0.25 : 0; }
+  // собранный ответ учится по каждой фразе: «cmp:тон:po2.pm5.cl1» → фразы po2, pm5, cl1
+  function partsOf(key) { var m = /^cmp:[^:]+:(.+)$/.exec(s(key)); return m ? m[1].split(".") : []; }
+  function learned(key) {
+    var ps = partsOf(key); if (!ps.length) return learned1(key);
+    return learned1(key) + ps.reduce(function (a, p) { return a + learned1("cs:" + p); }, 0) / ps.length;
+  }
+  function bump(key, f) { var v = stats[key] || (stats[key] = { p: 0, s: 0 }); v[f]++; }
+  function noteSkip(key) { if (!key) return; bump(key, "s"); partsOf(key).forEach(function (p) { bump("cs:" + p, "s"); }); saveStats(); }
+  function notePick(key) { if (!key) return; bump(key, "p"); partsOf(key).forEach(function (p) { bump("cs:" + p, "p"); }); saveStats(); }
 
   /* ---------- варианты ответа ---------- */
   var NEG_ANS = /разобрат|разбер|gkb24@|напишите|свяж|дату (обращения|госпитализации)|сожале|учт[её]м|замечани|извин|неудобств|проверим|недопустим|обеспокои/i;
@@ -260,6 +268,16 @@
     if (/Смешанные|Общая жалоба/.test(s(t.category))) return "negative";
     return NEG_ANS.test(t.text) ? "negative" : POS_ANS.test(t.text) ? "positive" : "any";
   }
+  // фразы недавно опубликованных ответов (все площадки): одна и та же фраза подряд — минус к варианту
+  var COMMONS = /^(желаем здоровья|пожалуйста, напишите|напишите, пожалуйста|чтобы мы могли разобраться|с уважением)/;
+  function recentSents() {
+    var all = (window.__otvAll && window.__otvAll("answers")) || {}, list = [], out = {};
+    Object.keys(all).forEach(function (id) { var a = all[id]; if (a && a.status === "published" && s(a.answer)) list.push(a); });
+    list.sort(function (a, b) { return s(b.publishedAt || b.date).localeCompare(s(a.publishedAt || a.date)); });
+    list.slice(0, 40).forEach(function (a) { sentsOf(a.answer).forEach(function (x) { out[x] = (out[x] || 0) + 1; }); });
+    return out;
+  }
+  function sentsOf(t) { return (s(t).replace(/^Здравствуйте[^\n]*\n/, "").replace(SIGN, "").match(/[^.!?]+[.!?]*/g) || []).map(norm).filter(function (x) { return x.length > 12 && !COMMONS.test(x); }); }
   function recentTexts(platform) {
     var all = (window.__otvAll && window.__otvAll("answers")) || {}, out = {};
     Object.keys(all).forEach(function (id) {
@@ -298,6 +316,7 @@
       if (type === "doctor" && !/врача/i.test(s(e.page))) return;
       if (type === "hospital" && /врача/i.test(s(e.page))) return;
       if (type === "letter" && s(e.platform) !== "Сайт") return;
+      if (type === "question" && !shared(it.review, e.situation)) return;              // ответ на вопрос — только про то же
       if (it.kbId && (k === it.kbId || norm(e.situation) === norm(it.review))) return;     // на экзамене — без подсказки своим же ответом
       var SPq = window.__otvSpeech, q = SPq ? (SPq.audit(e.answer).score - 7) * 0.08 : 0;   // хорошо написанные образцы — выше
       list.push({ key: "kb:" + k, raw: e.answer, sit: s(e.situation), edited: !!e.edited, score: 1 + sim(it.review, e.situation) * 2 + (s(e.platform) === s(it.platform) ? 0.3 : 0) + q - (e.source === "площадка" ? 0.2 : 0) + (e.source === "загружено" ? 0.2 : 0) });
@@ -318,6 +337,11 @@
       var fb = cats.fallback.some(function (m) { return c.indexOf(m) >= 0; });
       if (!main && !fb) return;
       list.push({ key: "tpl:" + i, raw: t.text, score: (main ? 0.9 : 0.4) });
+    });
+    // сборщик: ответ из частей по разбору отзыва (сотни сочетаний, без повторов)
+    if (window.__otvCompose && !it.kbId) window.__otvCompose.variants(it, { tone: tone, type: type }, 10).forEach(function (v) {
+      var hasFact = type === "question" && /\.f[0-9a-z]+(\.|$)/.test(v.key.replace(/^cmp:[^:]+:/, "."));
+      list.push({ key: v.key, raw: v.text, score: (type === "question" ? (hasFact ? 1.3 : 0.7) : 1.15) + learned(v.key) * 0.5 });
     });
     var uniq = {};
     list = list.filter(function (c) { var k = norm(c.raw).replace(/^здравствуйте\S*( \S+)? /, "").slice(0, 200); if (uniq[k]) return false; uniq[k] = 1; return true; });
@@ -356,7 +380,7 @@
   }
   function answer(it, opts) {
     opts = opts || {};
-    var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform);
+    var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform), rs = recentSents();
     (opts.exclude || []).forEach(function (k) { ex[k] = 1; });
     var cands = p.list.filter(function (c) { return !ex[c.key]; }).map(function (c) {
       var tx = shape(c.raw, it, p.tone, p.type), L = window.__otvLearn, lc = { tone: p.tone, platform: it.platform };
@@ -366,7 +390,8 @@
       if (tx && SP) tx = SP.tidy(tx, L && L.favorites ? L.favorites(lc).map(function (r) { return r.phrase; }) : []);
       // речь по Ильяхову и «ответ закрывает части отзыва» влияют на выбор варианта
       var sp = tx && SP ? SP.penalty(tx) + 0.8 * SP.covers(tx, it.review).length : 0;
-      return { key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) - sp };
+      var stale = tx ? sentsOf(tx).reduce(function (a, x) { return a + Math.min(2, rs[x] || 0) * 0.25; }, 0) : 0;   // свежесть формулировок
+      return { key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) - sp - stale };
     }).filter(function (c) {
       if (!c.text) return false;
       var body = norm(c.text.replace(/^Здравствуйте[^\n]*\n/, ""));

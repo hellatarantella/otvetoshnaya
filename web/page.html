@@ -72,6 +72,10 @@ section.group>h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;co
 textarea{width:100%;display:block;font:inherit;font-size:15px;line-height:1.5;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;resize:vertical;min-height:120px;field-sizing:content}
 textarea[readonly]{background:var(--surface-2);color:var(--text);resize:none}
 textarea.comment{min-height:70px}
+.facts{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.facts li{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;border-bottom:1px solid var(--border);padding:4px 0}
+.facts li.off .ft{text-decoration:line-through;color:var(--muted)}
+.facts .btn{padding:2px 8px;font-size:12px}
 .kb-own{margin:8px 0 0;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .speech{margin:6px 0 0;font-size:13px;color:var(--muted)}
 .speech[data-score="good"]::before{content:"● ";color:var(--ok)}
