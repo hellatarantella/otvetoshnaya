@@ -36,7 +36,11 @@
     saving = saving.then(function () {
       if (IN_APP) return invoke("db_save", { json: json });
       try { localStorage.setItem("otv-data", json); } catch (e) {}
-    }).catch(function (e) { showBar("Не удалось сохранить: " + e, "err"); dirty = true; });
+    }).catch(function (e) {
+      showBar("Не удалось сохранить: " + e + ". Повторю через 3 секунды", "err"); dirty = true;
+      try { if (window.__otvLog) window.__otvLog("сохранение данных не прошло: " + String(e).slice(0, 160)); } catch (x) {}
+      clearTimeout(saveTimer); saveTimer = setTimeout(flush, 3000);   // повтор сам, не дожидаясь следующей записи
+    });
     return saving;
   }
   function scheduleSave() {
@@ -45,6 +49,8 @@
     saveTimer = setTimeout(flush, 400);   // пачкой: при частых записях файл не переписывается каждые 0,15 с
   }
   window.addEventListener("pagehide", flush);
+  window.addEventListener("beforeunload", flush);
+  window.addEventListener("blur", flush);   // ушли из окна или закрываете программу: несохранённая пачка уходит сразу
   document.addEventListener("visibilitychange", function () { if (document.hidden) flush(); });
 
   function notify(name) {
@@ -54,8 +60,10 @@
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function guard() { if (loadError) throw { code: "storage_locked", message: loadError }; }
 
+  var vers = {};   // счётчик изменений коллекции: проверить «изменилось ли» без копирования всей коллекции
   function write(name, id, doc) {
     guard();
+    vers[name] = (vers[name] || 0) + 1;
     if (doc === null) delete bucket(name)[id]; else bucket(name)[id] = clone(doc);
     scheduleSave();
     setTimeout(function () { notify(name); }, 0);
@@ -239,6 +247,8 @@
   }
   window.__otvFillDocLinks = fillDocLinks;
   window.__otvAll = function (name) { return clone(bucket(name)); };
+  window.__otvGet = function (name, id) { var v = bucket(name)[id]; return v === undefined ? null : clone(v); };   // одна запись без копии всей коллекции
+  window.__otvVer = function (name) { return (vers[name] || 0) + "|" + Object.keys(bucket(name)).length; };
 
   // Запросы «собрать/обновить», перенесённые из онлайн-сервиса, в программе не выполняются задачами Claude:
   // висящий запрос делал кнопки «нажатыми». Снимаем его, сохраняя время и итог последнего сбора.

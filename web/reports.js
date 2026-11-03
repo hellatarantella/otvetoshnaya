@@ -4,6 +4,8 @@
    Спорное не вносится: оно ждёт вашего решения в блоке «Нужна проверка» на вкладке «Отчёты». */
 (function () {
   "use strict";
+  // одна запись хранилища (без копии всей коллекции; в проверках — через __otvAll)
+  function getOne(name, id) { return window.__otvGet ? window.__otvGet(name, id) : (((window.__otvAll && window.__otvAll(name)) || {})[id] || null); }
   if (!window.__OTV_APP) return;
   var T = window.__TAURI__, invoke = T && T.core && T.core.invoke;
   if (!invoke) return;
@@ -262,7 +264,7 @@
     }
     // ПРАВИЛО (27.10): отзыв с пометкой «Не отвечаем» или похожий на рекламу в «Позитив» сам не идёт — ставим под вопрос
     if (res.tone === "positive") {
-      var ans0 = (window.__otvAll && (window.__otvAll("answers") || {})[r.id]) || null;
+      var ans0 = (getOne("answers", r.id)) || null;
       if (ans0 && ans0.status === "skip") { res.status = "check"; res.why.push("отмечено «Не отвечаем»: вносить в «Позитив»?"); }
       if (AD_RE.test(text)) { res.status = "check"; res.why.push("похоже на рекламу, а не на отзыв: вносить в «Позитив»?"); }
     }
@@ -364,8 +366,8 @@
      иначе «—». Черновики и одобренные, но не опубликованные ответы в отчёт не идут.
      drafts — тексты, которые программа могла записать раньше: их можно стереть */
   function negAnswer(r) {
-    var A = window.__otvAll("answers") || {}, a = A[r.id], m = (window.__otvAll("mail") || {})[r.id],
-        al = (window.__otvAll("alerts") || {})[r.id] || {}, ap = A[r.id + "-appeal"], drafts = [];
+    var a = getOne("answers", r.id), m = getOne("mail", r.id),
+        al = getOne("alerts", r.id) || {}, ap = getOne("answers", r.id + "-appeal"), drafts = [];
     if (a) drafts.push(s(a.draft), a.status === "published" ? "" : s(a.answer));
     if (m) drafts.push(s(m.draft));
     drafts = drafts.map(function (x) { return x.trim(); }).filter(Boolean);
@@ -672,7 +674,7 @@
         if (truncatedOf(p.full, full)) { pit.text = clean(full); pch = true; }
         // врач не указан, а в отзыве он назван: вписываем (ручную запись не трогаем)
         if (!s(p.doctor).trim() || /^[—-]$/.test(s(p.doctor).trim())) {
-          var dd = decide(Object.assign({}, r, { fullText: full }), (window.__otvAll("mail") || {})[id]);
+          var dd = decide(Object.assign({}, r, { fullText: full }), getOne("mail", id) || undefined);
           if (dd && dd.doctor && dd.doctor !== "—") { pit.doctor = dd.doctor; pch = true; }
         }
         if (pch) items.push(pit);
@@ -687,7 +689,7 @@
       if (norm(b.fullAnswer) !== norm(want)) { it.answer = want; ch = true; written[id] = want; }
       var lk = linkFor(r, reg);
       if (s(b.link).trim() !== lk) { it.link = lk; ch = true; }
-      var src = s(r.reply).trim() ? "ответ с площадки/из почты (реестр)" : s(((window.__otvAll("mail") || {})[id] || {}).reply).trim() ? "ответ из почты (письмо)" : want === "—" ? "настоящего ответа нет" : "ответ программы/обжалование";
+      var src = s(r.reply).trim() ? "ответ с площадки/из почты (реестр)" : s((getOne("mail", id) || {}).reply).trim() ? "ответ из почты (письмо)" : want === "—" ? "настоящего ответа нет" : "ответ программы/обжалование";
       L("блок " + b.n + " (" + b.platform + ", отзыв " + id + "): " + src + (ch ? ", исправляю" : ", без изменений"));
       if (ch) items.push(it);
     });

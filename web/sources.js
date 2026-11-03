@@ -3,6 +3,8 @@
    что использует нынешний сбор; результат пишется в реестр, низкие оценки — в тревоги. */
 (function () {
   "use strict";
+  // одна запись хранилища (без копии всей коллекции; в проверках — через __otvAll)
+  function getOne(name, id) { return window.__otvGet ? window.__otvGet(name, id) : (((window.__otvAll && window.__otvAll(name)) || {})[id] || null); }
   if (!window.__OTV_APP) return;
   var T = window.__TAURI__, invoke = T.core.invoke, listen = T.event.listen;
   var DAYS = 14;
@@ -1120,7 +1122,7 @@
       if (modelBusy || !modelQ.length || !window.__otvModel.ready()) return;
       var x = modelQ.shift(); modelBusy = true;
       window.__otvModel.write(x.req).then(function (txt) {
-        var cur = (window.__otvAll("answers") || {})[x.id];
+        var cur = getOne("answers", x.id) || undefined;
         if (!txt || !cur || cur.status !== "pending" || s0(cur.answer) !== x.draft) return;
         return db.collection("answers").doc(x.id).update({ answer: txt, draft: txt, draftBy: "model" });
       }).catch(function () {}).then(function () { modelBusy = false; next(); });
@@ -1364,7 +1366,7 @@
   // нажали «Опубликовать» — ответ публикуется, замечание пишется в журнал
   // перед публикацией: ответ должен относиться именно к этому отзыву (имя в приветствии — автора, люди в тексте — из отзыва, тон — по отзыву)
   function pubGuard(r) {
-    var reg = (window.__otvAll("registry") || {})[r.id] || {};
+    var reg = getOne("registry", r.id) || {};
     var author = s0(reg.author || r.author), review = s0(reg.fullText || reg.text || r.review), ans = s0(r.answer);
     var nm = (ans.match(/^\s*Здравствуйте,\s*([А-ЯЁA-Z][а-яёa-z]+)/) || [])[1];
     var low = function (x) { return x.toLowerCase().replace(/ё/g, "е"); };

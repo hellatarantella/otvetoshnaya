@@ -5,7 +5,7 @@ const fn=src.slice(src.indexOf('  function pubGuard(r) {'), src.indexOf('  windo
 const reg={};
 const win={console,addEventListener(){},__otvAll:n=>n==='registry'?reg:{}}; win.window=win; vm.createContext(win);
 vm.runInContext(fs.readFileSync(path.join(__dirname,'..','web','gen.js'),'utf8'),win);
-vm.runInContext('function s0(x){return x==null?"":String(x);}\n'+fn+'\nwindow.pubGuard=pubGuard;',win);
+vm.runInContext('function s0(x){return x==null?"":String(x);}\nfunction getOne(n,id){return ((window.__otvAll&&window.__otvAll(n))||{})[id]||null;}\n'+fn+'\nwindow.pubGuard=pubGuard;',win);
 const G=win.pubGuard; let ok=true; const chk=(c,m)=>{console.log((c?'OK  ':'FAIL')+' '+m); ok=ok&&c;};
 reg.e={author:'Елизавета Демба',rating:1,fullText:'Начитавшись положительных отзывов, я выбрала эту клинику для удаления желчного пузыря. Несмина С.С. решила меня выписать.'};
 reg.p={author:'pavel s.',rating:3,fullText:'Проходил обследования в терапии. Отдельная благодарность Иванчиной А.С. Но вот во время диализа в реанимации столкнулся с гражданином без маски.'};

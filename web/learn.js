@@ -25,9 +25,12 @@
   }
   var cache = { key: "", rules: [] }, disabled = {};
   function compute() {
+    // база не менялась — правила те же (раньше вся база копировалась при оценке каждого варианта ответа)
+    var vkey = window.__otvVer ? window.__otvVer("kb") : "";
+    if (vkey && cache.vkey === vkey) return cache.rules;
     var kb = (window.__otvAll && window.__otvAll("kb")) || {}, ids = Object.keys(kb);
     var key = ids.length + "|" + ids.map(function (i) { return s(kb[i].updatedAt); }).sort().slice(-1)[0];
-    if (cache.key === key) return cache.rules;
+    if (cache.key === key) { cache.vkey = vkey; return cache.rules; }
     var stat = {};
     ids.forEach(function (id) {
       var e = kb[id]; if (!e || !s(e.draft).trim() || !s(e.answer).trim() || e.kind === "appeal") return;
@@ -41,7 +44,7 @@
     var rules = Object.keys(stat).map(function (k) { return Object.assign({ key: k }, stat[k]); })
       .filter(function (r) { return r.removed >= 2 && r.removed / (r.removed + r.kept) >= 0.6; })
       .sort(function (a, b) { return b.removed - a.removed; });
-    cache = { key: key, rules: rules };
+    cache = { key: key, vkey: vkey, rules: rules };
     return rules;
   }
   function active() { return compute().filter(function (r) { return !disabled[r.key]; }); }
