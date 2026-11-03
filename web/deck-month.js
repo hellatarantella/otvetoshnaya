@@ -85,14 +85,13 @@
   function build(data, snaps, opt) {
     opt = opt || {};
     var dk = DK(), person = opt.person || function () { return null; }, photoOf = opt.photoOf || function () { return null; }, pick = opt.pick || {};
-    var mode = pick.mode === "placed" ? "placed" : "arrival", ym = data.ym, y = +ym.slice(0, 4), mi = +ym.slice(5, 7) - 1;
+    var mode = pick.mode === "arrival" ? "arrival" : "placed", ym = data.ym, y = +ym.slice(0, 4), mi = +ym.slice(5, 7) - 1;
     var rows = (data.rows || []).filter(function (r) { return monthOf(r, mode) === ym; });
     var P = rows.filter(function (r) { return r.tone === "pos"; }), N = rows.filter(function (r) { return r.tone === "neg"; });
     var pos = P.length, neg = N.length, checks = [], need = [], choices = [];
-    var modeOpts = [{ key: "arrival", label: "по дате поступления (как недельные отчёты с 16.10)" }, { key: "placed", label: "по дате размещения отзыва" }];
+    var modeOpts = [{ key: "placed", label: "по дате в строке отчёта, с 1-го по последнее число (решение 03.11)" }, { key: "arrival", label: "по дате поступления в программу" }];
     choices.push({ kind: "choice", field: "mode", options: modeOpts, current: mode, text: "Как относить отзыв к месяцу" });
-    if (!pick.mode) need.push({ kind: "choice", field: "mode", options: modeOpts, current: mode, text: "Как считать месяц: подтвердите способ (20.10 вы решили — по дате поступления)" });
-    checks.push({ bad: false, text: "Позитивных " + pos + ", негативных " + neg + " — " + (mode === "placed" ? "по дате размещения" : "по дате поступления") + ", из недельных отчётов программы" });
+    checks.push({ bad: false, text: "Позитивных " + pos + ", негативных " + neg + " — " + (mode === "placed" ? "по дате в строке отчёта" : "по дате поступления") + ", из недельных отчётов программы" });
 
     // площадки
     var byP = {}, negP = {};

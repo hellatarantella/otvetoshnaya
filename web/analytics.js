@@ -77,7 +77,7 @@
   }
 
   /* ---------- вкладка ---------- */
-  var root, db, snaps = {}, mode = "arrival", preset = "lastm", own = {}, open = null, timer = 0;
+  var root, db, snaps = {}, mode = "placed", preset = "lastm", own = {}, open = null, timer = 0;
   try { var sv = JSON.parse(localStorage.getItem("otv-an") || "{}"); if (sv.preset) preset = sv.preset; if (sv.mode) mode = sv.mode; if (sv.own) own = sv.own; } catch (e) {}
   function keep() { try { localStorage.setItem("otv-an", JSON.stringify({ preset: preset, mode: mode, own: own })); } catch (e) {} }
   function visible() { var p = document.getElementById("tab-analytics"); return p && !p.hidden; }
@@ -124,7 +124,7 @@
       ["start", "end"].forEach(function (k) { var i = el("input", "btn"); i.type = "date"; i.value = rg[k]; i.setAttribute("aria-label", k === "start" ? "С" : "По"); i.addEventListener("change", function () { own[k] = i.value; keep(); render(); }); act.append(el("span", null, k === "start" ? "с" : "по"), i); });
     }
     var ms = el("select", "btn"); ms.id = "anMode"; ms.setAttribute("aria-label", "Как относить отзыв к дате");
-    [["arrival", "по дате поступления"], ["placed", "по дате размещения"]].forEach(function (p) { var o = el("option", null, p[1]); o.value = p[0]; if (p[0] === mode) o.selected = true; ms.append(o); });
+    [["placed", "по дате в отчёте"], ["arrival", "по дате поступления"]].forEach(function (p) { var o = el("option", null, p[1]); o.value = p[0]; if (p[0] === mode) o.selected = true; ms.append(o); });
     ms.addEventListener("change", function () { mode = ms.value; keep(); render(); });
     act.append(el("b", null, "Считать:"), ms);
     ctl.append(el("p", "ctl-p", "Период " + dm(rg.start) + " – " + dm(rg.end) + " · из недельных отчётов программы, без повторов"), act);

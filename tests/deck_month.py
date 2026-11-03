@@ -45,22 +45,20 @@ async def main():
           return { label: st.cur.label, pos: r.numbers.pos, neg: r.numbers.neg, bad: r.checks.filter(c => c.bad).map(c => c.text), need: r.need.map(n => n.kind), top: r.D.doctors.top.map(d => d.short + ' ' + d.n),
                    prev: r.D.kpi.prev, months: r.D.dyn.months.map(m => m.pos), opts: [...document.querySelectorAll('.deck-ui select')].filter(s => s.closest('#tab-deckm')).map(s => [...s.options].map(o => o.textContent))[0] }; }""")
         # по поступлению: 4+3+3+2+1+1 +1(ГКБ) = 15 и 3+2+2+1+1+1+1 = 11, плюс «размещён 31.10, поступил 02.11» не входит → 26 позитивных; «размещён 31.10» без реестра — 31.10 → октябрь (+1) = 27? 
-        ok1 = s1['label'] == 'Октябрь 2026' and s1['neg'] == 4 and not s1['bad'] and 'choice' in s1['need'] and 'photo' in s1['need'] and s1['prev'] and s1['prev']['pos'] == 193 and s1['months'][:9] == [164, 221, 210, 210, 121, 127, 124, 109, 193] and 'Ноябрь 2026' in ' '.join(s1['opts'] or [])
+        ok1 = s1['label'] == 'Октябрь 2026' and s1['neg'] == 4 and not s1['bad'] and 'choice' not in s1['need'] and 'photo' in s1['need'] and s1['prev'] and s1['prev']['pos'] == 193 and s1['months'][:9] == [164, 221, 210, 210, 121, 127, 124, 109, 193] and 'Ноябрь 2026' in ' '.join(s1['opts'] or [])
         print(('OK  ' if ok1 else 'FAIL') + ' месяц собран: сверка без ошибок, сентябрь и динамика — из утверждённой сводки, есть ноябрь', s1 if not ok1 else '')
         # способ подсчёта: по дате размещения отзыв «размещён 31.10, поступил 02.11» уходит в октябрь
         s2 = await pg.evaluate("""async () => {
-          const posArr = window.__otvDeckUiM._state().res.numbers.pos;
-          const row = [...document.querySelectorAll('#tab-deckm .deck-need')].find(r => /Как считать месяц/.test(r.textContent));
-          row.querySelector('input[value="placed"]').click(); [...row.querySelectorAll('button')].find(b => b.textContent === 'Подтвердить').click();
-          await new Promise(r => setTimeout(r, 2000));
           const posPl = window.__otvDeckUiM._state().res.numbers.pos;
-          const row2 = [...document.querySelectorAll('#tab-deckm .deck-extra .deck-need')].find(r => /Как относить/.test(r.textContent));
-          row2.querySelector('input[value="arrival"]').click(); [...row2.querySelectorAll('button')].find(b => b.textContent === 'Подтвердить').click();
-          await new Promise(r => setTimeout(r, 2000));
+          const pickMode = async (v) => { const row = [...document.querySelectorAll('#tab-deckm .deck-extra .deck-need')].find(r => /Как относить/.test(r.textContent));
+            row.querySelector('input[value="' + v + '"]').click(); [...row.querySelectorAll('button')].find(b => b.textContent === 'Подтвердить').click();
+            await new Promise(r => setTimeout(r, 2000)); };
+          await pickMode('arrival'); const posArr = window.__otvDeckUiM._state().res.numbers.pos;
+          await pickMode('placed');
           return { posArr, posPl, back: window.__otvDeckUiM._state().res.numbers.pos, bar: (document.getElementById('otvBar') || {}).textContent || '' };
         }""")
-        ok2 = s2['posPl'] == s2['posArr'] + 1 and s2['back'] == s2['posArr'] and 'Сохранено' in s2['bar']
-        print(('OK  ' if ok2 else 'FAIL') + ' переключатель: по дате размещения на 1 отзыв больше (поступил в ноябре), обратно — как было', s2 if not ok2 else '')
+        ok2 = s2['posPl'] == s2['posArr'] + 1 and s2['back'] == s2['posPl'] and 'Сохранено' in s2['bar']
+        print(('OK  ' if ok2 else 'FAIL') + ' по умолчанию — дата в строке отчёта (с 1-го по последнее число); по дате поступления на 1 меньше; обратно — как было', s2 if not ok2 else '')
         # подтверждения: фото топ-3 и цитаты
         await pg.evaluate("""async () => {
           const db = await window.__otvRt.use('db'), st = window.__otvDeckUiM._state();
