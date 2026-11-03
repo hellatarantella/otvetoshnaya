@@ -30,8 +30,8 @@ async def main():
             res.append((ok, name + ': ' + str(R['n']) + ' разных вариантов, правила и речь (мин. ' + str(R['score']) + ' из 10) соблюдены', R))
         # учится по фразам: оставленный собранный вариант поднимает свои фразы
         L = await pg.evaluate("""() => { const G = window.__otvGen, it = { platform: 'Яндекс', page: 'Карточка больницы', author: 'Олег', rating: 5, review: 'Спасибо всем, всё хорошо.' };
-          let a = null; for (let i = 0; i < 30 && !(a && a.key.startsWith('cmp:')); i++) a = G.answer(it, {});
-          if (!a || !a.key.startsWith('cmp:')) return null; const part = a.key.split(':')[2].split('.')[0];
+          const a = window.__otvCompose.variants(it, { tone: 'positive', type: 'hospital' }, 5)[0];
+          if (!a) return null; const part = a.key.split(':')[2].split('.')[0];
           for (let i = 0; i < 3; i++) G.notePick(a.key);
           const v = window.__otvCompose.variants(it, { tone: 'positive', type: 'hospital' }, 40).filter(x => x.parts.includes(part)).length;
           return { key: a.key, part, withPart: v }; }""")

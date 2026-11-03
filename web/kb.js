@@ -54,7 +54,12 @@
       var prev = cur.exists ? cur.data() : null;
       if (prev && prev.answer === entry.data.answer && prev.situation === entry.data.situation && prev.status === entry.data.status) return false;
       var data = Object.assign({}, entry.data, { updatedAt: nowIso(), createdAt: prev ? prev.createdAt : nowIso() });
-      return ref.set(data).then(function () { return true; });
+      return ref.set(data).then(function () {
+        // ваша правка черновика — пара «ваш текст лучше черновика»: судья учится, что вы выбираете
+        if (data.edited && s(data.draft).trim() && window.__otvJudge && !(prev && prev.answer === data.answer))
+          window.__otvJudge.learn(data.answer, data.draft, { review: data.situation, platform: data.platform, kbId: entry.key });
+        return true;
+      });
     });
   }
 

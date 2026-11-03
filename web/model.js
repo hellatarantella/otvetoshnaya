@@ -149,12 +149,20 @@
       });
     };
     st.running = true; render();
-    // два черновика, если первый слабый по речи (Ильяхов) или не закрыл части отзыва; берём лучший
-    var SPk = window.__otvSpeech, grade = function (t) { return !t ? -99 : SPk ? SPk.audit(t).score - 2 * SPk.covers(t, req.review).length : 0; };
-    return tryOnce(0.7).then(function (r) {
-      if (r && (!SPk || grade(r) >= 7.5)) return r;
-      return tryOnce(0.5).then(function (r2) { return grade(r2) > grade(r) ? r2 : r; }, function () { return r; });
-    }).then(function (r) { refresh(); return r; }, function (e) { refresh(); throw e; });
+    /* ансамбль: два черновика модели + лучшие варианты программы (ваши ответы на похожие отзывы, ваши фразы, сборщик);
+       судья, обученный на ваших выборах, берёт тот, который вы, скорее всего, оставите */
+    var G = window.__otvGen, J = window.__otvJudge, it = m.it, own = [], keys = [];
+    for (var k = 0; k < 6; k++) {
+      var a = null; try { a = G.answer(it, { exclude: keys, current: req.current || "" }); } catch (e) { a = null; }
+      if (!a) break; keys.push(a.key);
+      if (!(req.current && same(bodyOf(a.text), bodyOf(req.current)))) own.push(a.text);
+    }
+    var safe = function (p) { return p.then(null, function () { return null; }); };
+    return safe(tryOnce(0.7)).then(function (r1) { return safe(tryOnce(0.5)).then(function (r2) { return [r1, r2]; }); }).then(function (llm) {
+      var all = llm.concat(own).filter(Boolean);
+      var pick = J ? J.best(all, req) : (llm[0] || llm[1] || own[0] || null);
+      refresh(); return pick;
+    }, function (e) { refresh(); throw e; });
   }
   // модель пишет варианты, только если проверка вслепую показала «не хуже» хотя бы в 60% (не меньше 10 отзывов)
   var PASS = 0.6;
@@ -261,6 +269,8 @@
     if (!exam) {
       c.append(el("p", "meta", "Модель пишет ответы на отзывы из вашей базы, а вы сравниваете их с вашими опубликованными ответами, не зная, где чей. Включайте модель, если она не хуже."));
       if (st.exam) c.append(el("p", "mdl-st", examLine(st.exam)));
+      var Jd = window.__otvJudge;
+      c.append(el("p", "meta", "Ответ собирается из черновиков модели и лучших вариантов программы (ваши ответы на похожие отзывы, ваши фразы); выбирает судья, который учится на ваших выборах и правках" + (Jd && Jd.pairs() ? ": уже на " + Jd.pairs() + " выборах" : "") + ". Чем больше проверок и правок, тем точнее."));
       if (examMsg) c.append(el("p", "mdl-st err", examMsg));
       var a = el("div", "actions");
       var go = el("button", "btn primary", st.exam ? "Проверить ещё раз · 20 отзывов" : "Начать · 20 отзывов"); go.type = "button";
@@ -285,7 +295,12 @@
       var row = el("div", "actions");
       [["Лучше А", it.swap ? "model" : "mine"], ["Лучше Б", it.swap ? "mine" : "model"], ["Одинаково хорошо", "tie"], ["Оба плохие", "bad"]].forEach(function (o) {
         var b = el("button", "btn" + (it.pick === o[1] ? " primary" : ""), o[0]); b.type = "button";
-        b.addEventListener("click", function () { it.pick = o[1]; if (exam.i < items.length - 1) exam.i++; render(); });
+        b.addEventListener("click", function () {
+          it.pick = o[1];
+          // судья учится: что вы выбрали — лучше того, что не выбрали
+          var J = window.__otvJudge; if (J && it.model) { if (o[1] === "mine") J.learn(it.mine, it.model, it.req); else if (o[1] === "model") J.learn(it.model, it.mine, it.req); }
+          if (exam.i < items.length - 1) exam.i++; render();
+        });
         row.append(b);
       });
       c.append(row);

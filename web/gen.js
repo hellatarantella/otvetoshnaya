@@ -378,6 +378,7 @@
     if (tone === "positive" && COMPLAINT_ONLY.test(body)) why.push("на благодарность ответ как на жалобу");
     return { ok: !why.length, why: why };
   }
+  var given = {};   // какие тексты уже показаны для отзыва (в этом сеансе)
   function answer(it, opts) {
     opts = opts || {};
     var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform), rs = recentSents();
@@ -391,6 +392,7 @@
       // речь по Ильяхову и «ответ закрывает части отзыва» влияют на выбор варианта
       var sp = tx && SP ? SP.penalty(tx) + 0.8 * SP.covers(tx, it.review).length : 0;
       var stale = tx ? sentsOf(tx).reduce(function (a, x) { return a + Math.min(2, rs[x] || 0) * 0.25; }, 0) : 0;   // свежесть формулировок
+      var CP = window.__otvCompose; if (tx && CP && CP.repeats && CP.repeats(tx.replace(/^Здравствуйте[^\n]*\n/, "").replace(SIGN, ""))) stale += 1.5;   // одно слово в двух фразах
       return { key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) - sp - stale };
     }).filter(function (c) {
       if (!c.text) return false;
@@ -398,8 +400,18 @@
       if (!check(c.text, it, p.tone).ok) return false;   // чужие имена и не тот тон не показываем
       return body && body !== cur && !(cur && sim(body, cur) > 0.8) && !recent[body]; // правило 15: подряд одинаковых не публикуем
     }).sort(function (a, b) { return b.score - a.score; });
+    // судья (учится на ваших выборах) переставляет первые 10 вариантов
+    var J = window.__otvJudge;
+    if (J && cands.length > 1) {
+      var head = cands.slice(0, 10).map(function (c) { return { c: c, s: c.score + 0.8 * J.score(c.text, it) }; }).sort(function (a, b) { return b.s - a.s; }).map(function (x) { return x.c; });
+      cands = head.concat(cands.slice(10));
+    }
+    // тот же текст уже показывали для этого отзыва (другое сочетание дало тот же ответ) — берём следующий
+    var gk = norm(it.review).slice(0, 80), was = given[gk] || {};
     var seen = {}, best = null;
-    for (var i = 0; i < cands.length; i++) { var b = norm(cands[i].text); if (seen[b]) continue; seen[b] = 1; best = cands[i]; break; }
+    for (var i = 0; i < cands.length; i++) { var b = norm(cands[i].text); if (seen[b] || was[b]) continue; seen[b] = 1; best = cands[i]; break; }
+    if (!best && cands.length && !opts.current) best = cands[0];
+    if (best) { if (Object.keys(given).length > 300) given = {}; (given[gk] = given[gk] || {})[norm(best.text)] = 1; }
     if (!best && opts.current && p.list.length) return null;
     return best ? { text: best.text, key: best.key, tone: p.tone } : null;
   }
