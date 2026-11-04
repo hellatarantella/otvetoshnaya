@@ -79,7 +79,7 @@
     return { period: p2(st.getDate()) + "." + p2(st.getMonth() + 1) + "–" + p2(en.getDate()) + "." + p2(en.getMonth() + 1) + "." + en.getFullYear(), start: isoD(st), end: isoD(en), posTitle: "Позитив 2026_92_тест", negTitle: "Негатив 2026_87_тест", positive: [], negative: [] }; })();
   function GS(q) {
     if (q.action === "pair" || q.action === "state") return { ok: true, version: window.__gsVer || 2, state: GSD };
-    if (q.action === "refs") return { ok: true, refs: { departments: [["Кардиологическое отделение", "Кардиология"]], exceptions: [], staff: [["Соколова Анна Викторовна", "Врач-кардиолог", "Кардиологическое отделение"]], categories: ["ГКБ 24", "Кардиология", "Хирургия", "Приёмное отделение"] } };
+    if (q.action === "refs") return { ok: true, refs: { departments: [["Кардиологическое отделение", "Кардиология"]], exceptions: [], staff: [["Соколова Анна Викторовна", "Врач-кардиолог", "Кардиологическое отделение"]], categories: window.__gsCats || ["ГКБ 24", "Кардиология", "Хирургия", "Приёмное отделение"] } };
     if (q.action === "add") { var refs = {};
       (q.positive || []).forEach(function (x) { GSD.positive.push({ platform: x.platform, num: GSD.positive.length + 1, date: x.date, dept: x.dept, text: x.text.slice(0, 120) }); refs[x.id] = "Позитив · " + x.platform + " №" + GSD.positive.length; });
       (q.negative || []).forEach(function (x) { GSD.negative.push({ n: GSD.negative.length + 1, platform: x.platform, date: x.date, text: x.text.slice(0, 120) }); refs[x.id] = "Негатив · блок " + GSD.negative.length; });

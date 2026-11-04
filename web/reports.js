@@ -418,6 +418,26 @@
   function regUpdate(id, data) {
     return db.collection("registry").doc(id).update(Object.assign({ updatedAt: nowIso() }, data)).catch(function () {});
   }
+  // самопроверка новой версии перед записью в Google: что не так с тем, что собираемся внести
+  function selfCheckOf(pos, neg, existing, cats, total) {
+    var bad = [], key = function (t) { return norm(t).slice(0, 60); }, seen = {}, have0 = {};
+    existing.forEach(function (r) { var k = key(r.full || r.text); if (k) have0[k] = 1; });
+    pos.concat(neg).forEach(function (x) {
+      var k = key(x.text);
+      if (s(x.text).trim().length < 10) bad.push("пустой или слишком короткий текст (" + x.platform + ", " + x.date + ")");
+      else if (seen[k]) bad.push("один отзыв дважды: «" + s(x.text).slice(0, 40) + "…»");
+      else if (have0[k]) bad.push("уже стоит в таблице: «" + s(x.text).slice(0, 40) + "…»");
+      seen[k] = 1;
+    });
+    pos.forEach(function (x) {
+      if (!s(x.dept).trim()) bad.push("нет отделения: «" + s(x.text).slice(0, 40) + "…»");
+      else if (cats.length && cats.indexOf(x.dept) < 0) bad.push("отделения «" + x.dept + "» нет в справочнике");
+      s(x.doctor).split(/\s*[,;]\s*/).filter(function (d) { return d && d !== "—" && d !== "-"; }).forEach(function (d) { var pp = personOf(d); if (!pp || pp.ambiguous) bad.push("врача «" + d + "» нет в списке сотрудников"); });
+    });
+    if (total >= 0 && pos.length + neg.length > total) bad.push("вносится больше отзывов (" + (pos.length + neg.length) + "), чем собрано (" + total + ")");
+    if (pos.length + neg.length > 80) bad.push("необычно много за раз: " + (pos.length + neg.length));
+    return bad;
+  }
   var pilot = { ver: null }, pilotWaiting = false;
   function confirmPilot() {
     pilot = { ver: s(window.__otvAppVersion), at: nowIso() }; pilotWaiting = false;
@@ -577,14 +597,24 @@
       });
       // пробный сбор: первое обновление отчёта после обновления программы ничего не пишет, а показывает, что запишет
       var av = s(window.__otvAppVersion);
+      // программа проверяет себя сама: если всё сходится — пишет без вопросов; спрашивает, только если что-то не так
+      var selfCheck = function () { return selfCheckOf(pos, neg, (st.positive || []).concat(st.negative || []), (idx && idx.cats) || [], site ? site.total : -1); };
+      if (av && pilot.ver !== av && !opts.confirmPilot) {
+        var problems = selfCheck();
+        if (!problems.length) {   // проверка пройдена — записываем сами и запоминаем версию
+          pilot = { ver: av, at: nowIso(), auto: true }; if (db) db.collection("settings").doc("pilot").set(pilot).catch(function () {});
+          if (window.__otvLog) window.__otvLog("проверка новой версии " + av + " перед записью в отчёт пройдена");
+        }
+      }
       if (av && pilot.ver !== av && !opts.confirmPilot) {
         var item = function (x) { return x.platform + ", " + x.date + (x.dept ? ", " + x.dept : "") + (x.doctor ? ", " + x.doctor : "") + ": «" + s(x.text).slice(0, 70) + (s(x.text).length > 70 ? "…" : "") + "»"; };
         var ptodo = [];
         ptodo.push(pos.length ? "В «Позитив» добавится " + pos.length + ": " + pos.slice(0, 5).map(item).join("; ") + (pos.length > 5 ? " и ещё " + (pos.length - 5) : "") : "В «Позитив» добавлять нечего");
         ptodo.push(neg.length ? "В «Негатив» добавится " + neg.length + ": " + neg.slice(0, 5).map(item).join("; ") + (neg.length > 5 ? " и ещё " + (neg.length - 5) : "") : "В «Негатив» добавлять нечего");
         if (checks) ptodo.push("В «Нужна проверка» уйдёт: " + checks);
+        ptodo.unshift("Не сошлось: " + problems.slice(0, 5).join("; "));
         pilotWaiting = true;
-        var head0 = "Пробный сбор после обновления до " + av + ": в Google ничего не записано. Проверьте и нажмите «Записать»";
+        var head0 = "Новая версия " + av + " нашла у себя расхождения, поэтому в Google пока ничего не записано. Посмотрите и нажмите «Записать», если всё верно";
         setRun("warn", head0 + ". " + ptodo.join(". "), { head: head0, todo: ptodo, actions: [["Записать", confirmPilot]] });
         if (window.__otvBar) window.__otvBar.show(head0, "warn", [["Записать", function () { window.__otvBar.hide(); confirmPilot(); }], ["Закрыть", window.__otvBar.hide]]);
         throw { pilot: true };
@@ -982,7 +1012,7 @@
     var o = list[0], c = catOf(o);
     return { fio: o.fio, short: o.short, sur: o.sur, name: o.name, pat: o.pat, pos: o.pos, dept: o.dept, cat: c.cat || "", catSure: !!c.sure };
   }
-  window.__otvReports = { _pilot: function () { return { pilot: pilot, waiting: pilotWaiting }; }, confirmPilot: confirmPilot, _short: function (m) { render(); setRun(m.cls || "warn", m.text, m); }, refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
+  window.__otvReports = { _selfCheck: selfCheckOf, _pilot: function () { return { pilot: pilot, waiting: pilotWaiting }; }, confirmPilot: confirmPilot, _short: function (m) { render(); setRun(m.cls || "warn", m.text, m); }, refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
     // для ответов: кто упомянут и из какого отделения (без запросов в Google)
     strongNeg: function (t) { return NEG_STRONG.test(String(t || "")); },
     people: function (text, page) { return idx ? findPeople(text, page) : []; }, catOf: function (p) { return idx ? catOf(p) : {}; }, textDepts: function (t) { return textDepts(t); } };
