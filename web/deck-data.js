@@ -144,6 +144,23 @@
     var own = function (q) { return (pick.own || []).indexOf(s(q).trim()) >= 0; }, usedFirst = {};
     var checks = [], need = [];
     var P = filledPos(week), N = filledNeg(week), pos = P.length, neg = N.length;
+    // цитаты — только из отчёта этой недели и не из прошлых презентаций (04.11)
+    var qk = function (q) { return norm2(q).slice(0, 40); }, prevQ = {};
+    var allPicks = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("deckPicks")) || {};
+    Object.keys(allPicks).forEach(function (id) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(id) || id === s(week.start)) return;
+      var pk = allPicks[id] || {}, put = function (q) { if (s(q).trim()) prevQ[qk(q)] = id; };
+      Object.keys(pk.quote || {}).forEach(function (k) { put(pk.quote[k]); });
+      if (pk.reviewText) put(pk.reviewText.quote);
+      (pk.voices || []).forEach(function (v) { put(v && v.quote); });
+    });
+    var weekTexts = P.map(function (r) { return " " + norm2(s(r.full || r.text)) + " "; });
+    var inWeek = function (q) {   // слова цитаты (своя, сокращённая) — из одного отзыва этой недели
+      var w = norm2(q).split(" ").filter(function (x) { return x.length > 3; }); if (!w.length) return false;
+      return weekTexts.some(function (t) { return w.filter(function (x) { return t.indexOf(" " + x.slice(0, Math.max(4, x.length - 2))) >= 0; }).length >= Math.ceil(w.length * 0.7); });
+    };
+    var staleWhy = function (q) { return !inWeek(q) ? "не из отчёта этой недели" : prevQ[qk(q)] ? "уже была в презентации недели " + prevQ[qk(q)].slice(8, 10) + "." + prevQ[qk(q)].slice(5, 7) : ""; };
+    var notPrev = function (q) { return !prevQ[qk(q)]; };
     // история: эта неделя последней, по снимку
     var H = hist.filter(function (w) { return w.start < week.start; }).concat([{ start: week.start, pos: pos, neg: neg }]);
     var year = +week.start.slice(0, 4), Y = H.filter(function (w) { return +w.start.slice(0, 4) === year; });
@@ -195,18 +212,22 @@
     var cand = P.map(function (r, i) {
       var txt = s(r.full || r.text), toks = s(r.doctor).split(/\s*[,;]\s*/).filter(function (x) { return x && x !== "—"; });
       var p = toks.length === 1 ? person(toks[0]) : null; if (p && p.ambiguous) p = null;
-      var q = quotes(txt);
+      var q = quotes(txt).filter(notPrev);
       return { i: i, key: s(r.platform) + "|" + s(r.date) + "|" + txt.slice(0, 40), row: r, p: p, quotes: q, score: (q.length ? 5 : 0) + Math.min(txt.length, 900) / 150 + (txt.match(new RegExp(GOOD.source, "gi")) || []).length };
     }).filter(function (c) { return c.p && c.quotes.length; }).sort(function (a, b) { return b.score - a.score; });
     var rv = pick.review ? cand.filter(function (c) { return c.key === pick.review; })[0] : null;
     if (!rv) need.push({ kind: "review", band: BAND.review, options: cand.slice(0, 6).map(function (c) { var qs = inBand(c.quotes, BAND.review).filter(praise); return { key: c.key, short: c.p.short, platform: platKey(c.row.platform), date: c.row.date, quote: nearest(qs, BAND.review[2], BAND.review[1]) || c.quotes[0], quotes: qs, text: s(c.row.full || c.row.text) }; }), text: "Отзыв недели: выберите отзыв и цитату" });
-    var r0 = rv || cand[0], rp = pick.reviewText || {}, rQuote = "";
+    // «Отзыв недели» по умолчанию — не единственный отзыв врача из золотых карточек (иначе карточке не из чего взять цитату)
+    var gp0 = pick.gold || {}, gold0 = {};
+    list.filter(function (d) { return d.n >= 2 && gp0[d.p.short] !== "rest"; }).slice(0, 4).forEach(function (d) { gold0[d.p.short] = d; });
+    var distinct = function (d) { var m = {}; d.rows.forEach(function (r) { m[norm2(s(r.full || r.text)).slice(0, 60)] = 1; }); return Object.keys(m).length; };
+    var r0 = rv || cand.filter(function (c) { var g = gold0[c.p.short]; return !g || distinct(g) >= 2; })[0] || cand[0], rp = pick.reviewText || {}, rQuote = "";
     if (r0) {
       usedRows.push(r0.row);
       r0.options = inBand(r0.quotes, BAND.review).filter(praise);
-      rQuote = rp.quote && valid(rp.quote, BAND.review, own(rp.quote)) ? rp.quote : "";
+      rQuote = rp.quote && valid(rp.quote, BAND.review, own(rp.quote)) && !staleWhy(rp.quote) ? rp.quote : "";
       if (rv && rp.quote && !rQuote) need.push({ kind: "review", options: cand.slice(0, 6).map(function (c) { return { key: c.key, short: c.p.short, platform: platKey(c.row.platform), date: c.row.date, quote: nearest(inBand(c.quotes, BAND.review), BAND.review[2], BAND.review[1]) || c.quotes[0], quotes: inBand(c.quotes, BAND.review).filter(praise), text: s(c.row.full || c.row.text) }; }), current: rv.key, band: BAND.review,
-        text: "Отзыв недели: выбранная раньше цитата «" + rp.quote + "» не подходит (" + (!okQuote(rp.quote, BAND.review) ? "нужно " + BAND.review[0] + "–" + BAND.review[1] + " знаков, законченная фраза" : "это не благодарность и не оценка врача") + ") — выберите вариант или впишите свою" });
+        text: "Отзыв недели: выбранная раньше цитата «" + rp.quote + "» не подходит (" + (staleWhy(rp.quote) ? staleWhy(rp.quote) : !okQuote(rp.quote, BAND.review) ? "нужно " + BAND.review[0] + "–" + BAND.review[1] + " знаков, законченная фраза" : "это не благодарность и не оценка врача") + ") — выберите вариант или впишите свою" });
       rQuote = rQuote || nearest(r0.options, BAND.review[2], BAND.review[1]) || r0.quotes[0];
       usedFirst[first(rQuote)] = 1;
     }
@@ -218,16 +239,17 @@
     band = gold.length >= 3 ? BAND.card4 : BAND.card2; var lim = band[1], target = band[2];
     gold.forEach(function (d) {
       if (!photoOf(d.p.fio, "face")) need.push({ kind: "photo", who: d.p.fio, short: d.p.short, dept: d.dept, text: "Нужно фото: " + d.p.fio + " (" + d.dept + ") — загрузите или уберите из золотых карточек" });
-      var qa = quotesAbout(d, list, usedRows), q = (pick.quote || {})[d.p.short];
+      var qa = quotesAbout(d, list, usedRows).filter(function (x) { return notPrev(x.text); }), q = (pick.quote || {})[d.p.short];
       d.usedBefore = usedRows.map(function (r) { return norm2(s(r.full || r.text)); });   // отзывы других блоков — для проверки вписанной цитаты
       var why = "";
       if (q && usedRows.some(function (r) { return inRow(q, r); })) { q = ""; why = " (выбранная раньше цитата — из отзыва, который уже есть в другом блоке)"; }
+      if (q && staleWhy(q)) { why = " (выбранная раньше «" + q + "» — " + staleWhy(q) + ")"; q = ""; }
       if (q && !valid(q, band, own(q))) { why = " (выбранная раньше «" + q + "» — " + (!okQuote(q, band) ? (q.length < band[0] ? "слишком короткая или обрывок" : q.length > band[1] ? "длиннее других" : "обрывок фразы") : "не благодарность и не оценка врача") + ")"; q = ""; }
       d.quotes = qa.map(function (x) { return x.text; });
       d.options = inBand(d.quotes, band);
       if (!q) {
         q = nearestVar(d.options, target, lim, usedFirst);
-        need.push({ kind: "quote", short: d.p.short, options: d.options, current: q, band: band, used: d.usedBefore, text: "Цитата для карточки " + d.p.short + ": выберите или впишите, " + band[0] + "–" + band[1] + " знаков" + why });
+        need.push({ kind: "quote", short: d.p.short, options: d.options, current: q, band: band, used: d.usedBefore, stale: staleWhy, text: "Цитата для карточки " + d.p.short + ": выберите или впишите, " + band[0] + "–" + band[1] + " знаков" + why });
       }
       d.quote = q; if (q) usedFirst[first(q)] = 1;
       var src = qa.filter(function (x) { return x.text === q; })[0]; if (src) usedRows.push(src.row); else d.rows.forEach(function (r) { if (inRow(q, r)) usedRows.push(r); });
@@ -247,7 +269,7 @@
       var goldSet = {}; gold.forEach(function (d) { goldSet[d.p.short] = 1; });
       var free = function (c) { return c.p.short !== r0.p.short && usedRows.indexOf(c.row) < 0; };
       var vc = cand.filter(function (c) { return free(c) && !goldSet[c.p.short]; }).concat(cand.filter(function (c) { return free(c) && goldSet[c.p.short]; }));
-      var vp = (pick.voices || []).filter(function (v) { return v.short !== r0.p.short && !usedRows.some(function (r) { return inRow(v.quote, r); }) && valid(v.quote, BAND.voice, own(v.quote)); });
+      var vp = (pick.voices || []).filter(function (v) { return v.short !== r0.p.short && !usedRows.some(function (r) { return inRow(v.quote, r); }) && valid(v.quote, BAND.voice, own(v.quote)) && !staleWhy(v.quote); });
       var dropped = (pick.voices || []).length !== vp.length;
       var voices = vp.length && !dropped ? vp : [], seen = {};
       voices.forEach(function (v) { seen[v.short] = 1; });
@@ -311,7 +333,7 @@
     var revOpts = function (c) { var qs = inBand(c.quotes, BAND.review).filter(praise); if (c === r0 && rQuote && qs.indexOf(rQuote) < 0) qs = [rQuote].concat(qs); return { key: c.key, short: c.p.short, platform: platKey(c.row.platform), date: c.row.date, quote: c === r0 ? rQuote : nearest(qs, BAND.review[2], BAND.review[1]) || c.quotes[0], quotes: qs, text: s(c.row.full || c.row.text) }; };
     var choices = [];
     if (r0) choices.push({ kind: "review", band: BAND.review, options: cand.slice(0, 8).map(revOpts), current: r0.key, text: "Отзыв недели и его цитата (" + BAND.review[0] + "–" + BAND.review[1] + " знаков)" });
-    gold.forEach(function (d) { choices.push({ kind: "quote", short: d.p.short, options: d.options || [], band: band, current: d.quote, used: d.usedBefore || [], text: "Цитата для карточки " + d.p.short + " (" + band[0] + "–" + band[1] + " знаков)" }); });
+    gold.forEach(function (d) { choices.push({ kind: "quote", short: d.p.short, options: d.options || [], band: band, current: d.quote, used: d.usedBefore || [], stale: staleWhy, text: "Цитата для карточки " + d.p.short + " (" + band[0] + "–" + band[1] + " знаков)" }); });
     if (D.review && D.review.voices.length) choices.push({ kind: "voices", band: BAND.voice, options: (vcAll || []).slice(0, 12), current: voices.map(function (v) { return { short: v.short, key: v.key, quote: v.quote }; }), text: "Три голоса недели: врач и цитата (" + BAND.voice[0] + "–" + BAND.voice[1] + " знаков)" });
     return { choices: choices, D: D, checks: checks, need: need, numbers: numbers, doctors: list.map(function (d) { return { short: d.p.short, fio: d.p.fio, dept: d.dept, n: d.n, gold: gold.indexOf(d) >= 0, hasPhoto: !!photoOf(d.p.fio, "face") }; }) };
   }

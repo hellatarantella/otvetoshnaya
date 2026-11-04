@@ -15,8 +15,8 @@ async def main():
         await pg.evaluate(SETUP, [FR, FB])
         # прежние решения недели: голос Ялымова с рассказом о процедуре; своя фраза для Соколова
         await pg.evaluate("""async () => { const db = await window.__otvRt.use('db');
-          await db.collection('deckPicks').doc('2026-10-23').set({ voices: [{ short: 'Ялымов А.А.', quote: 'Процедура проводилась в реанимационном отделении и длилась 30 минут' }, { short: 'Соколов И.И.', quote: 'Иван Ильич нашёл время для каждого вопроса нашей семьи' }],
-            own: ['Иван Ильич нашёл время для каждого вопроса нашей семьи'] }); }""")
+          await db.collection('deckPicks').doc('2026-10-23').set({ voices: [{ short: 'Ялымов А.А.', quote: 'Процедура проводилась в реанимационном отделении и длилась 30 минут' }, { short: 'Соколов И.И.', quote: 'Иван Ильич подробно объяснил и вселил спокойствие перед операцией' }],
+            own: ['Иван Ильич подробно объяснил и вселил спокойствие перед операцией'] }); }""")
         await pg.evaluate("window.__otvShowTab('deckw')"); await pg.wait_for_timeout(300)
         await pg.evaluate("window.__otvDeckUi.rebuild()"); await pg.wait_for_timeout(2500)
         s1 = await pg.evaluate("""() => { const st = window.__otvDeckUi._state(), r = st.res;
@@ -37,14 +37,14 @@ async def main():
           const row = [...d.querySelectorAll('.deck-need')].find(r => /голоса недели/.test(r.textContent));
           const slots = row.querySelectorAll('.deck-voice'), sel0 = slots[0].querySelector('select'), opts = window.__otvDeckUi._state().res.choices.filter(c => c.kind === 'voices')[0].options;
           const k = opts.findIndex(o => o.short === 'Соколов И.И.'); sel0.value = String(k); sel0.dispatchEvent(new Event('change'));
-          const inp = slots[0].querySelector('input.deck-in'); inp.value = 'Иван Ильич нашёл время для каждого вопроса нашей семьи'; inp.dispatchEvent(new Event('input'));
+          const inp = slots[0].querySelector('input.deck-in'); inp.value = 'Иван Ильич подробно объяснил и вселил спокойствие перед операцией'; inp.dispatchEvent(new Event('input'));
           const qsel = slots[0].querySelector('.deck-qp select');
           [...row.querySelectorAll('button')].find(b => /Подтвердить голоса/.test(b.textContent)).click();
           await new Promise(r => setTimeout(r, 2500));
           const st = window.__otvDeckUi._state();
           return { hasQuoteSelect: !!qsel, slots: slots.length, v0: st.res.D.review.voices[0] && st.res.D.review.voices[0].quote, need: st.res.need.filter(n => n.kind === 'voices').length };
         }""")
-        ok4 = s2['hasQuoteSelect'] and s2['slots'] == 3 and s2['v0'] == 'Иван Ильич нашёл время для каждого вопроса нашей семьи' and s2['need'] == 0
+        ok4 = s2['hasQuoteSelect'] and s2['slots'] == 3 and s2['v0'] == 'Иван Ильич подробно объяснил и вселил спокойствие перед операцией' and s2['need'] == 0
         print(('OK  ' if ok4 else 'FAIL') + ' голос: выбор врача и цитаты, своя фраза сохраняется', s2 if not ok4 else '')
         # кнопки дают видимый ответ: короткая цитата не принимается с причиной, «Обновить презентацию» сообщает результат (29.10)
         s2b = await pg.evaluate("""async () => {

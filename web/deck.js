@@ -155,7 +155,7 @@
       '<div style="display:grid;grid-template-columns:repeat(' + r.voices.length + ', minmax(0px, 1fr));gap:20px">' + r.voices.map(function (v) {
         return '<div style="display:flex;flex-direction:column;gap:10px;background:#FFFFFF;border-radius:20px;padding:24px 26px">' +
           '<p style="font-size:24px;font-style:italic;line-height:1.38;color:' + C.ink + '">«' + nb(v.quote) + '»</p><div style="flex:1"></div>' +
-          '<p style="font-size:24px;' + B + 'line-height:1.25;color:' + C.blue + '">' + esc(v.short) + '</p>' +
+          '<p data-fitw="vname" style="max-width:100%;white-space:nowrap;font-size:24px;' + B + 'line-height:1.25;color:' + C.blue + '">' + esc(v.short) + '</p>' +   // длинная фамилия — уменьшается вместе с соседними, не вылезает
           '<p style="font-size:24px;line-height:1.25;color:' + C.grey + '">' + nb(v.role) + '</p></div>';
       }).join("") + '</div>' : '') + '</div></section>';
   }

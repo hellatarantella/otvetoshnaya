@@ -152,7 +152,7 @@
       if (kind === "face") row.append(btn("Фото нет: перенести в строку «Ещё…»", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick({ gold: g }); }));
     } else if (n.kind === "quote") {
       var qp = quotePicker(n.options, n.current, n.band, "Цитата");
-      row.append(qp.box, btn("Подтвердить цитату", "primary", function () { var v = qp.value(), bad = quoteProblem(v, n.band) || usedProblem(v, n.used); if (bad) { bar("Цитата для " + n.short + " не принята: " + bad, "err"); return; } var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q, own: ownList(v, n.options) }, "Цитата для " + n.short + " сохранена"); }));
+      row.append(qp.box, btn("Подтвердить цитату", "primary", function () { var v = qp.value(), bad = quoteProblem(v, n.band) || usedProblem(v, n.used) || (n.stale ? n.stale(v) : ""); if (bad) { bar("Цитата для " + n.short + " не принята: " + bad, "err"); return; } var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q, own: ownList(v, n.options) }, "Цитата для " + n.short + " сохранена"); }));
     } else if (n.kind === "review") {
       var list = el("div", "deck-opts"), chosen = null, rq = null, rqBox = el("div");
       var setQ = function (o, cur0) { rq = quotePicker(o.quotes && o.quotes.length ? o.quotes : [o.quote], cur0 || o.quote, n.band, "Цитата отзыва недели"); rqBox.textContent = ""; rqBox.append(rq.box); };
@@ -204,6 +204,10 @@
     var cnt = el("span", "hint"), upd = function () { var L = inp.value.trim().length, b = band; cnt.textContent = L + " знаков" + (b ? (L < b[0] || L > b[1] ? " — нужно " + b[0] + "–" + b[1] : " ✓") : ""); cnt.className = "hint" + (b && (L < b[0] || L > b[1]) ? " bad" : ""); };
     sel.addEventListener("change", function () { inp.value = sel.value; upd(); }); inp.addEventListener("input", upd); upd();
     if (opts.length > 1) box.append(el("span", "hint", opts.length + " " + DK().plural(opts.length, "вариант", "варианта", "вариантов") + ": "));
+    if (!opts.length) {   // нечего предложить: пустой выпадающий список не показываем, объясняем почему
+      box.append(el("span", "hint bad", "Подходящих фраз нет: отзывы о враче уже стоят в других блоках или были в прошлых презентациях. Впишите цитату из отзыва этой недели или выберите для «Отзыва недели» другой отзыв."), inp, cnt);
+      return { box: box, value: function () { return inp.value.trim(); } };
+    }
     box.append(sel, inp, cnt);
     return { box: box, value: function () { return inp.value.trim(); } };
   }

@@ -55,13 +55,13 @@ async def main():
         rv = await pg.evaluate("""async () => {
           const d = [...document.querySelectorAll('.deck-extra')].find(x => /Пересмотреть выбор/.test(x.textContent)); d.open = true;
           const row = [...d.querySelectorAll('.deck-need')].find(r => /Цитата для карточки Белкина/.test(r.textContent));
-          const inp = row.querySelector('input.deck-in'); inp.value = 'Анна Петровна внимательный и чуткий врач, всё объяснила спокойно и подробно'; inp.dispatchEvent(new Event('input'));
+          const inp = row.querySelector('input.deck-in'); inp.value = 'Благодарю доктора Белкину за чуткость и заботу, всё прошло легко и без боли'; inp.dispatchEvent(new Event('input'));
           [...row.querySelectorAll('button')].find(b => /Подтвердить цитату/.test(b.textContent)).click();
           await new Promise(r => setTimeout(r, 2500));
           const st = window.__otvDeckUi._state();
           return { quote: st.res.D.heroes.cards[0].quote, onSlide: (document.querySelector('.deck-slide-in section#heroes') || {}).textContent || '', hasRefresh: [...document.querySelectorAll('.deck-ui button')].some(b => b.textContent === 'Обновить презентацию') };
         }""")
-        ok6 = rv['quote'].startswith('Анна Петровна внимательный') and 'Анна Петровна внимательный' in rv['onSlide'] and rv['hasRefresh']
+        ok6 = rv['quote'] == 'Благодарю доктора Белкину за чуткость и заботу, всё прошло легко и без боли' and 'всё прошло легко' in rv['onSlide'].replace('\xa0', ' ') and rv['hasRefresh']
         print(('OK  ' if ok6 else 'FAIL') + ' «Пересмотреть выбор» меняет цитату, слайд обновляется; есть «Обновить презентацию»', rv if not ok6 else '')
         # фото обложки постоянное, фото отделения — по названию отделения и переходит на следующую неделю
         s3 = await pg.evaluate("""async () => {
