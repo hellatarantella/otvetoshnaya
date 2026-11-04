@@ -25,7 +25,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # две сборочные машины Mac на выбор (обе собирают для процессора Apple): 04.11 машину Intel не дали дважды,
+          # 20.10 не доходила очередь на M-серию — выпуску хватает любой из двух
           - platform: macos-15-intel
+            args: --target aarch64-apple-darwin
+          - platform: macos-15
             args: --target aarch64-apple-darwin
           - platform: windows-latest
             args: ''
@@ -129,7 +133,7 @@ jobs:
           ls -la out
       - uses: actions/upload-artifact@v4
         with:
-          name: build-${{ runner.os }}
+          name: build-${{ matrix.platform }}
           path: out/
       - name: Итог сборки — в ветку ci-status-${{ runner.os }}
         if: always()
@@ -155,13 +159,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: art
-          merge-multiple: true
       - name: latest.json и ветка dist
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VER=$(node -p "require('./package.json').version")
-          mkdir dist && cp art/* dist/
+          mkdir dist
+          # Windows — как есть; Mac — с первой сборочной машины, которая собрала (файлы одной сборки не смешиваем)
+          for d in art/build-windows-latest; do [ -d "$d" ] && cp "$d"/* dist/; done
+          for d in art/build-macos-15-intel art/build-macos-15; do if [ -d "$d" ] && ls "$d"/*.app.tar.gz >/dev/null 2>&1; then cp "$d"/* dist/; echo "Mac: $d"; break; fi; done
           VER="$VER" python3 - <<'PY'
           import json, os, datetime
           ver, raw = os.environ["VER"], os.environ["RAW"]
