@@ -177,7 +177,8 @@
     card("Отделений с благодарностями", A.depts.filter(function (d) { return d.pos && d.name !== "О больнице в целом"; }).length, "");
     root.append(kp);
 
-    var ch = el("ul", "an-checks"); A.checks.forEach(function (c) { ch.append(el("li", c.bad ? "bad" : "ok", (c.bad ? "⚠ " : "✓ ") + c.text)); }); root.append(ch);
+    var bad = A.checks.filter(function (c) { return c.bad; });   // сверка видна, только если что-то не сошлось
+    if (bad.length) { var ch = el("ul", "an-checks"); bad.forEach(function (c) { ch.append(el("li", "bad", "⚠ " + c.text)); }); root.append(ch); }
 
     if (showTop) root.append(topBlock(A));
     var grid = el("div", "an-grid");

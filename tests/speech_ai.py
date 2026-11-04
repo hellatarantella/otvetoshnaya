@@ -22,9 +22,11 @@ async def main():
           const an = card.querySelector('.speech.an'), sp = card.querySelector('.speech:not(.an)'), ta = card.querySelector('textarea[aria-label="Текст ответа"]');
           ta.value = 'Здравствуйте, Ирина!\\nВыражаем Вам искреннюю благодарность. Данный отзыв является очень важным для нас.\\nС уважением, администрация 24 Московской больницы';
           ta.dispatchEvent(new Event('input', { bubbles: true }));
-          return { an: an && an.textContent, sp: sp && sp.textContent, low: sp && sp.dataset.score }; }""")
-        ok = C and 'Разбор: Тон: благодарность' in (C['an'] or '') and 'Текст:' in (C['sp'] or '') and 'штамп' in C['sp'] and C['low'] == 'low'
-        res.append((ok, 'карточка: разбор отзыва и речевая оценка ответа (штамп найден, оценка низкая)', C))
+          const r = { an: an && an.textContent, anHidden: an && an.hidden, sp: sp && sp.textContent, low: sp && sp.dataset.score };
+          ta.value = 'Здравствуйте, Ирина!\\nСпасибо за отзыв. Передадим ваши слова сотрудникам.\\nС уважением, администрация 24 Московской больницы'; ta.dispatchEvent(new Event('input', { bubbles: true }));
+          r.cleanHidden = sp.hidden; return r; }""")
+        ok = C and C['anHidden'] and C['cleanHidden'] and 'Текст:' in (C['sp'] or '') and 'штамп' in C['sp'] and C['low'] == 'low'
+        res.append((ok, 'карточка: подпись про текст — только когда есть замечания (штамп найден); чистый текст и обычная благодарность — без подписей', C))
         # загрузка своих ответов: вставка
         K = await pg.evaluate("""async () => { window.__otvShowTab('kb'); await new Promise(r => setTimeout(r, 500));
           const before = Object.keys(window.__otvAll('kb') || {}).length;

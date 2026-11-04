@@ -50,6 +50,11 @@
     if (band && DK().okQuote && !DK().okQuote(v, band)) return "фраза обрывочная: нужно законченное предложение от 6 слов";
     return "";
   }
+  // цитата из отзыва, который уже стоит в другом блоке, программа не примет — говорим сразу, а не молча
+  function usedProblem(v, used) {
+    var k = s(v).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim().slice(0, 30);
+    return k && (used || []).some(function (u) { return u.indexOf(k) >= 0; }) ? "этот отзыв уже стоит в другом блоке презентации (повторять нельзя) — выберите другую цитату или впишите свою" : "";
+  }
   function person(tok) { return window.__otvReports && window.__otvReports.person ? window.__otvReports.person(tok) : null; }
 
   /* ---------- шрифт ---------- */
@@ -147,7 +152,7 @@
       if (kind === "face") row.append(btn("Фото нет: перенести в строку «Ещё…»", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick({ gold: g }); }));
     } else if (n.kind === "quote") {
       var qp = quotePicker(n.options, n.current, n.band, "Цитата");
-      row.append(qp.box, btn("Подтвердить цитату", "primary", function () { var v = qp.value(), bad = quoteProblem(v, n.band); if (bad) { bar("Цитата для " + n.short + " не принята: " + bad, "err"); return; } var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q, own: ownList(v, n.options) }, "Цитата для " + n.short + " сохранена"); }));
+      row.append(qp.box, btn("Подтвердить цитату", "primary", function () { var v = qp.value(), bad = quoteProblem(v, n.band) || usedProblem(v, n.used); if (bad) { bar("Цитата для " + n.short + " не принята: " + bad, "err"); return; } var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q, own: ownList(v, n.options) }, "Цитата для " + n.short + " сохранена"); }));
     } else if (n.kind === "review") {
       var list = el("div", "deck-opts"), chosen = null, rq = null, rqBox = el("div");
       var setQ = function (o, cur0) { rq = quotePicker(o.quotes && o.quotes.length ? o.quotes : [o.quote], cur0 || o.quote, n.band, "Цитата отзыва недели"); rqBox.textContent = ""; rqBox.append(rq.box); };

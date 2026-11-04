@@ -76,6 +76,12 @@ textarea.comment{min-height:70px}
 .facts li{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;border-bottom:1px solid var(--border);padding:4px 0}
 .facts li.off .ft{text-decoration:line-through;color:var(--muted)}
 .facts .btn{padding:2px 8px;font-size:12px}
+.rep-head{font-weight:600}
+.rep-todo{margin:6px 0 0;padding-left:18px}
+.rep-todo li{margin:2px 0}
+.rep-more{margin-top:6px;font-size:13px;opacity:.85}
+.rep-more summary{cursor:pointer}
+.rep-more p{margin:6px 0 0;white-space:pre-wrap}
 .kb-style{margin:4px 0 8px;padding-left:18px;font-size:14px}
 .kb-own{margin:8px 0 0;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .speech{margin:6px 0 0;font-size:13px;color:var(--muted)}
@@ -705,6 +711,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     return hits.filter(function(h, k){ return hits.indexOf(h) === k; }).slice(0, 3);
   }
 
+  window.__otvLint = function(r, text){ return lint(r, text); };   // генератор не предлагает варианты, на которые ругается проверка
   function lint(r, text){
     var w = [], t = s(text).trim();
     if (!t) { w.push("Текст пустой"); return w; }
@@ -948,13 +955,17 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.lint.hidden = !warns.length;
     var SP = window.__otvSpeech, v = s(c.ta.value).trim();
     if (SP && c.spEl) {
-      c.spEl.textContent = v ? SP.scoreLine(v) : ""; c.spEl.hidden = !v;
-      var a = SP.audit(v); c.spEl.dataset.score = a.score >= 8 ? "good" : a.score >= 6 ? "mid" : "low";
+      // подписи — только когда есть что сделать: текст хорошо написан и закрывает отзыв — ничего не показываем
+      var a = SP.audit(v), miss = v ? SP.covers(v, s((c.row||{}).review)) : [];
+      var show = v && (a.score < 8 || miss.length);
+      c.spEl.hidden = !show; c.spEl.textContent = show ? SP.scoreLine(v) + (miss.length ? " · " + miss.join(", ") : "") : "";
+      c.spEl.dataset.score = a.score >= 8 ? "good" : a.score >= 6 ? "mid" : "low";
       c.spEl.title = a.issues.slice(0, 8).map(function(i){ return "«" + i.word + "» — " + i.hint; }).join("\n");
-      var miss = v ? SP.covers(v, s((c.row||{}).review)) : [];
-      if (miss.length) c.spEl.textContent += " · " + miss.join(", ");
-      var an = SP.summary(SP.analyze(s((c.row||{}).review)));
-      c.anEl.textContent = an ? "Разбор: " + an : ""; c.anEl.hidden = !an;
+      var A = SP.analyze(s((c.row||{}).review)), note = [];
+      if (A.alarm) note.push("⚠ жалоба на исход лечения");
+      if (A.tone === "mixed") note.push("есть и благодарность, и жалоба — ответьте на обе части");
+      if (A.questions.length) note.push("в отзыве вопрос — нужен ответ по существу");
+      c.anEl.textContent = note.join(" · "); c.anEl.hidden = !note.length;
     }
   }
 

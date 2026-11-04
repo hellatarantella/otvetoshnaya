@@ -392,14 +392,17 @@
       // речь по Ильяхову и «ответ закрывает части отзыва» влияют на выбор варианта
       var sp = tx && SP ? SP.penalty(tx) + 0.8 * SP.covers(tx, it.review).length : 0;
       var stale = tx ? sentsOf(tx).reduce(function (a, x) { return a + Math.min(2, rs[x] || 0) * 0.25; }, 0) : 0;   // свежесть формулировок
+      var LN = window.__otvLint, lintBad = 0; if (tx && LN) { try { lintBad = LN({ page: it.page, kind: it.kind === "question" ? "question" : "", review: it.review }, tx).length; stale += 10 * lintBad; } catch (e) {} }
       var CP = window.__otvCompose; if (tx && CP && CP.repeats && CP.repeats(tx.replace(/^Здравствуйте[^\n]*\n/, "").replace(SIGN, ""))) stale += 1.5;   // одно слово в двух фразах
-      return { key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) - sp - stale };
+      return { lint: lintBad, key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) - sp - stale };
     }).filter(function (c) {
       if (!c.text) return false;
       var body = norm(c.text.replace(/^Здравствуйте[^\n]*\n/, ""));
       if (!check(c.text, it, p.tone).ok) return false;   // чужие имена и не тот тон не показываем
       return body && body !== cur && !(cur && sim(body, cur) > 0.8) && !recent[body]; // правило 15: подряд одинаковых не публикуем
     }).sort(function (a, b) { return b.score - a.score; });
+    // варианты, на которые ругается проверка текста, не предлагаем, пока есть чистые
+    var cleanC = cands.filter(function (c) { return !c.lint; }); if (cleanC.length) cands = cleanC;
     // судья (учится на ваших выборах) переставляет первые 10 вариантов
     var J = window.__otvJudge;
     if (J && cands.length > 1) {

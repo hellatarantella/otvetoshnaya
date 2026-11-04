@@ -614,10 +614,20 @@
       var badSrc = hl.filter(function (h) { return !h.ok || !h.okAt || Date.now() - Date.parse(h.okAt) > 12 * 3600e3; });
       if (badSrc.length) { msg = "⚠ Отчёт может быть неполным: не прочитаны " + badSrc.map(function (h) { return h.name + (h.needLogin ? " (нужен вход)" : "") + (h.okAt ? ", последний раз " + new Date(h.okAt).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : ""); }).join("; ") + ". Войдите и нажмите «Собрать отзывы». " + msg; warnSrc = true; }
       var warn = checks || extraRows.length || orphanRows.length || removedRows || (site && site.adding > 0) || warnSrc;
-      setRun(warn ? "warn" : "ok", msg);
-      saveLast(msg);
+      // коротко: одна строка итога + что сделать; всё остальное — в «Подробнее»
+      var head = "Отчёт " + s(st.period) + ": " + parts[0] + (site && site.total ? " · в отчёте " + site.inRep + " из " + site.total + " собранных" : "");
+      var todo = [];
+      if (badSrc.length) todo.push("Не собраны " + badSrc.map(function (h) { return h.name + (h.needLogin ? " (нужен вход)" : ""); }).join(", ") + " — нажмите «Собрать отзывы»");
+      if (checks || (site && site.check)) todo.push("Ждут решения в «Нужна проверка»: " + (checks || site.check));
+      if (site && site.adding > 0) todo.push("Не записались в Google: " + site.adding + " — нажмите «Обновить отчёт» ещё раз");
+      if (extraRows.length) todo.push("Один отзыв стоит в таблице дважды: " + extraRows.slice(0, 3).join("; "));
+      if (orphanRows.length) todo.push("Строки без отзыва этой недели (" + orphanRows.length + "): " + orphanRows.slice(0, 3).join("; "));
+      if (removedRows) todo.push("Из таблицы удалены строки: " + removedRows + " — решите в «Нужна проверка»");
+      if (frozen) todo.push("Неделя закрыта в четверг в 15:00");
+      setRun(warn ? "warn" : "ok", msg, { head: head, todo: todo });
+      saveLast(msg, head, todo);
       // всё, что требует вашего действия, видно на любой вкладке
-      if (window.__otvBar && (warn || !opts.auto)) window.__otvBar.show(msg.split(" · По площадкам")[0].slice(0, 400), warn ? "warn" : "ok", [["Закрыть", window.__otvBar.hide]]);
+      if (window.__otvBar && (warn || !opts.auto)) window.__otvBar.show((todo.length ? "⚠ " + todo[0] : head).slice(0, 300), warn ? "warn" : "ok", [["Закрыть", window.__otvBar.hide]]);
       render();
     }).catch(function (e) {
       var em = String(e && e.message || e);
@@ -771,21 +781,28 @@
 
   /* ---------- вкладка «Отчёты» ---------- */
   var runMsg = null, dlMsg = null, last = null;
-  function setRun(cls, text) { runMsg = text ? { cls: cls, text: text } : null; paintMsgs(); }
+  function setRun(cls, text, short) { runMsg = text ? { cls: cls, text: text, head: short && short.head, todo: short && short.todo } : null; paintMsgs(); }
+  // итог отчёта: строка + что сделать; полный текст спрятан в «Подробнее»
+  function paintShort(node, m) {
+    node.textContent = "";
+    node.append(el("div", "rep-head", m.head));
+    if (m.todo && m.todo.length) { var ul = el("ul", "rep-todo"); m.todo.forEach(function (t) { ul.append(el("li", null, t)); }); node.append(ul); }
+    var d = el("details", "rep-more"); d.append(el("summary", null, "Подробнее"), el("p", null, m.text)); node.append(d);
+  }
   function setDl(cls, text) { dlMsg = text ? { cls: cls, text: text } : null; paintMsgs(); }
   var runEl = null, dlEl = null;
   function paintMsgs() {
     var a = runEl, b = dlEl;
-    if (a) { a.hidden = !runMsg; if (runMsg) { a.className = "ctl-st " + runMsg.cls; a.textContent = runMsg.text; } }
+    if (a) { a.hidden = !runMsg; if (runMsg) { a.className = "ctl-st " + runMsg.cls; if (runMsg.head) paintShort(a, runMsg); else a.textContent = runMsg.text; } }
     if (b) { b.hidden = !dlMsg; if (dlMsg) { b.className = "ctl-st " + dlMsg.cls; b.textContent = dlMsg.text; } }
   }
-  function saveLast(msg) { last = { at: nowIso(), msg: msg }; if (db) db.collection("settings").doc("report").set(last).catch(function () {}); }
+  function saveLast(msg, head, todo) { last = { at: nowIso(), msg: msg, head: head || "", todo: todo || [] }; if (db) db.collection("settings").doc("report").set(last).catch(function () {}); }
 
   function render() {
     var ctl = $("ckCtl"); if (!ctl) return;
     if (!line) {
       line = el("div", "gs-line"); var head = ctl.querySelector(".ctl-p"); if (head) head.after(line); else ctl.prepend(line);
-      runEl = el("p", "ctl-st"); dlEl = el("p", "ctl-st"); runEl.hidden = dlEl.hidden = true;
+      runEl = el("div", "ctl-st"); dlEl = el("p", "ctl-st"); runEl.hidden = dlEl.hidden = true;
       var acts = ctl.querySelector(".actions"); if (acts) acts.after(runEl, dlEl); else ctl.append(runEl, dlEl);
     }
     line.textContent = "";
@@ -800,7 +817,13 @@
       });
       p.append(" ", off); line.append(p);
       if (oldScript()) line.append(updateBox());
-      if (last && last.msg && !runMsg) { var l = el("p", "ctl-last", "Последнее обновление отчёта: " + new Date(last.at).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) + "\n" + last.msg); line.append(l); }
+      if (last && last.msg && !runMsg) {
+        var when = new Date(last.at).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+        var l = el("div", "ctl-last");
+        if (last.head) paintShort(l, { head: "Обновлён " + when + " · " + last.head.replace(/^Отчёт [^:]+:\s*/, ""), todo: last.todo, text: last.msg });
+        else l.textContent = "Последнее обновление отчёта: " + when + "\n" + last.msg;
+        line.append(l);
+      }
     } else line.append(setupBox());
     renderChecks();
     paintMsgs();
@@ -937,7 +960,7 @@
     var o = list[0], c = catOf(o);
     return { fio: o.fio, short: o.short, sur: o.sur, name: o.name, pat: o.pat, pos: o.pos, dept: o.dept, cat: c.cat || "", catSure: !!c.sure };
   }
-  window.__otvReports = { refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
+  window.__otvReports = { _short: function (m) { render(); setRun(m.cls || "warn", m.text, m); }, refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
     // для ответов: кто упомянут и из какого отделения (без запросов в Google)
     strongNeg: function (t) { return NEG_STRONG.test(String(t || "")); },
     people: function (text, page) { return idx ? findPeople(text, page) : []; }, catOf: function (p) { return idx ? catOf(p) : {}; }, textDepts: function (t) { return textDepts(t); } };
