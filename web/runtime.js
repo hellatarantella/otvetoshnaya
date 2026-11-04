@@ -61,13 +61,14 @@
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function guard() { if (loadError) throw { code: "storage_locked", message: loadError }; }
 
-  var vers = {}, epoch = 0;   // счётчик изменений коллекции: проверить «изменилось ли» без копирования всей коллекции
+  var vers = {}, epoch = 0, pendingNotify = {};   // счётчик изменений коллекции: проверить «изменилось ли» без копирования всей коллекции
   function write(name, id, doc) {
     guard();
     vers[name] = (vers[name] || 0) + 1;
     if (doc === null) delete bucket(name)[id]; else bucket(name)[id] = clone(doc);
     scheduleSave();
-    setTimeout(function () { notify(name); }, 0);
+    // много записей подряд (сбор, импорт) — одно уведомление подписчикам, а не по одному на каждую запись
+    if (!pendingNotify[name]) { pendingNotify[name] = 1; setTimeout(function () { pendingNotify[name] = 0; notify(name); }, 0); }
     if (name !== "kb") {
       var after = doc === null ? null : clone(bucket(name)[id]);
       setTimeout(function () { try { window.dispatchEvent(new CustomEvent("otv-write", { detail: { name: name, id: id, doc: after } })); } catch (e) {} }, 0);
