@@ -321,6 +321,7 @@
     }
     invoke("app_info").then(function (i) {
       var v = document.createElement("button"); v.type = "button"; v.className = "otv-ver";
+      window.__otvAppVersion = String(i.version || "");
       verText = "Ответошная " + i.version + (i.keyError ? " · данные не открыты" : " · данные зашифрованы");
       v.textContent = verText; verBtn = v;
       if (upVer) markUpdate(upVer);

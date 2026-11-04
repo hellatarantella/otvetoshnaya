@@ -418,6 +418,12 @@
   function regUpdate(id, data) {
     return db.collection("registry").doc(id).update(Object.assign({ updatedAt: nowIso() }, data)).catch(function () {});
   }
+  var pilot = { ver: null }, pilotWaiting = false;
+  function confirmPilot() {
+    pilot = { ver: s(window.__otvAppVersion), at: nowIso() }; pilotWaiting = false;
+    var save = db ? db.collection("settings").doc("pilot").set(pilot).catch(function () {}) : Promise.resolve();
+    return save.then(function () { return updateReport({ confirmPilot: true }); });
+  }
   function updateReport(opts) {
     opts = opts || {};
     if (!ready()) { if (!opts.auto) setRun("err", "Сначала подключите Google. Кнопка «Подключить Google» выше."); return Promise.resolve(); }
@@ -569,6 +575,20 @@
         var b0 = site.by[r.platform] = site.by[r.platform] || { total: 0, inRep: 0 };
         b0.total++; if (k === "inRep") b0.inRep++;
       });
+      // пробный сбор: первое обновление отчёта после обновления программы ничего не пишет, а показывает, что запишет
+      var av = s(window.__otvAppVersion);
+      if (av && pilot.ver !== av && !opts.confirmPilot) {
+        var item = function (x) { return x.platform + ", " + x.date + (x.dept ? ", " + x.dept : "") + (x.doctor ? ", " + x.doctor : "") + ": «" + s(x.text).slice(0, 70) + (s(x.text).length > 70 ? "…" : "") + "»"; };
+        var ptodo = [];
+        ptodo.push(pos.length ? "В «Позитив» добавится " + pos.length + ": " + pos.slice(0, 5).map(item).join("; ") + (pos.length > 5 ? " и ещё " + (pos.length - 5) : "") : "В «Позитив» добавлять нечего");
+        ptodo.push(neg.length ? "В «Негатив» добавится " + neg.length + ": " + neg.slice(0, 5).map(item).join("; ") + (neg.length > 5 ? " и ещё " + (neg.length - 5) : "") : "В «Негатив» добавлять нечего");
+        if (checks) ptodo.push("В «Нужна проверка» уйдёт: " + checks);
+        pilotWaiting = true;
+        var head0 = "Пробный сбор после обновления до " + av + ": в Google ничего не записано. Проверьте и нажмите «Записать»";
+        setRun("warn", head0 + ". " + ptodo.join(". "), { head: head0, todo: ptodo, actions: [["Записать", confirmPilot]] });
+        if (window.__otvBar) window.__otvBar.show(head0, "warn", [["Записать", function () { window.__otvBar.hide(); confirmPilot(); }], ["Закрыть", window.__otvBar.hide]]);
+        throw { pilot: true };
+      }
       var write = (pos.length || neg.length) ? (setRun("", "Вношу в «Позитив» и «Негатив»…"), call("add", { positive: pos, negative: neg })) : call("numbers", { mode: "color" });
       return write.then(function (res) {
         var refsOut = (res && res.refs) || {};
@@ -630,6 +650,7 @@
       if (window.__otvBar && (warn || !opts.auto)) window.__otvBar.show((todo.length ? "⚠ " + todo[0] : head).slice(0, 300), warn ? "warn" : "ok", [["Закрыть", window.__otvBar.hide]]);
       render();
     }).catch(function (e) {
+      if (e && e.pilot) return;   // пробный сбор: показали, что запишется, ждём «Записать»
       var em = String(e && e.message || e);
       if (window.__otvLog) window.__otvLog("отчёт не обновился: " + em.slice(0, 300));
       setRun("err", "Отчёт не обновился: " + em);
@@ -781,12 +802,13 @@
 
   /* ---------- вкладка «Отчёты» ---------- */
   var runMsg = null, dlMsg = null, last = null;
-  function setRun(cls, text, short) { runMsg = text ? { cls: cls, text: text, head: short && short.head, todo: short && short.todo } : null; paintMsgs(); }
+  function setRun(cls, text, short) { runMsg = text ? { cls: cls, text: text, head: short && short.head, todo: short && short.todo, actions: short && short.actions } : null; paintMsgs(); }
   // итог отчёта: строка + что сделать; полный текст спрятан в «Подробнее»
   function paintShort(node, m) {
     node.textContent = "";
     node.append(el("div", "rep-head", m.head));
     if (m.todo && m.todo.length) { var ul = el("ul", "rep-todo"); m.todo.forEach(function (t) { ul.append(el("li", null, t)); }); node.append(ul); }
+    if (m.actions && m.actions.length) { var ac = el("div", "actions"); m.actions.forEach(function (a) { var b = el("button", "btn primary", a[0]); b.type = "button"; b.addEventListener("click", function () { b.disabled = true; a[1](); }); ac.append(b); }); node.append(ac); }
     var d = el("details", "rep-more"); d.append(el("summary", null, "Подробнее"), el("p", null, m.text)); node.append(d);
   }
   function setDl(cls, text) { dlMsg = text ? { cls: cls, text: text } : null; paintMsgs(); }
@@ -960,7 +982,7 @@
     var o = list[0], c = catOf(o);
     return { fio: o.fio, short: o.short, sur: o.sur, name: o.name, pat: o.pat, pos: o.pos, dept: o.dept, cat: c.cat || "", catSure: !!c.sure };
   }
-  window.__otvReports = { _short: function (m) { render(); setRun(m.cls || "warn", m.text, m); }, refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
+  window.__otvReports = { _pilot: function () { return { pilot: pilot, waiting: pilotWaiting }; }, confirmPilot: confirmPilot, _short: function (m) { render(); setRun(m.cls || "warn", m.text, m); }, refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
     // для ответов: кто упомянут и из какого отделения (без запросов в Google)
     strongNeg: function (t) { return NEG_STRONG.test(String(t || "")); },
     people: function (text, page) { return idx ? findPeople(text, page) : []; }, catOf: function (p) { return idx ? catOf(p) : {}; }, textDepts: function (t) { return textDepts(t); } };
@@ -968,6 +990,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     window.claude.use("db").then(function (d) {
       db = d;
+      db.collection("settings").doc("pilot").get().then(function (x) { if (x && x.exists) pilot = x.data() || pilot; }).catch(function () {});
       return Promise.all([db.collection("settings").doc("google").get(), db.collection("settings").doc("report").get(), db.collection("settings").doc("refs").get()]);
     }).then(function (r) {
       if (r[0] && r[0].exists) cfg = r[0].data();
