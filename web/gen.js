@@ -8,8 +8,16 @@
   var SIGN = "С уважением, администрация 24 Московской больницы";
   var TH = { "ПроДокторов": 4, "Яндекс": 4, "ДокТу": 4 };
   function s(v) { return v == null ? "" : String(v); }
-  function norm(t) { return s(t).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim(); }
-  function words(t) { var w = {}; norm(t).split(" ").forEach(function (x) { if (x.length > 3) w[x.slice(0, 6)] = 1; }); return w; }
+  function norm0(t) { return s(t).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim(); }
+  var nMemo = {}, nN = 0;   // нормализация с запоминанием: тексты базы повторяются из вызова в вызов
+  function norm(t) { var k = t == null ? "" : String(t), m = nMemo[k]; if (m !== undefined) return m; if (++nN > 8000) { nMemo = {}; nN = 1; } return (nMemo[k] = norm0(k)); }
+  // слова текста (первые 6 букв) — с запоминанием: база ответов большая, одни и те же тексты сравниваются тысячи раз
+  var wMemo = {}, wN = 0;
+  function words(t) {
+    t = s(t); var m = wMemo[t]; if (m) return m;
+    if (++wN > 6000) { wMemo = {}; wN = 1; }
+    var w = {}; norm(t).split(" ").forEach(function (x) { if (x.length > 3) w[x.slice(0, 6)] = 1; }); return (wMemo[t] = w);
+  }
   var STOP = { "здравс": 1, "спасиб": 1, "котор": 1, "очень": 1, "можно": 1, "больни": 1, "пожалу": 1, "через": 1, "когда": 1 };
   function shared(a, b) { var A = words(a), B = words(b); for (var k in A) if (B[k] && !STOP[k]) return true; return false; }
   function sim(a, b) {
@@ -271,7 +279,7 @@
   // фразы недавно опубликованных ответов (все площадки): одна и та же фраза подряд — минус к варианту
   var COMMONS = /^(желаем здоровья|пожалуйста, напишите|напишите, пожалуйста|чтобы мы могли разобраться|с уважением)/;
   function recentSents() {
-    var all = (window.__otvAll && window.__otvAll("answers")) || {}, list = [], out = {};
+    var all = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("answers")) || {}, list = [], out = {};
     Object.keys(all).forEach(function (id) { var a = all[id]; if (a && a.status === "published" && s(a.answer)) list.push(a); });
     list.sort(function (a, b) { return s(b.publishedAt || b.date).localeCompare(s(a.publishedAt || a.date)); });
     list.slice(0, 40).forEach(function (a) { sentsOf(a.answer).forEach(function (x) { out[x] = (out[x] || 0) + 1; }); });
@@ -279,7 +287,7 @@
   }
   function sentsOf(t) { return (s(t).replace(/^Здравствуйте[^\n]*\n/, "").replace(SIGN, "").match(/[^.!?]+[.!?]*/g) || []).map(norm).filter(function (x) { return x.length > 12 && !COMMONS.test(x); }); }
   function recentTexts(platform) {
-    var all = (window.__otvAll && window.__otvAll("answers")) || {}, out = {};
+    var all = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("answers")) || {}, out = {};
     Object.keys(all).forEach(function (id) {
       var a = all[id]; if (!a || a.status !== "published" || s(a.platform) !== s(platform)) return;
       out[norm(s(a.answer).replace(/^Здравствуйте[^\n]*\n/, ""))] = 1;
@@ -307,7 +315,7 @@
   function pool(it) {
     loadStats();
     var tone = toneOf(it), type = typeOf(it), cats = catsFor(it, tone, type), list = [];
-    var kb = (window.__otvAll && window.__otvAll("kb")) || {};
+    var kb = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("kb")) || {};
     Object.keys(kb).forEach(function (k) {
       var e = kb[k]; if (!e || !s(e.answer).trim()) return;
       var ek = s(e.kind);
@@ -383,7 +391,15 @@
     opts = opts || {};
     var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform), rs = recentSents();
     (opts.exclude || []).forEach(function (k) { ex[k] = 1; });
-    var cands = p.list.filter(function (c) { return !ex[c.key]; }).map(function (c) {
+    // дорогая обработка (оформление, проверки, судья) — только для 80 лучших по предварительной оценке:
+    // база ответов растёт, а остальные варианты всё равно не выигрывают
+    var pre = p.list.filter(function (c) { return !ex[c.key]; }).sort(function (a, b) { return (b.score + learned(b.key)) - (a.score + learned(a.key)); });
+    if (pre.length > 80) {
+      var keep = pre.slice(0, 80), cmpN = keep.filter(function (c) { return /^cmp:/.test(c.key); }).length;
+      if (cmpN < 10) keep = keep.concat(pre.slice(80).filter(function (c) { return /^cmp:/.test(c.key); }).slice(0, 10 - cmpN));   // сборщик всегда в игре
+      pre = keep;
+    }
+    var cands = pre.map(function (c) {
       var tx = shape(c.raw, it, p.tone, p.type), L = window.__otvLearn, lc = { tone: p.tone, platform: it.platform };
       // обучение на правках: ваши замены слов — сразу в тексте; фразы, которые вы убираете, — вниз; ваши частые фразы — вверх
       if (tx && L && L.rewrite) tx = L.rewrite(tx, lc);

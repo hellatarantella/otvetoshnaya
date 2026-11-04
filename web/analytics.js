@@ -83,7 +83,7 @@
   function aiOf(r) {
     var v = window.__otvVer ? window.__otvVer("registry") : 0;
     if (aiIdx.v !== v) {
-      var reg = (window.__otvAll && window.__otvAll("registry")) || {}, m = {};
+      var reg = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("registry")) || {}, m = {};
       Object.keys(reg).forEach(function (id) { var x = reg[id]; if (x && x.ai) { var k = low2(x.fullText || x.text); if (k) m[k] = x.ai; } });
       aiIdx = { v: v, m: m };
     }

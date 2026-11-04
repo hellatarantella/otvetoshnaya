@@ -8,7 +8,8 @@
   function norm(t) { return s(t).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9@]+/g, " ").trim(); }
   var SIGN = /С уважением, администрация 24 Московской больницы\.?/;
   function body(t) { return s(t).replace(/^\s*Здравствуйте[^\n]*\n/, "").replace(SIGN, "").trim(); }
-  function stems(t) { var o = {}; norm(t).split(" ").forEach(function (w) { if (w.length > 3) o[w.slice(0, 6)] = 1; }); return o; }
+  var sMemo = {}, sN = 0;
+  function stems(t) { t = s(t); if (sMemo[t]) return sMemo[t]; if (++sN > 6000) { sMemo = {}; sN = 1; } var o = {}; norm(t).split(" ").forEach(function (w) { if (w.length > 3) o[w.slice(0, 6)] = 1; }); return (sMemo[t] = o); }
   function jac(A, B) { var n = 0, u = 0, k; for (k in A) { u++; if (B[k]) n++; } for (k in B) if (!A[k]) u++; return u ? n / u : 0; }
   function sents(t) { return (body(t).match(/[^.!?]+[.!?]*/g) || []).map(function (x) { return x.trim(); }).filter(Boolean); }
   var NEG = /разобрат|разбер|gkb24@|напишите|свяж|ответственн|рассмотрени|обеспокои/i;
@@ -20,7 +21,7 @@
   var herCache = { v: -1, list: [] };
   function herAnswers() {
     var v = window.__otvVer ? window.__otvVer("kb") : 0; if (herCache.v === v) return herCache.list;
-    var kb = (window.__otvAll && window.__otvAll("kb")) || {}, list = [];
+    var kb = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("kb")) || {}, list = [];
     Object.keys(kb).forEach(function (id) {
       var e = kb[id]; if (!e || e.kind === "appeal" || e.source === "площадка" || !s(e.answer).trim()) return;
       if (!(e.edited || e.source === "загружено" || e.source === "обучение" || e.status === "published" || e.status === "approved")) return;

@@ -225,7 +225,7 @@
   function analyzeOne(text) { return generate(anMessages(text), 0.1).then(parseAn); }
   var anBusy = false, anStat = { done: 0, failed: 0 };
   function anPending() {
-    var reg = (window.__otvAll && window.__otvAll("registry")) || {}, cut = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10);
+    var reg = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("registry")) || {}, cut = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10);
     return Object.keys(reg).filter(function (id) { var r = reg[id]; return r && !r.ai && !r.aiFail && s(r.fullText || r.text).trim().length > 20 && s(r.date) >= cut; })
       .sort(function (a, b) { return s(reg[b].date).localeCompare(s(reg[a].date)); });
   }

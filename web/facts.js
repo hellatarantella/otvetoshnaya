@@ -21,7 +21,7 @@
   function key(t) { var h = 0; t = norm(t); for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return "f" + (h >>> 0).toString(36); }
   function scan() {
     if (!db || !window.__otvAll) return Promise.resolve(0);
-    var kb = window.__otvAll("kb") || {}, add = [];
+    var kb = (window.__otvAllRO || window.__otvAll)("kb") || {}, add = [];
     Object.keys(kb).forEach(function (k) {
       var e = kb[k]; if (!e) return;
       var q = e.kind === "question" || (e.kind === "mail" && /\?/.test(s(e.situation)));

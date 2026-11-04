@@ -11,7 +11,9 @@
   var SIGN = /^С уважением, администрация 24 Московской больницы\.?$/i;
   var NEG = /хамств|хамил|грубил|груб[оы]\b|ужасн|отвратит|безобраз|не рекоменд|не совету|разочаров|кошмар|равнодуш|не помогл|обманул|грязн|не дозвон|нагруб|бардак|халатн|возмутит|позор|жалоб|плохо|сожален|извин|разобраться/i;
   function s(x) { return x == null ? "" : String(x); }
-  function norm(x) { return s(x).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim(); }
+  function norm0(x) { return s(x).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim(); }
+  var nMemo = {}, nN = 0;   // нормализация с запоминанием: тексты базы повторяются из вызова в вызов
+  function norm(t) { var k = t == null ? "" : String(t), m = nMemo[k]; if (m !== undefined) return m; if (++nN > 8000) { nMemo = {}; nN = 1; } return (nMemo[k] = norm0(k)); }
   // предложения ответа без приветствия и подписи
   function sents(t) {
     var out = [];
@@ -60,7 +62,7 @@
     // база не менялась — правила те же (раньше вся база копировалась при оценке каждого варианта ответа)
     var vkey = window.__otvVer ? window.__otvVer("kb") : "";
     if (vkey && cache.vkey === vkey) return cache.rules;
-    var kb = (window.__otvAll && window.__otvAll("kb")) || {}, ids = Object.keys(kb);
+    var kb = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("kb")) || {}, ids = Object.keys(kb);
     var key = ids.length + "|" + ids.map(function (i) { return s(kb[i].updatedAt); }).sort().slice(-1)[0];
     if (cache.key === key) { cache.vkey = vkey; return cache.rules; }
     var rem = {}, rep = {}, add = {};
@@ -149,7 +151,7 @@
   function style() {
     var v = window.__otvVer ? window.__otvVer("kb") : 0;
     if (styleCache.st && styleCache.v === v) return styleCache.st;
-    var kb = (window.__otvAll && window.__otvAll("kb")) || {}, phrases = {}, lens = { pos: [], neg: [] }, open = {}, names = [0, 0], excl = 0, total = 0;
+    var kb = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("kb")) || {}, phrases = {}, lens = { pos: [], neg: [] }, open = {}, names = [0, 0], excl = 0, total = 0;
     Object.keys(kb).forEach(function (id) {
       var e = kb[id]; if (!e || !s(e.answer).trim() || e.kind === "appeal" || e.kind === "question") return;
       var mine = e.edited || e.source === "загружено" || e.source === "обучение" || e.status === "published" || e.status === "approved";

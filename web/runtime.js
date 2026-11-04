@@ -19,10 +19,11 @@
 
   var ready = (function () {
     if (IN_APP) {
-      return invoke("db_load").then(function (s) { data = JSON.parse(s || "{}") || {}; },
+      return invoke("db_load").then(function (s) { data = JSON.parse(s || "{}") || {}; epoch++; },
         function (e) { loadError = String(e || "Не удалось открыть данные"); data = {}; });
     }
     try { data = JSON.parse(localStorage.getItem("otv-data") || "{}") || {}; } catch (e) { data = {}; }
+    epoch++;
     return Promise.resolve();
   })();
 
@@ -60,7 +61,7 @@
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function guard() { if (loadError) throw { code: "storage_locked", message: loadError }; }
 
-  var vers = {};   // счётчик изменений коллекции: проверить «изменилось ли» без копирования всей коллекции
+  var vers = {}, epoch = 0;   // счётчик изменений коллекции: проверить «изменилось ли» без копирования всей коллекции
   function write(name, id, doc) {
     guard();
     vers[name] = (vers[name] || 0) + 1;
@@ -247,8 +248,12 @@
   }
   window.__otvFillDocLinks = fillDocLinks;
   window.__otvAll = function (name) { return clone(bucket(name)); };
+  // копия коллекции только для чтения: одна на версию (не копировать всю базу при каждом расчёте). Менять её нельзя
+  var roCache = {};
+  window.__otvAllRO = function (name) { var v = window.__otvVer(name), c = roCache[name]; if (c && c.v === v) return c.d; c = roCache[name] = { v: v, d: clone(bucket(name)) }; return c.d; };
   window.__otvGet = function (name, id) { var v = bucket(name)[id]; return v === undefined ? null : clone(v); };   // одна запись без копии всей коллекции
-  window.__otvVer = function (name) { return (vers[name] || 0) + "|" + Object.keys(bucket(name)).length; };
+  // счётчик изменений: дёшево (без перебора коллекции) — каждая запись идёт через write(), загрузка данных меняет «эпоху»
+  window.__otvVer = function (name) { return epoch + "|" + (vers[name] || 0); };
 
   // Запросы «собрать/обновить», перенесённые из онлайн-сервиса, в программе не выполняются задачами Claude:
   // висящий запрос делал кнопки «нажатыми». Снимаем его, сохраняя время и итог последнего сбора.
