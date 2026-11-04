@@ -138,6 +138,52 @@
   /* ---------- модель презентации ---------- */
   // week: снимок отчёта недели {start, end, positive:[{platform, date, dept, doctor, full|text}], negative:[{platform, ...}]}
   // hist: история недель (с этой неделей); person: врач из графы отчёта → «Список врачей»; photos: библиотека; pick: решения пользователя
+  /* ---------- пост в канал «Онлайн-обращения: итоги недели» (формат 29.10): цифры — из отчёта недели, со сверкой ---------- */
+  var LOC = { "Яндекс": "Яндексе", "Сайт": "сайте больницы", "ПроДокторов": "ПроДокторов", "ДокТу": "ДокТу", "2ГИС": "2ГИС", "Google": "Google", "НаПоправку": "НаПоправку" };
+  var SRC = { "Сайт": "сайт больницы" };
+  function plural(n, a, b, c) { var m = n % 100, k = n % 10; return m > 10 && m < 15 ? c : k === 1 ? a : k > 1 && k < 5 ? b : c; }
+  function pct0(a, b) { if (!b) return 0; var v = a * 100 / b; return v < 0 ? -Math.round(-v) : Math.round(v); }
+  function postText(foot, P, N, staffN) {
+    var pos = P.length, neg = N.length, platKeyOf = function (r) { var k = platKey(r.platform); return k || s(r.platform); };
+    var lines = [], gen = 0, byDept = {};
+    // в посте — название по справочнику (не укороченное для слайда); принятые сокращения (КДО, СКП, МОРС, ОРИТ №2) — как в постах 29.10
+    var postDept = function (d) {
+      if (/^Колопроктолог/i.test(d)) return d.charAt(0).toLowerCase() + d.slice(1);
+      var sd = slideDept(d), sh = SHORT_DEPT[sd];
+      if (/^[А-ЯЁ]{2,}/.test(sd) && !/^КПО/.test(sd)) return sd;
+      if (sh && /^[А-ЯЁ]{2,}/.test(sh)) return sh;
+      return /^[А-ЯЁ0-9]{2,}/.test(d) ? d : d.charAt(0).toLowerCase() + d.slice(1);
+    };
+    P.forEach(function (r) { var d = s(r.dept).trim(); if (!d || /^ГКБ\s*24$/i.test(d)) gen++; else { var n = postDept(d); byDept[n] = (byDept[n] || 0) + 1; } });
+    lines.push("Онлайн-обращения: итоги недели (" + foot + ")", "Еженедельный срез обратной связи от пациентов 📈", "", "Главные цифры недели:");
+    lines.push("🔹 " + pos + " " + plural(pos, "позитивный отзыв", "позитивных отзыва", "позитивных отзывов") + (pos + neg ? " (" + pct0(pos, pos + neg) + "%)" : "") + ".");
+    if (neg) {
+      var bp = {}; N.forEach(function (r) { var k = platKeyOf(r); bp[k] = (bp[k] || 0) + 1; });
+      var ks = Object.keys(bp).sort(function (a, b) { return bp[b] - bp[a] || a.localeCompare(b, "ru"); }), where;
+      if (ks.length === 1) where = neg === 1 ? "на " + (LOC[ks[0]] || ks[0]) : (neg === 2 ? "оба на " : "все на ") + (LOC[ks[0]] || ks[0]);
+      else if (ks.every(function (k) { return bp[k] === bp[ks[0]]; })) where = "по " + bp[ks[0]] + " на " + ks.map(function (k) { return LOC[k] || k; }).join(", ").replace(/, ([^,]+)$/, " и $1");
+      else where = ks.map(function (k) { return bp[k] + " на " + (LOC[k] || k); }).join(", ");
+      lines.push("🔹 " + neg + " " + plural(neg, "негативный отзыв", "негативных отзыва", "негативных отзывов") + " (" + where + ").");
+    } else lines.push("🔹 Негативных отзывов нет.");
+    if (staffN) lines.push("🔹 " + staffN + " " + plural(staffN, "сотруднику", "сотрудникам", "сотрудникам") + " пациенты высказали благодарности.");
+    if (gen) lines.push("🔹 " + gen + " " + plural(gen, "отзыв", "отзыва", "отзывов") + " о больнице в целом.");
+    var groups = {}; Object.keys(byDept).forEach(function (d) { (groups[byDept[d]] = groups[byDept[d]] || []).push(d); });
+    var ns = Object.keys(groups).map(Number).sort(function (a, b) { return b - a; });
+    if (ns.length) {
+      lines.push("", "Распределение благодарностей по отделениям:");
+      ns.forEach(function (n) {
+        var names = groups[n].sort(function (a, b) { return a.localeCompare(b, "ru"); }), t = names.join(", ");
+        t = t.charAt(0).toUpperCase() + t.slice(1);
+        lines.push("🔹 " + t + ": " + (names.length > 1 ? "по " + n + " " + plural(n, "отзыву", "отзыва", "отзывов") : n + " " + plural(n, "отзыв", "отзыва", "отзывов")) + ".");
+      });
+    }
+    var src = {}; P.concat(N).forEach(function (r) { var k = platKeyOf(r); if (k) src[k] = (src[k] || 0) + 1; });
+    var sk = Object.keys(src).sort(function (a, b) { return src[b] - src[a] || a.localeCompare(b, "ru"); });
+    if (sk.length) lines.push("", "Источники отзывов: " + sk.map(function (k) { return SRC[k] || k; }).join(", ") + ". Полная статистика и график динамики в прикреплённом файле 📊");
+    // сверка: отделения + о больнице = позитив
+    var sum = Object.keys(byDept).reduce(function (a, d) { return a + byDept[d]; }, 0) + gen;
+    return { text: lines.join("\n"), ok: sum === pos, check: "отделения " + (sum - gen) + " + о больнице " + gen + " = " + sum + (sum === pos ? "" : " (в отчёте " + pos + ")") };
+  }
   function build(week, hist, opt) {
     opt = opt || {};
     var dk = DK(), person = opt.person || function () { return null; }, photoOf = opt.photoOf || function () { return null; }, pick = opt.pick || {};
@@ -329,6 +375,8 @@
     var gsum = gold.reduce(function (a, d) { return a + d.n; }, 0) + rest.reduce(function (a, d) { return a + d.n; }, 0);
     checks.push({ bad: false, text: "Благодарностей врачам: " + gsum + " (" + list.length + " " + dk.plural(list.length, "сотрудник", "сотрудника", "сотрудников") + ")" });
     D.notes = notesOf(D, numbers);
+    var post = postText(foot, P, N, list.length);
+    D.post = post.text; if (!post.ok) checks.push({ bad: true, text: "Пост в канал: не сходится сумма по отделениям — " + post.check });
     // всё, что можно пересмотреть в любой момент (кнопка «Пересмотреть выбор»): варианты и текущий выбор
     var revOpts = function (c) { var qs = inBand(c.quotes, BAND.review).filter(praise); if (c === r0 && rQuote && qs.indexOf(rQuote) < 0) qs = [rQuote].concat(qs); return { key: c.key, short: c.p.short, platform: platKey(c.row.platform), date: c.row.date, quote: c === r0 ? rQuote : nearest(qs, BAND.review[2], BAND.review[1]) || c.quotes[0], quotes: qs, text: s(c.row.full || c.row.text) }; };
     var choices = [];

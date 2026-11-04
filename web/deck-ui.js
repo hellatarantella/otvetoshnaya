@@ -122,6 +122,19 @@
     var exp = el("div", "ctl"), ea = el("div", "actions"), st = el("p", "ctl-st"); st.hidden = true;
     var bPdf = btn("Скачать PDF", "primary", function () { exportAs("pdf", st); }), bPpt = btn("Скачать PPTX", "", function () { exportAs("pptx", st); });
     ea.append(bPdf, bPpt); exp.append(ea, st); root.insertBefore(exp, chk);
+    // пост в канал: текст по отчёту недели и обложка картинкой — готовы сами, без ручного сбора
+    if (res.D && res.D.post) {
+      var pb = el("details", "ctl deck-post"); pb.append(el("summary", null, "Пост в канал: текст и визуал"));
+      var pt = el("textarea", "deck-post-t"); pt.value = res.D.post; pt.rows = Math.min(22, res.D.post.split("\n").length + 1); pt.setAttribute("aria-label", "Текст поста");
+      var pst = el("p", "ctl-st"); pst.hidden = true;
+      var copyB = btn("Скопировать текст", "primary", function () {
+        var done = function () { pst.hidden = false; pst.className = "ctl-st ok"; pst.textContent = "Текст скопирован"; };
+        try { (navigator.clipboard ? navigator.clipboard.writeText(pt.value) : Promise.reject()).then(done, function () { pt.select(); document.execCommand("copy"); done(); }); } catch (e) { pt.select(); document.execCommand("copy"); done(); }
+      });
+      var pngB = btn("Скачать визуал (PNG)", "", function () { exportCover(pst); });
+      var pa = el("div", "actions"); pa.append(copyB, pngB);
+      pb.append(pt, pa, pst); root.insertBefore(pb, chk);
+    }
     useFonts().then(function () { renderPreview(pv, issuesBox, [bPdf, bPpt], need.length || res.checks.some(function (c) { return c.bad; }) || !fonts); });
   }
 
@@ -384,6 +397,16 @@
   function sig(h) { var x = 0; for (var i = 0; i < h.length; i++) x = (x * 31 + h.charCodeAt(i)) | 0; return x; }
   function savePickQuiet(patch) { if (!cur) return; var id = pickId(); picks[id] = Object.assign({}, picks[id] || {}, patch); db.collection("deckPicks").doc(id).set(picks[id]).catch(function () {}); }
 
+  // обложка недели картинкой для поста (как обложка презентации)
+  function exportCover(st) {
+    if (busy) return; busy = true; st.hidden = false; st.className = "ctl-st"; st.textContent = "Готовлю картинку…";
+    var s0 = root.querySelector(".deck-slide-in > section"); if (!s0) { busy = false; st.textContent = "Нет обложки"; return; }
+    var tmp = el("div", "deck-measure"); document.body.append(tmp); var sec = cloneSec(s0); tmp.append(sec);
+    document.fonts.ready.then(function () { return DK().measure(sec); }).then(function (pr) { tmp.remove(); return DK().toPng(pr, fonts); })
+      .then(function (blob) { var name = K.fileName(cur.data) + ".png"; return window.claude.use("downloads").then(function (dl) { return dl.save({ filename: name, data: blob }); }).then(function () { return name; }); })
+      .then(function (n) { busy = false; st.className = "ctl-st ok"; st.textContent = "Сохранено в «Загрузки»: " + n; log("визуал поста " + n); },
+        function (e) { busy = false; tmp.remove(); st.className = "ctl-st err"; st.textContent = "Не получилось: " + (e && e.message || e); });
+  }
   /* ---------- выгрузка ---------- */
   function exportAs(kind, st) {
     if (busy) return; busy = true;

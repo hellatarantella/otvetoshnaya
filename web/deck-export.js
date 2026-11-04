@@ -251,6 +251,43 @@
     return pres;
   }
 
+  /* ---------- PNG одного слайда (визуал для поста): те же примитивы, что для PDF ---------- */
+  var pngFonts = null;
+  function pngFontsReady(fonts) {
+    if (pngFonts) return pngFonts;
+    var mk = function (name, b64) { var f = new FontFace(name, "url(data:font/ttf;base64," + b64 + ")"); return f.load().then(function (x) { document.fonts.add(x); }); };
+    pngFonts = fonts && fonts.regular ? Promise.all([mk("OtvPngR", fonts.regular), mk("OtvPngB", fonts.bold || fonts.regular)]).catch(function () { pngFonts = null; }) : Promise.resolve();
+    return pngFonts;
+  }
+  function toPng(prims, fonts) {
+    return pngFontsReady(fonts).then(function () {
+      var cv = document.createElement("canvas"); cv.width = W; cv.height = H; var g = cv.getContext("2d");
+      var hex = function (h) { return "#" + h; };
+      var path = function (x, y, w, h, r, ell) {
+        g.beginPath();
+        if (ell) { g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); return; }
+        r = r || [0, 0, 0, 0]; g.moveTo(x + r[0], y); g.lineTo(x + w - r[1], y); g.quadraticCurveTo(x + w, y, x + w, y + r[1]); g.lineTo(x + w, y + h - r[2]);
+        g.quadraticCurveTo(x + w, y + h, x + w - r[2], y + h); g.lineTo(x + r[3], y + h); g.quadraticCurveTo(x, y + h, x, y + h - r[3]); g.lineTo(x, y + r[0]); g.quadraticCurveTo(x, y, x + r[0], y); g.closePath();
+      };
+      return prims.reduce(function (p, q) { return p.then(function () {
+        if (q.t === "rect") {
+          g.globalAlpha = q.alpha != null ? q.alpha : 1; path(q.x, q.y, q.w, q.h, q.r, q.ell);
+          if (q.fill) { g.fillStyle = hex(q.fill); g.fill(); }
+          g.globalAlpha = 1; if (q.stroke) { g.strokeStyle = hex(q.stroke); g.lineWidth = q.sw; g.stroke(); }
+        } else if (q.t === "line") {
+          g.strokeStyle = hex(q.color); g.lineWidth = q.w; g.setLineDash(q.dash ? q.dash.split(/[\s,]+/).map(Number) : []); g.beginPath(); g.moveTo(q.x1, q.y1); g.lineTo(q.x2, q.y2); g.stroke(); g.setLineDash([]);
+        } else if (q.t === "img" && q.data) {
+          return loadImg(q.data).then(function (im) { g.drawImage(im, q.x, q.y, q.w, q.h); }, function () {});
+        } else if (q.t === "text") {
+          q.words.forEach(function (w) {
+            g.font = w.size + "px " + (w.bold ? "OtvPngB" : "OtvPngR") + ", sans-serif"; g.fillStyle = hex(w.color); g.textBaseline = "alphabetic";
+            if (w.italic) { g.save(); g.transform(1, 0, -0.2, 1, 0.2 * w.base, 0); g.fillText(w.text, w.x, w.base); g.restore(); } else g.fillText(w.text, w.x, w.base);
+          });
+        }
+      }); }, Promise.resolve()).then(function () { return new Promise(function (res) { cv.toBlob(function (b) { res(b); }, "image/png"); }); });
+    });
+  }
+
   window.__otvDeck = window.__otvDeck || {};
-  Object.assign(window.__otvDeck, { unglue: unglue, measure: measure, toPdf: toPdf, toPptx: toPptx });
+  Object.assign(window.__otvDeck, { unglue: unglue, measure: measure, toPdf: toPdf, toPptx: toPptx, toPng: toPng });
 })();
