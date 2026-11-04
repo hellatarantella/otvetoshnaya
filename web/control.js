@@ -1,0 +1,76 @@
+/* «Ответошная» — самоконтроль (04.11: «программа сама должна отслеживать, всё ли верно»).
+   Программа сама проверяет: жалобы без ответа больше суток, ответы, которые ждут согласования, ответ на площадке
+   не совпадает с согласованным, что требует отчёт недели, что ждёт презентация закрытой недели, сохранение данных.
+   Наверху — одна отметка: «✓ Всё в порядке» или «⚠ N — что сделать»; по нажатию — список с переходом. Ничего лишнего. */
+(function () {
+  "use strict";
+  function s(x) { return x == null ? "" : String(x); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function norm(t) { return s(t).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim(); }
+  function all(name) { var f = window.__otvAllRO || window.__otvAll; return (f && f(name)) || {}; }
+  function ageDays(d) {
+    d = s(d); var m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(d), t = m ? Date.parse(m[3] + "-" + m[2] + "-" + m[1] + "T12:00:00+03:00") : Date.parse(d);
+    return isNaN(t) ? 0 : (Date.now() - t) / 864e5;
+  }
+  var WAIT = /^(new|pending|check)$/;
+  function issues() {
+    var out = [], A = all("answers"), G = window.__otvGen, negOld = 0, posOld = 0, diff = [];
+    Object.keys(A).forEach(function (id) {
+      var a = A[id]; if (!a) return;
+      if (WAIT.test(s(a.status)) && s(a.review).trim()) {
+        var tone = ""; try { tone = G && G.toneOf ? G.toneOf(a) : ""; } catch (e) {}
+        var age = ageDays(a.date);
+        if (tone === "negative" && age >= 1) negOld++; else if (age >= 3) posOld++;
+      }
+      if (a.status === "published" && s(a.answer).trim()) {   // на площадке другой текст, чем согласованный
+        var r = window.__otvGet ? window.__otvGet("registry", id) : null, body = function (t) { return norm(s(t).replace(/^\s*Здравствуйте[^\n]*\n/, "").replace(/С уважением[\s\S]*$/, "")).slice(0, 80); };
+        if (r && s(r.reply).trim() && body(r.reply) && body(r.reply) !== body(a.answer)) diff.push(a.platform + (a.author ? ", " + a.author : ""));
+      }
+    });
+    if (negOld) out.push({ text: "Жалобы без ответа больше суток: " + negOld, tab: "neg" });
+    if (posOld) out.push({ text: "Ответы ждут согласования больше 3 дней: " + posOld, tab: "pos" });
+    if (diff.length) out.push({ text: "На площадке текст ответа не совпадает с согласованным: " + diff.slice(0, 3).join("; ") + (diff.length > 3 ? " и ещё " + (diff.length - 3) : ""), tab: "pos" });
+    var R = window.__otvReports; if (R && R.lastTodo) R.lastTodo().forEach(function (t) { out.push({ text: "Отчёт: " + t, tab: "check" }); });
+    // презентация закрытой недели (четверг после 15:00 и позже) ждёт решений
+    var U = window.__otvDeckUi, msk = new Date(Date.now() + 3 * 3600e3), dow = msk.getUTCDay(), hr = msk.getUTCHours();
+    if (U && U._state && (dow === 4 && hr >= 15 || dow === 5)) { try { var st = U._state(), n = st && st.res && st.res.need ? st.res.need.length : 0; if (n) out.push({ text: "Презентация недели: нужно ваше решение — " + n, tab: "deckw" }); } catch (e) {} }
+    if (window.__otvSaveErr) out.push({ text: "Данные не сохраняются: " + window.__otvSaveErr + " — программа повторяет сама; если не пройдёт, перезапустите программу", tab: "" });
+    return out;
+  }
+  var chip, pop, timer = 0, last = [];
+  function paint() {
+    if (!chip) return;
+    last = issues();
+    chip.className = "ctrl-chip " + (last.length ? "warn" : "ok");
+    chip.textContent = last.length ? "⚠ " + last.length + " — что сделать" : "✓ Всё в порядке";
+    chip.title = last.length ? last.map(function (i) { return i.text; }).join("\n") : "Программа проверила ответы, отчёт, презентацию и сохранение данных";
+    if (pop && !pop.hidden) fill();
+  }
+  function fill() {
+    pop.textContent = "";
+    if (!last.length) { pop.append(el("p", "hint", "Всё в порядке: ответы, отчёт недели, презентация и сохранение данных проверены.")); return; }
+    var ul = el("ul", "ctrl-list");
+    last.forEach(function (i) {
+      var li = el("li", null, i.text);
+      if (i.tab) { var b = el("button", "link", "Открыть"); b.type = "button"; b.addEventListener("click", function () { pop.hidden = true; if (window.__otvShowTab) window.__otvShowTab(i.tab); }); li.append(" ", b); }
+      ul.append(li);
+    });
+    pop.append(ul);
+  }
+  function soon() { clearTimeout(timer); timer = setTimeout(paint, 1500); }
+  function start() {
+    var nav = document.getElementById("tabs"); if (!nav) return;
+    var wrap = el("div", "ctrl"); chip = el("button", "ctrl-chip ok", "✓ Всё в порядке"); chip.type = "button"; chip.id = "ctrlChip";
+    pop = el("div", "ctrl-pop"); pop.id = "ctrlPop"; pop.hidden = true;
+    chip.addEventListener("click", function () { pop.hidden = !pop.hidden; if (!pop.hidden) fill(); });
+    document.addEventListener("click", function (e) { if (!wrap.contains(e.target)) pop.hidden = true; });
+    wrap.append(chip, pop);
+    var h1 = document.querySelector("h1.brand");   // отметка — в строке с названием программы, справа
+    if (h1) { h1.classList.add("has-ctrl"); h1.append(wrap); } else nav.parentNode.insertBefore(wrap, nav);
+    window.addEventListener("otv-write", soon);
+    setInterval(paint, 5 * 60 * 1000);
+    setTimeout(paint, 3000);
+  }
+  window.__otvControl = { issues: issues, refresh: paint };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+})();

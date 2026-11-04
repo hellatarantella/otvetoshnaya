@@ -35,9 +35,11 @@
     var mb = Math.floor(json.length / 10485760) * 10;
     if (mb >= 30 && mb > (flush.warned || 0)) { flush.warned = mb; try { if (window.__otvLog) window.__otvLog("данные программы больше " + mb + " МБ"); } catch (e) {} }
     saving = saving.then(function () {
-      if (IN_APP) return invoke("db_save", { json: json });
+      if (IN_APP) return invoke("db_save", { json: json }).then(function () { window.__otvSaveErr = ""; });
       try { localStorage.setItem("otv-data", json); } catch (e) {}
+      window.__otvSaveErr = "";
     }).catch(function (e) {
+      window.__otvSaveErr = String(e).slice(0, 160);   // для самоконтроля
       showBar("Не удалось сохранить: " + e + ". Повторю через 3 секунды", "err"); dirty = true;
       try { if (window.__otvLog) window.__otvLog("сохранение данных не прошло: " + String(e).slice(0, 160)); } catch (x) {}
       clearTimeout(saveTimer); saveTimer = setTimeout(flush, 3000);   // повтор сам, не дожидаясь следующей записи

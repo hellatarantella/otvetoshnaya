@@ -139,6 +139,13 @@ textarea.comment{min-height:70px}
 .pubrow .info{font-size:14px;color:var(--pub)}
 .pubrow a.btn{text-decoration:none;display:inline-flex;align-items:center}
 .card[data-queued="1"]{border-left:4px solid var(--pub)}
+.ctrl{position:relative;display:flex;justify-content:flex-end;margin:0 0 6px}
+h1.brand.has-ctrl{display:flex;align-items:center}
+h1.brand .ctrl{margin:0 0 0 auto;font-weight:400}
+.ctrl-chip{border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer}
+.ctrl-chip.warn{color:#d6a33a;border-color:#d6a33a}
+.ctrl-pop{position:absolute;right:0;top:100%;z-index:50;margin-top:6px;min-width:320px;max-width:560px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.ctrl-list{margin:0;padding-left:18px;font-size:14px;display:flex;flex-direction:column;gap:6px}
 .tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border);margin:0 0 18px}
 .tab{appearance:none;background:none;border:0;border-bottom:3px solid transparent;padding:8px 12px;font:inherit;font-size:15px;font-weight:600;color:var(--muted);cursor:pointer;margin-bottom:-1px}
 .tab[aria-selected="true"]{color:var(--text);border-bottom-color:var(--pink)}
