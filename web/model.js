@@ -112,6 +112,34 @@
     user += "\n\nНапиши ответ.";
     return { messages: [{ role: "system", content: sys }, { role: "user", content: user }], it: it, tone: ex.tone, type: ex.type };
   }
+  /* Маленькая модель лучше правит, чем сочиняет. Поэтому:
+     1) короткая подсказка — 3 ваших ответа на самые похожие отзывы + 5–6 главных правил (остальные правила проверяет программа);
+     2) «редактор»: модель подгоняет под отзыв лучший готовый вариант программы (ваш ответ на похожий отзыв или сборку из ваших фраз). */
+  function shortRules(tone, type) {
+    if (type === "question") return "Это вопрос. Отвечай только фактами из справки и образцов; если фактов нет — дай телефон Единого контактного центра 8-495-685-17-94 и почту gkb24@zdrav.mos.ru. Ничего не выдумывай.";
+    if (tone === "mixed") return "Отзыв смешанный: сначала спасибо за добрые слова о сотрудниках (передадим), затем отдельно про жалобу — разберёмся, просим написать на gkb24@zdrav.mos.ru с ФИО, датой и телефоном. Без пожеланий здоровья.";
+    if (tone === "negative") return "Это жалоба: поблагодари, что сообщили; скажи, что разберёмся; попроси написать на gkb24@zdrav.mos.ru с ФИО, датой и телефоном; после проверки ответим. Не извиняйся, не спорь, без пожеланий здоровья.";
+    return "Это благодарность. Концовка: «Желаем здоровья и всего самого доброго.»" + (type === "doctor" ? " Отзыв на странице врача: ничего не «передаём», о больнице не пишем." : "");
+  }
+  function compactMessages(req) {
+    var G = window.__otvGen, it = itemOf(req), ex = G.examples(it, 3), tone = mixedOf(req, ex.tone);
+    var sys = "Ты пишешь ответы на отзывы пациентов от имени 24 Московской больницы. Пиши как в образцах: просто, тепло, коротко (2–4 предложения), «вы» со строчной, " +
+      "не пересказывай отзыв, не оценивай врачей, не обсуждай лечение, не пиши «клиника». Без приветствия и подписи — только текст ответа.\n" + shortRules(tone, ex.type);
+    var FX = req.kind === "question" && window.__otvFacts ? window.__otvFacts.forQuestion(s(req.review), 3) : [];
+    if (FX.length) sys += "\nСправка: " + FX.map(function (f) { return f.text; }).join(" ");
+    var msgs = [{ role: "system", content: sys }];
+    ex.list.forEach(function (e) { if (e.situation) { msgs.push({ role: "user", content: "Отзыв: «" + e.situation.slice(0, 400) + "»" }); msgs.push({ role: "assistant", content: e.body }); } });
+    msgs.push({ role: "user", content: "Отзыв: «" + s(req.review).slice(0, 1200) + "»" });
+    return { messages: msgs, it: it, tone: ex.tone, type: ex.type };
+  }
+  function adaptMessages(req, draft) {
+    var G = window.__otvGen, it = itemOf(req), ex = G.examples(it, 0), tone = mixedOf(req, ex.tone);
+    var sys = "Ты редактор ответов 24 Московской больницы на отзывы пациентов. Тебе дают отзыв и готовый черновик ответа. " +
+      "Отредактируй черновик под этот отзыв: сохрани его стиль, тон и длину, меняй не больше одного-двух предложений. " +
+      "Если в отзыве есть вопрос или жалоба, а в черновике нет ответа на них — добавь одно предложение. Не добавляй телефонов, имён и фактов, которых нет в черновике или отзыве. " +
+      "Не пересказывай отзыв. «вы» со строчной. Выведи только текст ответа, без приветствия и подписи.\n" + shortRules(tone, ex.type);
+    return { messages: [{ role: "system", content: sys }, { role: "user", content: "Отзыв: «" + s(req.review).slice(0, 1200) + "»\n\nЧерновик: " + bodyOf(draft) }], it: it, tone: ex.tone, type: ex.type };
+  }
   var PHONES = ["84956851794", "84956136310"], MAILS = ["gkb24@zdrav.mos.ru", "gkb24-pmu@zdrav.mos.ru"];
   function valid(t) {
     if (t.length < 40 || t.length > 1400) return false;
@@ -136,9 +164,10 @@
   }
   function write(req) {
     if (!window.__otvGen || req.kind === "appeal") return Promise.resolve(null);
-    var m = messagesFor(req);
-    var tryOnce = function (temp) {
-      return generate(m.messages, temp).then(function (out) {
+    var m = compactMessages(req);
+    var tryOnce = function (temp, mm) {
+      mm = mm || m;
+      return generate(mm.messages, temp).then(function (out) {
         var t = bodyOf(s(out).replace(/<think>[\s\S]*?<\/think>/g, "")).replace(/^[«"]+|[»"]+$/g, "").trim();
         if (!valid(t)) return null;
         var p = window.__otvGen.polish(t, m.it), SP = window.__otvSpeech, L = window.__otvLearn;
@@ -158,7 +187,11 @@
       if (!(req.current && same(bodyOf(a.text), bodyOf(req.current)))) own.push(a.text);
     }
     var safe = function (p) { return p.then(null, function () { return null; }); };
-    return safe(tryOnce(0.7)).then(function (r1) { return safe(tryOnce(0.5)).then(function (r2) { return [r1, r2]; }); }).then(function (llm) {
+    // редактор: модель подгоняет под отзыв два лучших готовых варианта (по оценке судьи) + один свой черновик по образцам
+    var ranked = J ? own.slice().sort(function (a, b) { return J.score(b, req) - J.score(a, req); }) : own.slice();
+    var jobs = ranked.slice(0, 2).map(function (d, i) { return function () { return safe(tryOnce(0.3 + i * 0.25, adaptMessages(req, d))); }; });
+    jobs.push(function () { return safe(tryOnce(0.7)); });
+    return jobs.reduce(function (p, job) { return p.then(function (acc) { return job().then(function (r) { return acc.concat([r]); }); }); }, Promise.resolve([])).then(function (llm) {
       var all = llm.concat(own).filter(Boolean);
       var pick = J ? J.best(all, req) : (llm[0] || llm[1] || own[0] || null);
       refresh(); return pick;
@@ -167,6 +200,52 @@
   // модель пишет варианты, только если проверка вслепую показала «не хуже» хотя бы в 60% (не меньше 10 отзывов)
   var PASS = 0.6;
   function passed() { var r = st.exam; return !!(r && r.n >= 10 && (r.model + r.tie) / r.n >= PASS); }
+  /* ---------- контент-анализ моделью: разбор каждого отзыва (тон, сотрудники, за что благодарят, на что жалуются, вопрос, суть).
+     Модель отвечает строго по спискам; программа проверяет ответ (сотрудники — только из списка, темы — только из перечня)
+     и пишет разбор в отзыв. «Аналитика» и месячная презентация считают темы по нему. Работает пачками по 10, когда модель включена */
+  function themeLists() { var M = window.__otvDeckMonth; return { pos: M ? M.THEMES.map(function (t) { return t[0]; }) : [], neg: M ? M.NEG_THEMES.map(function (t) { return t[0]; }) : [] }; }
+  function anMessages(text) {
+    var T = themeLists();
+    var sys = "Ты аналитик отзывов пациентов больницы. Разбери отзыв и ответь строго одним JSON без пояснений:\n" +
+      '{"тон":"благодарность|жалоба|смешанный|вопрос|другое","сотрудники":["фамилии сотрудников, как в тексте"],"благодарят_за":["темы из списка А"],"жалуются_на":["темы из списка Б"],"вопрос":"вопрос автора или пусто","суть":"суть отзыва одной фразой до 15 слов"}\n' +
+      "Список А: " + T.pos.join("; ") + "\nСписок Б: " + T.neg.join("; ") + "\nБери темы только из списков, дословно. Если темы нет — пустой список.";
+    return [{ role: "system", content: sys }, { role: "user", content: "Отзыв: «" + s(text).slice(0, 1500) + "» /no_think" }];
+  }
+  function parseAn(out) {
+    var t = s(out).replace(/<think>[\s\S]*?<\/think>/g, ""), a = t.indexOf("{"), b = t.lastIndexOf("}");
+    if (a < 0 || b <= a) return null;
+    var j; try { j = JSON.parse(t.slice(a, b + 1)); } catch (e) { return null; }
+    var T = themeLists(), TONES = { "благодарность": "positive", "жалоба": "negative", "смешанный": "mixed", "вопрос": "question", "другое": "other" };
+    var arr = function (x) { return Array.isArray(x) ? x.map(s) : x ? [s(x)] : []; };
+    var pick = function (list, allowed) { return arr(list).map(function (x) { x = x.trim(); return allowed.filter(function (a) { return a === x || a.toLowerCase().indexOf(x.toLowerCase().replace(/[«»"]/g, "").slice(0, 12)) === 0; })[0]; }).filter(Boolean).filter(function (x, i, A) { return A.indexOf(x) === i; }); };
+    var R = window.__otvReports, staff = arr(j["сотрудники"]).map(function (x) { var p = R && R.person ? R.person(x.trim()) : null; return p && !p.ambiguous ? p.short : null; }).filter(Boolean);
+    return { v: 1, tone: TONES[s(j["тон"]).trim().toLowerCase()] || "other", staff: staff.filter(function (x, i, A) { return A.indexOf(x) === i; }),
+      pos: pick(j["благодарят_за"], T.pos), neg: pick(j["жалуются_на"], T.neg), q: s(j["вопрос"]).trim().slice(0, 300), gist: s(j["суть"]).trim().slice(0, 160), at: new Date().toISOString() };
+  }
+  function analyzeOne(text) { return generate(anMessages(text), 0.1).then(parseAn); }
+  var anBusy = false, anStat = { done: 0, failed: 0 };
+  function anPending() {
+    var reg = (window.__otvAll && window.__otvAll("registry")) || {}, cut = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10);
+    return Object.keys(reg).filter(function (id) { var r = reg[id]; return r && !r.ai && !r.aiFail && s(r.fullText || r.text).trim().length > 20 && s(r.date) >= cut; })
+      .sort(function (a, b) { return s(reg[b].date).localeCompare(s(reg[a].date)); });
+  }
+  function analyzeBatch(n) {
+    if (anBusy || !st.installed || !st.enabled || !db) return Promise.resolve(0);
+    var ids = anPending().slice(0, n || 10); if (!ids.length) return Promise.resolve(0);
+    anBusy = true; var done = 0;
+    return ids.reduce(function (p, id) {
+      return p.then(function () {
+        var r = window.__otvGet ? window.__otvGet("registry", id) : null; if (!r) return;
+        return analyzeOne(s(r.fullText || r.text)).then(function (a) {
+          if (a) { done++; anStat.done++; return db.collection("registry").doc(id).update({ ai: a }); }
+          anStat.failed++; return db.collection("registry").doc(id).update({ aiFail: (r.aiFail || 0) + 1 });
+        }, function () { anStat.failed++; });
+      });
+    }, Promise.resolve()).then(function () { anBusy = false; refresh(); return done; }, function () { anBusy = false; return done; });
+  }
+  setInterval(function () { analyzeBatch(10); }, 10 * 60 * 1000);
+  window.__otvAi = { analyzeBatch: analyzeBatch, parse: parseAn, pending: function () { return anPending().length; }, busy: function () { return anBusy; }, stat: function () { return anStat; } };
+
   window.__otvModel = {
     ready: function () { return st.installed && st.server && st.enabled && passed(); },
     passed: passed,

@@ -57,8 +57,10 @@
     var plats = group(R, function (r) { return [{ key: r.platform || "—" }]; });
     var uniq = {}; P.forEach(function (r) { var k = s(r.text).toLowerCase().slice(0, 120); if (k) uniq[k] = r; });
     var uP = Object.keys(uniq).map(function (k) { return uniq[k]; }), nU = uP.length || 1;
-    var themes = M().THEMES.map(function (t) { var rs = uP.filter(function (r) { return t[1].test(r.text); }); return { name: t[0], n: rs.length, pct: Math.round(rs.length * 100 / nU), rows: rs }; }).sort(function (a, b) { return b.n - a.n; });
-    var negT = M().NEG_THEMES.map(function (t) { var rs = N.filter(function (r) { return t[2].test(r.text); }); return { name: t[0], desc: t[1], n: rs.length, rows: rs }; }).filter(function (t) { return t.n; }).sort(function (a, b) { return b.n - a.n; });
+    // темы: по разбору ИИ, если отзыв уже разобран моделью; иначе — по ключевым словам
+    var themes = M().THEMES.map(function (t) { var rs = uP.filter(function (r) { var a = aiOf(r); return a ? a.pos.indexOf(t[0]) >= 0 : t[1].test(r.text); }); return { name: t[0], n: rs.length, pct: Math.round(rs.length * 100 / nU), rows: rs }; }).sort(function (a, b) { return b.n - a.n; });
+    var aiN = R.filter(function (r) { return !!aiOf(r); }).length;
+    var negT = M().NEG_THEMES.map(function (t) { var rs = N.filter(function (r) { var a = aiOf(r); return a ? a.neg.indexOf(t[0]) >= 0 : t[2].test(r.text); }); return { name: t[0], desc: t[1], n: rs.length, rows: rs }; }).filter(function (t) { return t.n; }).sort(function (a, b) { return b.n - a.n; });
     var checks = [];
     var sd = depts.reduce(function (a, d) { return a + d.pos; }, 0), sp = plats.reduce(function (a, d) { return a + d.pos; }, 0);
     checks.push({ bad: sd !== P.length, text: "Отделения в сумме: " + sd + " из " + P.length + " благодарностей" });
@@ -73,9 +75,21 @@
       var t = M().monthTotals(ym, rows, mode === "placed" ? "placed" : "arrival");
       months.push({ label: M().MON_NOM[k - 1], pos: t ? t.pos : null, neg: t ? t.neg : null, seed: !!(t && t.seed), cur: ym === today().slice(0, 7) });
     }
-    return { rg: rg, pos: P.length, neg: N.length, prev: prev, depts: depts, docs: docs, plats: plats, themes: themes, negT: negT, months: months, checks: checks, minD: minD, year: y, uniq: uP.length };
+    return { aiN: aiN, rg: rg, pos: P.length, neg: N.length, prev: prev, depts: depts, docs: docs, plats: plats, themes: themes, negT: negT, months: months, checks: checks, minD: minD, year: y, uniq: uP.length };
   }
 
+  // разбор ИИ по тексту отзыва (из реестра программы)
+  var aiIdx = { v: -1, m: {} };
+  function aiOf(r) {
+    var v = window.__otvVer ? window.__otvVer("registry") : 0;
+    if (aiIdx.v !== v) {
+      var reg = (window.__otvAll && window.__otvAll("registry")) || {}, m = {};
+      Object.keys(reg).forEach(function (id) { var x = reg[id]; if (x && x.ai) { var k = low2(x.fullText || x.text); if (k) m[k] = x.ai; } });
+      aiIdx = { v: v, m: m };
+    }
+    return aiIdx.m[low2(r.text)] || null;
+  }
+  function low2(t) { return s(t).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim().slice(0, 80); }
   /* ---------- лучшие: N первых по благодарностям; кто набрал столько же, сколько последний, — в резерв ---------- */
   function top(list, n) {
     var L = list.filter(function (x) { return x.pos > 0 && !x.note && x.name !== "О больнице в целом"; })
@@ -243,6 +257,15 @@
     grid.append(table("Отделения", ["Отделение", "Благодарности", "Жалобы"], A.depts, [nameCell, function (x) { return x.pos; }, function (x) { return x.neg || ""; }], "d"));
     grid.append(table("Врачи", ["Врач", "Благодарности", "Жалобы"], A.docs, [nameCell, function (x) { return x.pos; }, function (x) { return x.neg || ""; }], "v"));
     grid.append(table("Площадки", ["Площадка", "Благодарности", "Жалобы"], A.plats, [nameCell, function (x) { return x.pos; }, function (x) { return x.neg || ""; }], "p"));
+    if (A.aiN || window.__otvAi) {
+      var aiL = el("p", "an-muted", "Темы: разобрано моделью " + A.aiN + " из " + (A.pos + A.neg) + " отзывов периода, остальные — по ключевым словам");
+      if (window.__otvAi && window.__otvAi.pending()) {
+        var ab = el("button", "link", "Разобрать моделью"); ab.type = "button";
+        ab.addEventListener("click", function () { ab.disabled = true; ab.textContent = "Разбираю…"; window.__otvAi.analyzeBatch(20).then(function (n) { ab.textContent = "Разобрано: " + n; soon(); }); });
+        aiL.append(" · ", ab);
+      }
+      root.append(aiL);
+    }
     grid.append(table("За что благодарят", ["Тема", "Отзывов", "Доля"], A.themes, [function (x) { return x.name; }, function (x) { return x.n; }, function (x) { return x.pct + "%"; }], "t"));
     grid.append(table("На что жалуются", ["Тема", "Жалоб"], A.negT, [function (x) { var f = document.createDocumentFragment(); f.append(el("span", null, x.name), el("span", "an-sub", " · " + x.desc)); return f; }, function (x) { return x.n; }], "n"));
     var yb = el("section", "an-card"); yb.append(el("h3", null, A.year + " год по месяцам"));

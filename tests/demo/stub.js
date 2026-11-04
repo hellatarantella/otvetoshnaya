@@ -89,7 +89,7 @@
     if (q.action === "answers") return { ok: true, updated: 0 };
     return { ok: false, error: "в тестовой версии этого нет" };
   }
-  var MDL = { installed: false, dl: { active: false, done: 0, total: 0, error: "" }, n: 0 };
+  var MDL = window.__demoMDL = { installed: false, dl: { active: false, done: 0, total: 0, error: "" }, n: 0 };
   window.__TAURI__ = {
     core: {
       convertFileSrc: function (x) { return x; },
@@ -118,8 +118,15 @@
         }
         if (cmd === "model_delete") { MDL.installed = false; return Promise.resolve(null); }
         if (cmd === "model_generate") {
-          var u = a.messages[a.messages.length - 1].content, neg = /ЭТО ЖАЛОБА/.test(a.messages[0].content);
+          var u = a.messages[a.messages.length - 1].content, neg = /ЭТО ЖАЛОБА|Это жалоба/i.test(a.messages[0].content);
           MDL.n++;
+          // контент-анализ: модель отвечает JSON (в тесте — по ключевым словам, с одной «ошибкой»: выдуманный сотрудник и тема не из списка)
+          if (/аналитик отзывов/.test(a.messages[0].content)) {
+            var cmp = /ждал|груб|хам/i.test(u), th = /спасибо|благодар/i.test(u);
+            return Promise.resolve('<think>…</think>Вот разбор: {"тон":"' + (cmp && th ? "смешанный" : cmp ? "жалоба" : "благодарность") + '","сотрудники":["Соколова","Выдумкин"],"благодарят_за":["Внимание, чуткость, забота","Тема не из списка"],"жалуются_на":' + (cmp ? '["Запись и ожидание"]' : "[]") + ',"вопрос":"","суть":"тестовый разбор"}');
+          }
+          // редактор: возвращает черновик, слегка поправленный
+          if (/Черновик:/.test(u)) return Promise.resolve(u.split("Черновик:")[1].trim().replace(/^Здравствуйте[^\n]*\n/, ""));
           var txt = neg ? ["Спасибо за обратную связь. Нам важно разобраться в ситуации: пожалуйста, напишите на gkb24@zdrav.mos.ru, указав дату и отделение.",
                            "Благодарим, что рассказали об этом. Чтобы мы могли проверить ситуацию, напишите нам на gkb24@zdrav.mos.ru с датой и названием отделения."][MDL.n % 2]
                         : ["Спасибо за тёплый отзыв. Рады, что вы остались довольны лечением. Желаем здоровья и всего самого доброго.",

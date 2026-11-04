@@ -88,6 +88,16 @@
     window.claude.use("db").then(function (d) {
       db = d;
       db.collection("facts").onSnapshot(function (sn) { facts = {}; sn.docs.forEach(function (x) { facts[x.id] = x.data() || {}; }); refresh(); }, function () {});
+      // справка начинается с фактов из справочника программы (почта, Единый контактный центр, МОРС, госпитализация)
+      var seed = function () {
+        var ref = document.getElementById("ref-style"), t = ref ? ref.textContent : "", part = t.split(/ФАКТЫ ДЛЯ ОТВЕТОВ:/)[1] || "";
+        part.split(/\n/).map(function (x) { return x.replace(/^\s*-\s*/, "").trim(); }).filter(function (x) { return x.length > 25; }).forEach(function (x) {
+          x.split(/(?<=\.)\s+(?=[А-ЯЁ])/).forEach(function (f) { f = f.trim(); if (f.length < 25) return; var id = key(f); if (facts[id]) return;
+            facts[id] = { text: f, topic: Object.keys(stems(f)).join(" "), source: "справочник программы", auto: true, off: false, at: new Date().toISOString() };
+            db.collection("facts").doc(id).set(facts[id]).catch(function () {}); });
+        });
+      };
+      setTimeout(seed, 3000);
       var later = function () { clearTimeout(timer); timer = setTimeout(function () { scan().then(function (n) { if (n) refresh(); }); }, 1500); };
       window.addEventListener("otv-write", function (ev) { var n = ev.detail && ev.detail.name; if (n === "kb" || n === "answers" || n === "mail") later(); });
       window.addEventListener("otv-imported", later);
