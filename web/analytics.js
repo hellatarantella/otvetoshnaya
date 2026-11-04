@@ -78,18 +78,7 @@
     return { aiN: aiN, rg: rg, pos: P.length, neg: N.length, prev: prev, depts: depts, docs: docs, plats: plats, themes: themes, negT: negT, months: months, checks: checks, minD: minD, year: y, uniq: uP.length };
   }
 
-  // разбор ИИ по тексту отзыва (из реестра программы)
-  var aiIdx = { v: -1, m: {} };
-  function aiOf(r) {
-    var v = window.__otvVer ? window.__otvVer("registry") : 0;
-    if (aiIdx.v !== v) {
-      var reg = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("registry")) || {}, m = {};
-      Object.keys(reg).forEach(function (id) { var x = reg[id]; if (x && x.ai) { var k = low2(x.fullText || x.text); if (k) m[k] = x.ai; } });
-      aiIdx = { v: v, m: m };
-    }
-    return aiIdx.m[low2(r.text)] || null;
-  }
-  function low2(t) { return s(t).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim().slice(0, 80); }
+  function aiOf(r) { return M() && M().aiOf ? M().aiOf(r) : null; }   // разбор модели (общий с месячной презентацией)
   /* ---------- лучшие: N первых по благодарностям; кто набрал столько же, сколько последний, — в резерв ---------- */
   function top(list, n) {
     var L = list.filter(function (x) { return x.pos > 0 && !x.note && x.name !== "О больнице в целом"; })

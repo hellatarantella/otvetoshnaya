@@ -20,9 +20,11 @@ async def main():
         res.append((ok, 'модель-редактор и судья: чистые ответы на благодарность и жалобу, без сбоев модели', W))
         A = await pg.evaluate("""async () => { const n0 = window.__otvAi.pending(); const n = await window.__otvAi.analyzeBatch(10);
           const reg = window.__otvAll('registry'), ai = Object.values(reg).filter(r => r.ai).map(r => r.ai);
-          return { n0, n, left: window.__otvAi.pending(), ai: ai.slice(0, 3), staffOk: ai.every(a => !a.staff.includes('Выдумкин')), themesOk: ai.every(a => a.pos.every(x => x !== 'Тема не из списка')) }; }""")
+          const one = Object.values(reg).find(r => r.ai); const shared = !!(one && window.__otvDeckMonth.aiOf({ text: one.fullText || one.text }));
+          return { shared, n0, n, left: window.__otvAi.pending(), ai: ai.slice(0, 3), staffOk: ai.every(a => !a.staff.includes('Выдумкин')), themesOk: ai.every(a => a.pos.every(x => x !== 'Тема не из списка')) }; }""")
         ok = A['n'] >= 3 and A['staffOk'] and A['themesOk'] and any(a['tone'] in ('negative', 'mixed') and 'Запись и ожидание' in a['neg'] for a in A['ai'] + []) or (A['n'] >= 3 and A['staffOk'] and A['themesOk'])
-        res.append((ok, 'контент-анализ моделью: разборы записаны, выдуманный сотрудник и тема не из перечня отброшены', A))
+        ok = ok and A['shared']
+        res.append((ok, 'контент-анализ моделью: разборы записаны и доступны «Аналитике» и месячной презентации, выдуманный сотрудник и тема не из перечня отброшены', A))
         P2 = await pg.evaluate("""() => window.__otvAi.parse('мусор без json') === null && window.__otvAi.parse('{\"тон\":\"жалоба\",\"сотрудники\":[],\"благодарят_за\":[],\"жалуются_на\":[\"Запись и ожидание\"],\"вопрос\":\"\",\"суть\":\"x\"}').neg[0] === 'Запись и ожидание'""")
         res.append((P2, 'непонятный ответ модели не ломает разбор', P2))
         res.append((not errs, 'без ошибок страницы', errs[:3]))

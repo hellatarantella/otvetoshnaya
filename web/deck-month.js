@@ -149,13 +149,13 @@
     });
     var others = dlist.filter(function (d) { return top3.indexOf(d) < 0; }).slice(0, 7);
 
-    // темы благодарностей — по уникальным текстам
+    // темы благодарностей — по уникальным текстам; по разбору модели, если отзыв уже разобран, иначе по ключевым словам
     var uniq = {}; P.forEach(function (r) { var k4 = norm(r.text).slice(0, 120); if (k4) uniq[k4] = r.text; });
     var texts = Object.keys(uniq).map(function (k5) { return uniq[k5]; }), nU = texts.length || 1;
-    var themes = THEMES.map(function (t) { var c = texts.filter(function (x) { return t[1].test(x); }).length; return { name: t[0], n: c, pct: Math.round(c * 100 / nU) }; }).sort(function (a, b) { return b.pct - a.pct; });
+    var themes = THEMES.map(function (t) { var c = texts.filter(function (x) { var a = aiOf({ text: x }); return a ? a.pos.indexOf(t[0]) >= 0 : t[1].test(x); }).length; return { name: t[0], n: c, pct: Math.round(c * 100 / nU) }; }).sort(function (a, b) { return b.pct - a.pct; });
     var phrases = PHRASES.map(function (p) { return { name: p[0], n: texts.filter(function (x) { return p[1].test(x); }).length }; });
     // негатив — обобщённые темы, без имён и подробностей
-    var negT = NEG_THEMES.map(function (t) { return { name: t[0], desc: t[1], n: N.filter(function (r) { return t[2].test(r.text); }).length, red: t[0] === "Исход лечения" }; })
+    var negT = NEG_THEMES.map(function (t) { return { name: t[0], desc: t[1], n: N.filter(function (r) { var a = aiOf(r); return a ? a.neg.indexOf(t[0]) >= 0 : t[2].test(r.text); }).length, red: t[0] === "Исход лечения" }; })
       .filter(function (t) { return t.n > 0; }).sort(function (a, b) { return (a.red - b.red) || (b.n - a.n); }).slice(0, 4);
     var negThanks = N.filter(function (r) { return THANKS.test(r.text); }).length;
 
@@ -310,7 +310,19 @@
   }
   function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }   // 1 479
 
-  window.__otvDeckMonth = { build: build, slidesHtml: slidesHtml, list: list, allRows: allRows, SEED: SEED, THEMES: THEMES, NEG_THEMES: NEG_THEMES, monthTotals: monthTotals, MON_SHORT: MON_SHORT, MON_NOM: MON_NOM };
+  // разбор модели по тексту отзыва (реестр программы); одна копия на версию реестра
+  var aiIdx = { v: -1, m: {} };
+  function low2(t) { return s(t).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim().slice(0, 80); }
+  function aiOf(r) {
+    var v = window.__otvVer ? window.__otvVer("registry") : 0;
+    if (aiIdx.v !== v) {
+      var reg = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("registry")) || {}, m = {};
+      Object.keys(reg).forEach(function (id) { var x = reg[id]; if (x && x.ai) { var k = low2(x.fullText || x.text); if (k) m[k] = x.ai; } });
+      aiIdx = { v: v, m: m };
+    }
+    return aiIdx.m[low2(r && r.text)] || null;
+  }
+  window.__otvDeckMonth = { aiOf: aiOf, build: build, slidesHtml: slidesHtml, list: list, allRows: allRows, SEED: SEED, THEMES: THEMES, NEG_THEMES: NEG_THEMES, monthTotals: monthTotals, MON_SHORT: MON_SHORT, MON_NOM: MON_NOM };
   // вкладка «Презентации → Месяц» — та же основа, что у недели
   function start() {
     if (!window.__otvMakeDeckUi || !window.__otvDeck) return;
