@@ -66,6 +66,14 @@ async def main():
           return { cols, tie: [T.main.map(x => x.name + x.place), T.reserve.map(x => x.name + x.place)] }; }""")
         ok = TP and len(TP['cols']) == 2 and len(TP['cols'][0]['main']) == 2 and any('Хирургия' in x for x in TP['cols'][0]['main']) and all('1 место' in x for x in TP['cols'][0]['main']) and TP['tie'] == [['А1', 'Б2'], ['В2', 'Г2']]
         res.append((ok, 'по кнопке — топ-3 отделения и топ-10 врачей; при равенстве на границе — резерв, «о больнице в целом» не участвует', TP))
+        X = await pg.evaluate("""async () => { window.__demoFiles = window.__demoFiles || []; const n0 = window.__demoFiles.length;
+          document.getElementById('anXlsx').click(); for (let i = 0; i < 30 && window.__demoFiles.length === n0; i++) await new Promise(r => setTimeout(r, 200));
+          const f = window.__demoFiles[window.__demoFiles.length - 1]; if (!f) return null;
+          return { name: f.filename, b64: String(f.data).replace(/^data:[^,]*,/, '') }; }""")
+        import base64, io, openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(X['b64']))) if X else None
+        ok = wb is not None and X['name'].endswith('.xlsx') and wb.sheetnames == ['Итог', 'Отделения', 'Врачи', 'Площадки', 'Темы', 'Месяцы', 'Отзывы'] and wb['Итог']['B4'].value == 5 and wb['Отзывы'].max_row == 7
+        res.append((ok, '«Скачать в Excel»: файл открывается, 7 листов, цифры как на экране, все отзывы периода', X and X['name']))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         for ok, t, d in res: print(('OK  ' if ok else 'FAIL') + ' ' + t, '' if ok else d)
         await b.close(); print('ALL OK' if all(r[0] for r in res) else 'SOME FAILED')

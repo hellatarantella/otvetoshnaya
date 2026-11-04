@@ -87,6 +87,56 @@
     return { main: main, reserve: reserve, edge: edge };
   }
 
+  /* ---------- выгрузка в Excel: листы «Итог», «Отделения», «Врачи», «Площадки», «Темы», «Месяцы», «Отзывы» ---------- */
+  function xesc(v) { return s(v).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function col(i) { var t = ""; i++; while (i > 0) { var m = (i - 1) % 26; t = String.fromCharCode(65 + m) + t; i = Math.floor((i - 1) / 26); } return t; }
+  function sheetXml(rows) {
+    var w = [];
+    rows.forEach(function (r) { r.forEach(function (v, i) { var l = Math.min(80, s(v).length + 2); w[i] = Math.max(w[i] || 8, l); }); });
+    var cols = "<cols>" + w.map(function (x, i) { return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + x + '" customWidth="1"/>'; }).join("") + "</cols>";
+    var data = rows.map(function (r, ri) {
+      return '<row r="' + (ri + 1) + '">' + r.map(function (v, ci) {
+        var ref = col(ci) + (ri + 1), st = ri === 0 ? ' s="1"' : "";
+        return typeof v === "number" && isFinite(v) ? '<c r="' + ref + '"' + st + '><v>' + v + "</v></c>" : '<c r="' + ref + '" t="inlineStr"' + st + '><is><t xml:space="preserve">' + xesc(v) + "</t></is></c>";
+      }).join("") + "</row>";
+    }).join("");
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' + cols + "<sheetData>" + data + "</sheetData></worksheet>";
+  }
+  function xlsx(sheets) {
+    var Z = window.JSZip; if (!Z) return Promise.reject(new Error("не удалось собрать файл Excel"));
+    var z = new Z(), n = sheets.length;
+    z.file("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+      sheets.map(function (x, i) { return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join("") + "</Types>");
+    z.file("_rels/.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+    z.file("xl/workbook.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+      sheets.map(function (x, i) { return '<sheet name="' + xesc(x.name.slice(0, 31)) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join("") + "</sheets></workbook>");
+    z.file("xl/_rels/workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      sheets.map(function (x, i) { return '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join("") +
+      '<Relationship Id="rId' + (n + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+    z.file("xl/styles.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+    sheets.forEach(function (x, i) { z.file("xl/worksheets/sheet" + (i + 1) + ".xml", sheetXml(x.rows)); });
+    return z.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  }
+  function workbook(A, mode) {
+    var t = function (list, name) { return [[name, "Благодарности", "Жалобы", "Всего"]].concat(list.map(function (x) { return [x.name + (x.sub ? " (" + x.sub + ")" : ""), x.pos, x.neg, x.pos + x.neg]; })); };
+    var rows = [];
+    A.depts.forEach(function (d) { d.rows.forEach(function (r) { if (rows.indexOf(r) < 0) rows.push(r); }); });
+    return [
+      { name: "Итог", rows: [["Показатель", "Значение"], ["Период", dm(A.rg.start) + " – " + dm(A.rg.end)], ["Как считали", mode === "placed" ? "по дате в отчёте" : "по дате поступления"], ["Благодарности", A.pos], ["Жалобы", A.neg],
+        ["Доля жалоб, %", A.pos + A.neg ? Math.round(A.neg * 100 / (A.pos + A.neg)) : 0]].concat(A.prev ? [["Прошлый период", dm(A.prev.start) + " – " + dm(A.prev.end)], ["Благодарности в прошлом периоде", A.prev.pos], ["Жалобы в прошлом периоде", A.prev.neg]] : []) },
+      { name: "Отделения", rows: t(A.depts, "Отделение") },
+      { name: "Врачи", rows: t(A.docs, "Врач") },
+      { name: "Площадки", rows: t(A.plats, "Площадка") },
+      { name: "Темы", rows: [["Тема", "Вид", "Отзывов"]].concat(A.themes.map(function (x) { return [x.name, "благодарность", x.n]; }), A.negT.map(function (x) { return [x.name, "жалоба", x.n]; })) },
+      { name: "Месяцы", rows: [["Месяц " + A.year, "Благодарности", "Жалобы", "Источник"]].concat(A.months.map(function (m) { return [m.label, m.pos == null ? "" : m.pos, m.neg == null ? "" : m.neg, m.seed ? "утверждённая сводка" : "программа"]; })) },
+      { name: "Отзывы", rows: [["Дата", "Площадка", "Вид", "Отделение", "Врач", "Текст"]].concat(rows.sort(function (a, b) { return dateOf(a, mode).localeCompare(dateOf(b, mode)); }).map(function (r) { return [dm(dateOf(r, mode)), r.platform || "", r.tone === "pos" ? "благодарность" : "жалоба", r.dept || "", r.doctor || "", s(r.text)]; })) }
+    ];
+  }
+  function exportXlsx(A, mode) {
+    var name = "Аналитика отзывов " + dm(A.rg.start) + "–" + dm(A.rg.end) + ".xlsx";
+    return Promise.all([xlsx(workbook(A, mode)), window.claude.use("downloads")]).then(function (r) { return r[1].save({ filename: name, data: r[0] }).then(function () { return name; }); });
+  }
+
   /* ---------- вкладка ---------- */
   var root, db, snaps = {}, mode = "placed", preset = "lastm", own = {}, open = null, timer = 0, showTop = false;
   try { var sv = JSON.parse(localStorage.getItem("otv-an") || "{}"); if (sv.preset) preset = sv.preset; if (sv.mode) mode = sv.mode; if (sv.own) own = sv.own; } catch (e) {}
@@ -164,6 +214,14 @@
     var tb = el("button", "btn primary", showTop ? "Скрыть лучших" : "Лучшие: 3 отделения и 10 врачей"); tb.type = "button"; tb.id = "anTopBtn";
     tb.addEventListener("click", function () { showTop = !showTop; render(); });
     act.append(tb);
+    var xb = el("button", "btn", "Скачать в Excel"); xb.type = "button"; xb.id = "anXlsx";
+    xb.addEventListener("click", function () {
+      xb.disabled = true; xb.textContent = "Сохраняю…";
+      exportXlsx(A, mode).then(function (n) { xb.textContent = "Сохранено в «Загрузки»"; if (window.__otvBar) window.__otvBar.show("Сохранено в «Загрузки»: " + n, "ok", [["Закрыть", window.__otvBar.hide]]); },
+        function (e) { xb.textContent = "Не сохранилось"; if (window.__otvBar) window.__otvBar.show("Не сохранилось: " + (e && e.message || e), "err", [["Закрыть", window.__otvBar.hide]]); })
+        .then(function () { setTimeout(function () { xb.disabled = false; xb.textContent = "Скачать в Excel"; }, 2500); });
+    });
+    act.append(xb);
     ctl.append(el("p", "ctl-p", "Период " + dm(rg.start) + " – " + dm(rg.end) + " · из недельных отчётов программы, без повторов"), act);
     root.append(ctl);
     if (!rows.length) { root.append(el("p", "an-muted", "Нет данных: аналитика считается по недельным отчётам программы. Подключите Google во вкладке «Отчёты» и соберите неделю.")); return; }
@@ -205,6 +263,6 @@
     });
     if (visible()) soon();
   }
-  window.__otvAnalytics = { compute: compute, range: range, top: top, render: function () { render(); } };
+  window.__otvAnalytics = { workbook: workbook, xlsx: xlsx, compute: compute, range: range, top: top, render: function () { render(); } };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 })();
