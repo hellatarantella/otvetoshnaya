@@ -236,7 +236,7 @@
       sents.push("Если хотите, чтобы мы разобрались подробнее, напишите нам на gkb24@zdrav.mos.ru с указанием даты и отделения.");
     }
     var fam = /мам[аеуы]|пап[аеуы]|муж[аеу]?\b|жен[аеуы]\b|сын|доч|бабушк|дедушк|родствен|близк|семь/i.test(s(it.review));
-    var bodyTxt = sents.join(" ").replace(/,? и желаем (вам )?(крепкого )?здоровья[^.]*\./g, ". Желаем здоровья.").replace(/Желаем (вам )?(крепкого )?здоровья( и [^.]*)?\./g, fam ? "Желаем здоровья вам и вашим близким." : "Желаем здоровья и всего самого доброго.");
+    var bodyTxt = sents.join(" ").replace(/,? и желаем (вам )?(крепкого )?здоровья[^.]*\./g, ". Желаем здоровья.").replace(/Желаем (вам )?(крепкого )?здоровья( вам)?( и [^.]*)?\./g, fam ? "Желаем здоровья вам и вашим близким." : "Желаем здоровья и всего самого доброго.");
     return greeting(it.author, tone) + "\n" + bodyTxt + "\n" + SIGN;
   }
 
@@ -278,18 +278,29 @@
   }
   // фразы недавно опубликованных ответов (все площадки): одна и та же фраза подряд — минус к варианту
   var COMMONS = /^(желаем здоровья|пожалуйста, напишите|напишите, пожалуйста|чтобы мы могли разобраться|с уважением)/;
-  function recentSents() {
-    var all = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("answers")) || {}, list = [], out = {};
-    Object.keys(all).forEach(function (id) { var a = all[id]; if (a && a.status === "published" && s(a.answer)) list.push(a); });
-    list.sort(function (a, b) { return s(b.publishedAt || b.date).localeCompare(s(a.publishedAt || a.date)); });
-    list.slice(0, 40).forEach(function (a) { sentsOf(a.answer).forEach(function (x) { out[x] = (out[x] || 0) + 1; }); });
+  // фразы недавно опубликованных ответов и черновиков в очереди (все площадки): одна и та же фраза подряд — минус к варианту.
+  // Черновики очереди учитываются, чтобы пачка новых отзывов за один сбор не получила одинаковые ответы
+  var QUEUE = /^(pending|approved|fix)$/, rsCache = { v: null, own: null, out: null };
+  function recentSents(own) {
+    var v = window.__otvVer ? window.__otvVer("answers") : null, ok = norm(own).slice(0, 80);
+    if (v && rsCache.v === v && rsCache.own === ok) return rsCache.out;
+    var all = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("answers")) || {}, pub = [], out = {};
+    Object.keys(all).forEach(function (id) {
+      var a = all[id]; if (!a || !s(a.answer)) return;
+      if (a.status === "published") pub.push(a);
+      else if (QUEUE.test(s(a.status)) && norm(a.review).slice(0, 80) !== ok) sentsOf(a.answer).forEach(function (x) { out[x] = (out[x] || 0) + 1; });
+    });
+    pub.sort(function (a, b) { return s(b.publishedAt || b.date).localeCompare(s(a.publishedAt || a.date)); });
+    pub.slice(0, 40).forEach(function (a) { sentsOf(a.answer).forEach(function (x) { out[x] = (out[x] || 0) + 1; }); });
+    rsCache = { v: v, own: ok, out: out };
     return out;
   }
   function sentsOf(t) { return (s(t).replace(/^Здравствуйте[^\n]*\n/, "").replace(SIGN, "").match(/[^.!?]+[.!?]*/g) || []).map(norm).filter(function (x) { return x.length > 12 && !COMMONS.test(x); }); }
-  function recentTexts(platform) {
-    var all = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("answers")) || {}, out = {};
+  function recentTexts(platform, own) {
+    var all = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("answers")) || {}, out = {}, ok = norm(own).slice(0, 80);
     Object.keys(all).forEach(function (id) {
-      var a = all[id]; if (!a || a.status !== "published" || s(a.platform) !== s(platform)) return;
+      var a = all[id]; if (!a || s(a.platform) !== s(platform)) return;
+      if (!(a.status === "published" || (QUEUE.test(s(a.status)) && norm(a.review).slice(0, 80) !== ok))) return;
       out[norm(s(a.answer).replace(/^Здравствуйте[^\n]*\n/, ""))] = 1;
     });
     return out;
@@ -389,7 +400,7 @@
   var given = {};   // какие тексты уже показаны для отзыва (в этом сеансе)
   function answer(it, opts) {
     opts = opts || {};
-    var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform), rs = recentSents();
+    var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform, it.review), rs = recentSents(it.review);
     (opts.exclude || []).forEach(function (k) { ex[k] = 1; });
     // дорогая обработка (оформление, проверки, судья) — только для 80 лучших по предварительной оценке:
     // база ответов растёт, а остальные варианты всё равно не выигрывают

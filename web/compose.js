@@ -109,7 +109,7 @@
     } else {
       // длина — по вашему стилю: обычно сколько предложений в ваших ответах на благодарности
       var L = window.__otvLearn, st = L && L.style ? L.style() : null, want = st && st.total >= 5 ? st.posLen : 0;
-      var mids = want ? Math.max(0, Math.min(2, want - 2 + (c.len > 400 ? 1 : 0) - (c.len < 80 ? 1 : 0))) : c.len > 400 ? 1 : c.len > 120 ? (rnd() < 0.6 ? 1 : 0) : 0;
+      var mids = want ? Math.max(0, Math.min(2, want - 2 + (c.len > 400 ? 1 : 0) - (c.len < 80 ? 1 : 0))) : c.len > 400 ? 1 : c.len > 120 ? (rnd() < 0.6 ? 1 : 0) : (rnd() < 0.4 ? 1 : 0);   // на короткий — иногда «Рады, что вам у нас понравилось»
       add("pOpen"); for (var mi = 0; mi < mids; mi++) add("pMid"); add("close");
     }
     return { key: "cmp:" + c.tone + ":" + parts.map(function (p) { return p[0]; }).join("."), parts: parts.map(function (p) { return p[0]; }), text: parts.map(function (p) { return p[1]; }).join(" ") };
