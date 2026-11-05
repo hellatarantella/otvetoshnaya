@@ -74,6 +74,12 @@ async def main():
         wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(X['b64']))) if X else None
         ok = wb is not None and X['name'].endswith('.xlsx') and wb.sheetnames == ['Итог', 'Отделения', 'Врачи', 'Площадки', 'Темы', 'Месяцы', 'Отзывы'] and wb['Итог']['B4'].value == 5 and wb['Отзывы'].max_row == 7
         res.append((ok, '«Скачать в Excel»: файл открывается, 7 листов, цифры как на экране, все отзывы периода', X and X['name']))
+        E = await pg.evaluate("""() => { const C = window.__otvAnalytics.compute, r = (pl, ar, tone) => ({ tone, placed: pl, arrived: ar, text: 'Спасибо ' + pl + ar, platform: 'Сайт', dept: 'Хирургия', doctor: '' });
+          const rows = [r('2026-10-31', '2026-11-01', 'pos'), r('2026-11-01', '2026-11-01', 'pos'), r('2026-10-01', '2026-10-02', 'neg'), r('2026-09-30', '2026-10-01', 'pos')];
+          const oct = C(rows, { start: '2026-10-01', end: '2026-10-31' }, 'placed'), octA = C(rows, { start: '2026-10-01', end: '2026-10-31' }, 'arrival');
+          const empty = C([], { start: '2026-10-01', end: '2026-10-31' }, 'placed');
+          return { pos: oct.pos, neg: oct.neg, posA: octA.pos, emptyOk: empty.pos === 0 && empty.depts.length === 0 }; }""")
+        res.append((E['pos'] == 1 and E['neg'] == 1 and E['posA'] == 1 and E['emptyOk'], 'границы месяца: 31.10 и 01.11, 30.09 и 01.10 — по дате в отчёте и по поступлению; пустой период', E))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         for ok, t, d in res: print(('OK  ' if ok else 'FAIL') + ' ' + t, '' if ok else d)
         await b.close(); print('ALL OK' if all(r[0] for r in res) else 'SOME FAILED')
