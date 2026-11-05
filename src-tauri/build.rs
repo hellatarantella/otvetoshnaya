@@ -23,6 +23,7 @@ fn main() {
         "gs_call",
         "log_append",
         "log_read",
+        "main_alive",
     ])))
     .expect("ошибка сборки");
 }

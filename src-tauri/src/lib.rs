@@ -316,6 +316,17 @@ fn source_window<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
 const DIAG_INIT: &str = r#"(function(){ if (window.top !== window) return; window.__otvErrs = [];
   window.addEventListener('error', function (e) { try { window.__otvErrs.push(String(e.message || (e.target && (e.target.src || e.target.href)) || e.type).slice(0, 160)); } catch (x) {} }, true);
   window.addEventListener('unhandledrejection', function (e) { try { window.__otvErrs.push('promise: ' + String(e.reason).slice(0, 160)); } catch (x) {} });
+  // 05.11: кабинет ДокТу грузит свой сценарий 6 МБ до 2 минут — окно стояло пустым («чёрный экран»).
+  // Пока на странице нет текста, сверху видна плашка: страница грузится, окно не зависло. Плашка — вне body, сайту не мешает.
+  var t0 = Date.now(), bar = null, tick = setInterval(function () { try {
+    var b = document.body, txt = b ? (b.innerText || '').trim().length : 0, s = Math.round((Date.now() - t0) / 1000);
+    if (txt >= 30 || s > 300) { clearInterval(tick); if (bar) bar.remove(); return; }
+    if (s < 2 || !document.documentElement) return;
+    if (!bar) { bar = document.createElement('div'); bar.id = 'otv-loading';
+      bar.setAttribute('style', 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483647;background:#262130;color:#efeaf6;font:500 14px/1.4 -apple-system,system-ui,sans-serif;padding:10px 16px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.35);max-width:90vw;text-align:center;pointer-events:none');
+      document.documentElement.appendChild(bar); }
+    bar.textContent = 'Страница ещё загружается — ' + s + ' с. Сайт отвечает медленно (бывает до 2 минут), окно не зависло.';
+  } catch (e) {} }, 1000);
 })();"#;
 
 /// Через 4 секунды после загрузки сообщает программе, что на странице: адрес, сколько текста, ошибки.
@@ -344,6 +355,7 @@ async fn source_open(app: tauri::AppHandle, id: String, url: String, title: Stri
         }
     }
     let u = parse_https(&url)?;
+    let u2 = u.clone();
     let base_title = title.clone();
     let sid = id.clone();
     let sid2 = id.clone();
@@ -354,6 +366,7 @@ async fn source_open(app: tauri::AppHandle, id: String, url: String, title: Stri
         .on_page_load(move |w, p| {
             use tauri::Emitter;
             let _ = w.set_title(&format!("{base_title} · {}", p.url()));
+            if let Ok(mut g) = COMMITTED.lock() { let l = w.label().to_string(); if !g.contains(&l) { g.push(l); } }
             let _ = w.emit_to("main", "source-nav", serde_json::json!({ "id": sid, "url": p.url().as_str(),
                 "finished": matches!(p.event(), tauri::webview::PageLoadEvent::Finished) }));
             if matches!(p.event(), tauri::webview::PageLoadEvent::Finished) {
@@ -370,9 +383,28 @@ async fn source_open(app: tauri::AppHandle, id: String, url: String, title: Stri
                 let _ = w.emit_to("main", "source-diag", serde_json::json!({ "id": sid2, "diag": d }));
             }
         });
-    b.build().map_err(|e| e.to_string())?;
+    let w = b.build().map_err(|e| e.to_string())?;
+    // окно, в котором страница так и не начала загружаться (05.11: «Вход: ДокТу» стоял пустым минутами),
+    // через 15 секунд открывает страницу заново; второй раз — через 45 секунд. Всё пишется в журнал
+    let lbl = w.label().to_string();
+    if let Ok(mut g) = COMMITTED.lock() { g.retain(|l| l != &lbl); }
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        for (i, wait) in [15u64, 30].iter().enumerate() {
+            std::thread::sleep(std::time::Duration::from_secs(*wait));
+            if COMMITTED.lock().map(|g| g.iter().any(|l| l == &lbl)).unwrap_or(true) { return; }
+            let w = match app2.get_webview_window(&lbl) { Some(w) => w, None => return };
+            if let Some(st) = app2.try_state::<Store>() {
+                journal_line(&st.dir, &format!("окно «{lbl}»: страница не начала загружаться за {} с — открываю заново (попытка {})", if i == 0 { 15 } else { 45 }, i + 1));
+            }
+            let _ = w.navigate(u2.clone());
+        }
+    });
     Ok(())
 }
+
+/// Окна входа, в которых страница начала загружаться (для повторной попытки, если не начала).
+static COMMITTED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// Разрешает страницам добавленного пользователем сайта вернуть собранные отзывы (только source_result).
 #[tauri::command]
@@ -758,6 +790,39 @@ async fn update_install() -> Result<(), String> {
     Err("Обновление через магазин приложений".into())
 }
 
+/// Сторож главного окна (05.11: «чёрный экран и всё»). Страница программы раз в 20 секунд отвечает «жива».
+/// Если видимое окно не отвечает 8 раз подряд (около 3 минут) — движок страницы упал (на Mac окно остаётся чёрным):
+/// пишем в журнал и перезагружаем страницу. Данные хранятся на диске, ничего не теряется.
+static MAIN_ALIVE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+fn now_secs() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) }
+
+#[tauri::command]
+fn main_alive() { MAIN_ALIVE.store(now_secs(), std::sync::atomic::Ordering::Relaxed); }
+
+fn watch_main(app: tauri::AppHandle, dir: PathBuf) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+        // считаем подряд пропущенные ответы; сон компьютера (пауза больше 40 с) обнуляет счёт
+        let (mut missed, mut seen, mut tick) = (0u32, 0u64, now_secs());
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(20));
+            let now = now_secs();
+            let gap = now.saturating_sub(tick); tick = now;
+            let w = match app.get_webview_window("main") { Some(w) => w, None => return };
+            let last = MAIN_ALIVE.load(std::sync::atomic::Ordering::Relaxed);
+            let shown = w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(true);
+            if gap > 40 || !shown || last == 0 || last != seen { missed = 0; } else { missed += 1; }
+            seen = last;
+            if missed >= 8 {
+                journal_line(&dir, "ЧЁРНЫЙ ЭКРАН: страница программы не отвечала около 3 минут — перезагружаю окно");
+                missed = 0;
+                let _ = w.reload();
+            }
+            let _ = w.eval("window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke('main_alive')");
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -789,6 +854,7 @@ pub fn run() {
                 })
                 .build()?;
             let _ = win;
+            watch_main(app.handle().clone(), app.path().app_data_dir().expect("нет папки данных"));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -808,6 +874,7 @@ pub fn run() {
             source_allow,
             log_append,
             log_read,
+            main_alive,
             model::model_status,
             model::model_download,
             model::model_delete,

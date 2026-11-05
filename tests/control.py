@@ -33,6 +33,12 @@ async def main():
           const t = window.__otvControl.issues().map(i => i.text);
           return { q: t.some(x => /Вопросы без справки: \\d/.test(x)), v: t.some(x => /однообразными/.test(x)), j: t.some(x => /Сбои программы/.test(x)), share: window.__otvControl.variety().share }; }""")
         res.append((Q['q'] and Q['v'] and Q['j'], 'самоконтроль: вопрос без справки, однообразные ответы, сбои из журнала', Q))
+        Z = await pg.evaluate("""() => { const f = window.__otvControl._same, S = 'С уважением, администрация 24 Московской больницы.';
+          const a = 'Здравствуйте, Анна!\\nСпасибо за отзыв и тёплые слова о «нашей» команде — передадим врачам.\\n' + S;
+          return { inline: f('Здравствуйте, Анна! Спасибо за отзыв и тёплые слова о нашей команде - передадим врачам. ' + S, a),
+                   cut: f('Здравствуйте, Анна! Спасибо за отзыв и тёплые слова о нашей команде, передадим', a),
+                   other: f('Здравствуйте! Совсем другой ответ, опубликованный не тот. ' + S, a) }; }""")
+        res.append((Z['inline'] and Z['cut'] and not Z['other'], 'сверка с площадкой: приветствие в одной строке, кавычки, тире, обрезка — не расхождение; другой текст — расхождение', Z))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         for ok, t, d in res: print(('OK  ' if ok else 'FAIL') + ' ' + t, '' if ok else json.dumps(d, ensure_ascii=False)[:1500])
         await b.close(); print('ALL OK' if all(x[0] for x in res) else 'SOME FAILED')

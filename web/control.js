@@ -13,6 +13,16 @@
     return isNaN(t) ? 0 : (Date.now() - t) / 864e5;
   }
   var WAIT = /^(new|pending|check)$/;
+  // тот же ли это ответ: без приветствия (площадки склеивают строки — приветствие бывает в одной строке с текстом),
+  // без подписи и разницы в пробелах, кавычках, тире; площадка может обрезать длинный ответ — сравниваем начало
+  function replyCore(t) {
+    return norm(s(t).replace(/^\s*Здравствуйте[^!.\n]{0,60}[!.\n]?/, "").replace(/С уважением[\s\S]*$/, "").replace(/[«»"„“”'’]/g, "").replace(/[—–-]/g, " ")).replace(/\s+/g, " ").trim();
+  }
+  function sameReply(a, b) {
+    var x = replyCore(a), y = replyCore(b); if (!x || !y) return true;
+    var n = Math.min(60, x.length, y.length);
+    return x.slice(0, n) === y.slice(0, n);
+  }
   function issues() {
     var out = [], A = all("answers"), G = window.__otvGen, negOld = 0, posOld = 0, diff = [];
     Object.keys(A).forEach(function (id) {
@@ -23,8 +33,8 @@
         if (tone === "negative" && age >= 1) negOld++; else if (age >= 3) posOld++;
       }
       if (a.status === "published" && s(a.answer).trim()) {   // на площадке другой текст, чем согласованный
-        var r = window.__otvGet ? window.__otvGet("registry", id) : null, body = function (t) { return norm(s(t).replace(/^\s*Здравствуйте[^\n]*\n/, "").replace(/С уважением[\s\S]*$/, "")).slice(0, 80); };
-        if (r && s(r.reply).trim() && body(r.reply) && body(r.reply) !== body(a.answer)) diff.push(a.platform + (a.author ? ", " + a.author : ""));
+        var r = window.__otvGet ? window.__otvGet("registry", id) : null;
+        if (r && s(r.reply).trim() && !sameReply(r.reply, a.answer)) diff.push(a.platform + (a.author ? ", " + a.author : ""));
       }
     });
     if (negOld) out.push({ text: "Жалобы без ответа больше суток: " + negOld, tab: "neg" });
@@ -61,7 +71,7 @@
     jAt = Date.now();
     window.__otvReadJournal().then(function (txt) {
       var cut = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10) + " " + new Date(Date.now() - 2 * 864e5).toISOString().slice(11, 19);
-      jErr = s(txt).split("\n").filter(function (l) { return l.slice(0, 19) >= cut && /ВЫЛЕТ|ВНУТРЕННЯЯ ОШИБКА|ошибка страницы/.test(l); }).map(function (l) { return l.slice(24); });
+      jErr = s(txt).split("\n").filter(function (l) { return l.slice(0, 19) >= cut && /ВЫЛЕТ|ВНУТРЕННЯЯ ОШИБКА|ЧЁРНЫЙ ЭКРАН|ошибка страницы/.test(l); }).map(function (l) { return l.slice(24); });
       paint();
     }, function () {});
   }
@@ -100,6 +110,6 @@
     setInterval(function () { scanJournal(); paint(); }, 5 * 60 * 1000);
     setTimeout(function () { scanJournal(); paint(); }, 3000);
   }
-  window.__otvControl = { issues: issues, refresh: paint, variety: function () { return variety(all("answers")); }, _journal: function (lines) { jErr = lines; } };
+  window.__otvControl = { _same: sameReply,  issues: issues, refresh: paint, variety: function () { return variety(all("answers")); }, _journal: function (lines) { jErr = lines; } };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 })();

@@ -27,6 +27,7 @@
     "allow-model-generate",
     "allow-gs-call",
     "allow-log-append",
-    "allow-log-read"
+    "allow-log-read",
+    "allow-main-alive"
   ]
 }

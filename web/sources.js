@@ -901,7 +901,7 @@
     { id: "pd", name: "ПроДокторов", cls: "pf-pd", url: "https://prodoctorov.ru/cabinet/lpu-rates/?lpu=21011", prefix: "https://prodoctorov.ru/cabinet/", wait: 2500, fn: PD },
     { id: "ya", name: "Яндекс", cls: "pf-ya", visible: true, timeout: 90000, url: "https://yandex.ru/sprav/1022361531/p/edit/reviews/", prefix: "https://yandex.ru/sprav/1022361531/", wait: 4000, fn: YA },
     { id: "gis", name: "2ГИС", cls: "pf-gis", url: "https://account.2gis.com/orgs/4504136498428595/reviews", prefix: "https://account.2gis.com/orgs/4504136498428595/", wait: 7000, fn: GIS },
-    { id: "dt", name: "ДокТу", cls: "pf-dt", url: "https://doctu.ru/msk/clinic/gkb-24/reviews", prefix: "https://doctu.ru/", wait: 4000, fn: DOCTU, noLogin: true, login: "https://manager.doctu.ru/network/reviews" },
+    { id: "dt", name: "ДокТу", cls: "pf-dt", url: "https://doctu.ru/msk/clinic/gkb-24/reviews", prefix: "https://doctu.ru/", wait: 4000, fn: DOCTU, noLogin: true, login: "https://manager.doctu.ru/network/reviews", slow: "Кабинет ДокТу открывается медленно — до 2 минут пустое окно, это нормально." },
     { id: "go", name: "Google", cls: "pf-go", reuse: true, visible: true, url: GOOGLE_URL, prefix: "https://www.google.com/search", wait: 4000, fn: GOOGLE,
       hint: "Если Google просит войти, войдите в окне «Войти» в аккаунт больницы и нажмите «Проверить», не закрывая окно." },
     { id: "np", name: "НаПоправку", cls: "pf-np", url: "https://napopravku.ru/moskva/clinics/gorodskaja-klinicheskaja-bolnica-24/otzyvy/?sort=published", prefix: "https://napopravku.ru/moskva/clinics/gorodskaja-klinicheskaja-bolnica-24/", wait: 3000, fn: NP, login: NP_CABINET,
@@ -1286,7 +1286,7 @@
     const SIGNED = /администрация 24 Московской больницы/;
     const head = norm(review).replace(/[.…\s]+$/, '').slice(0, 40), sur = norm(surname);
     let row = null;
-    for (let i = 0; i < 30 && !row; i++) {
+    for (const t0 = Date.now(); Date.now() - t0 < 170000 && !row;) {   // кабинет ДокТу грузит сценарий до 2 минут (05.11): ждём список до 3 минут
       const rows = [...document.querySelectorAll('tr.table-row')].filter(x => x.querySelector('legend a'));
       const m = rows.filter(x => (!sur || norm(x.querySelector('legend a').textContent).includes(sur)) && norm((x.querySelector('.commentTextElipsis') || x).innerText).includes(head));
       if (m.length > 1) throw new Error('нашлось несколько похожих отзывов. Опубликуйте вручную');
@@ -1355,7 +1355,7 @@
     return new Promise(function (res) {
       var done = false;
       function fin(p) { if (done) return; done = true; clearTimeout(t); delete pending[key]; invoke("source_close", { label: "src-" + key + "-c" }).catch(function () {}); res(p); }
-      var t = setTimeout(function () { fin({ ok: false, error: "площадка не ответила за 2 минуты" }); }, 120000);
+      var slow = key === "pubdt", t = setTimeout(function () { fin({ ok: false, error: "площадка не ответила за " + (slow ? 4 : 2) + " минуты" }); }, slow ? 240000 : 120000);
       pending[key] = fin;
       invoke("source_collect", { id: key, url: job.url, script: job.script, prefix: job.prefix, waitMs: 3000, show: false, reuse: false, visible: true })
         .catch(function (e) { fin({ ok: false, error: String(e) }); });
@@ -1919,7 +1919,7 @@
   function loginThenCollect(s) {
     waitLogin[s.id] = Date.now();
     invoke("source_open", { id: s.id, url: s.login || s.url, title: "Вход: " + s.name }).catch(function (e) { window.__otvBar.show("Не открылось: " + e, "err"); });
-    window.__otvBar.show(s.name + ": войдите в открывшемся окне. Как только кабинет откроется, программа сама прочитает его.", "", [["Готово", function () { delete waitLogin[s.id]; window.__otvBar.hide(); afterLogin(s); }]]);
+    window.__otvBar.show(s.name + ": войдите в открывшемся окне. Как только кабинет откроется, программа сама прочитает его." + (s.slow ? " " + s.slow : ""), "", [["Готово", function () { delete waitLogin[s.id]; window.__otvBar.hide(); afterLogin(s); }]]);
   }
   listen("source-nav", function (ev) {
     var d = ev.payload || {}, s = SOURCES.filter(function (x) { return x.id === d.id; })[0];
@@ -1944,16 +1944,18 @@
       var line = st.busy ? "читаю…" : st.ok ? st.count + " за " + DAYS + " дн. · " + fmt(st.at) : st.at ? fmt(st.at) : "";
       if (line) head.append(el("span", "meta", line));
       var bad = !st.busy && !st.ok && (st.needLogin || st.error);
-      var stt = el("span", "status " + (st.ok ? "st-approved" : bad ? "st-fix" : "st-pending"),
-                   st.ok ? "Работает" : st.needLogin ? "Нужен вход" : st.down ? "Сбой у площадки" : st.error ? "Не вышло" : "Не проверен");
+      var stt = el("span", "status " + (st.busy ? "st-pending" : st.ok ? "st-approved" : bad ? "st-fix" : "st-pending"),
+                   st.busy ? "Читаю…" : st.ok ? "Работает" : st.needLogin ? "Нужен вход" : st.down ? "Сбой у площадки" : st.error ? "Не вышло" : "Не проверен");
       var dg = diag[s.id];
       var tip = [st.error && !st.needLogin ? st.error : "", dg ? "Окно входа: " + String(dg.url || "").slice(0, 90) + (dg.text != null && dg.text < 20 ? " (пустая страница)" : "") + (dg.errs && dg.errs.length ? " · " + dg.errs.join("; ").slice(0, 200) : "") : ""].filter(Boolean).join("\n");
       if (tip) stt.title = tip;
       head.append(stt);
       card.append(head);
+      // причина видна сразу, а не только во всплывающей подсказке (05.11: «Не вышло» без объяснения)
+      if (bad && !st.busy) card.append(el("p", "meta src-why", st.needLogin ? "Нужен вход: нажмите «Войти», войдите и нажмите «Проверить»." + (s.slow ? " " + s.slow : "") : String(st.error || "").slice(0, 220)));
       var a = el("div", "actions");
       var login = el("button", "btn", s.open ? "Открыть" : "Войти"); login.type = "button";
-      login.addEventListener("click", function () { invoke("source_open", { id: s.id, url: s.login || s.url, title: "Вход: " + s.name }).catch(function (e) { window.__otvBar.show("Не открылось: " + e, "err"); }); });
+      login.addEventListener("click", function () { if (s.slow) window.__otvBar.show(s.slow); invoke("source_open", { id: s.id, url: s.login || s.url, title: "Вход: " + s.name }).catch(function (e) { window.__otvBar.show("Не открылось: " + e, "err"); }); });
       var check = el("button", "btn", "Проверить"); check.type = "button"; check.disabled = running;
       // окно входа закрываем, кроме Google и почты: они читаются прямо из открытого окна
       check.addEventListener("click", function () { if (!s.reuse) invoke("source_close", { label: "src-" + s.id }).catch(function () {}); collect([s]); });
