@@ -36,12 +36,53 @@
   function pickDoc() { return cur ? (picks[pickId()] || {}) : {}; }
   // каждое нажатие даёт видимый ответ: «Сохранено…» или причину (29.10: казалось, что кнопки не работают)
   function bar(t, kind) { if (window.__otvBar) window.__otvBar.show(t, kind || "", [["Закрыть", window.__otvBar.hide]]); }
-  function savePick(patch, msg) {
-    if (!cur) { bar("Не выбран период презентации", "err"); return Promise.resolve(); }
+  // запрос и его ключ: по нему после пересборки находим ту же строку (или видим, что запрос закрыт)
+  function needKey(n) { return n.kind + ":" + s(n.short || n.field || n.who || n.slot || ""); }
+  // ответ на нажатие — прямо в строке, где нажали (05.11: «нажимаю подтвердить — ниче не меняется, выглядит глючно»)
+  function rowMsg(row, text, kind) {
+    if (!row) return; var m = row.querySelector(".deck-need-msg");
+    if (!m) { m = el("p", "deck-need-msg"); row.append(m); }
+    m.className = "deck-need-msg " + (kind || ""); m.textContent = text;
+  }
+  function fail(row, text) { rowMsg(row, "⚠ " + text, "bad"); bar(text, "err"); if (row) { row.classList.remove("is-shake"); void row.offsetWidth; row.classList.add("is-shake"); } }
+  var fx = null;   // что показать после пересборки: какие слайды изменились и что сохранено
+  function savePick(row, patch, msg) {
+    if (row && !(row instanceof Element)) { msg = patch; patch = row; row = null; }
+    if (!cur) { fail(row, "Не выбран период презентации"); return Promise.resolve(); }
     var id = pickId(), d = Object.assign({}, picks[id] || {}, patch, { at: new Date().toISOString() });
-    picks[id] = d;
-    return db.collection("deckPicks").doc(id).set(d).then(function () { rebuild(); bar((msg || "Сохранено") + ". Презентация пересобрана", "ok"); })
-      .catch(function (e) { log("решение не сохранилось: " + (e && e.stack || e)); bar("Не сохранилось: " + (e && e.message || e) + ". Журнал записан", "err"); });
+    if (row) { row.classList.add("is-saving"); [].forEach.call(row.querySelectorAll("button,input,select"), function (x) { x.disabled = true; }); rowMsg(row, "Сохраняю и пересобираю слайды…", "busy"); }
+    var pv = root && root.querySelector(".deck-preview"); if (pv) pv.classList.add("is-busy");
+    var prev = slides.slice(), key = row ? row.dataset.k : "";
+    // даём экрану показать «Сохраняю…» до тяжёлой пересборки
+    return new Promise(function (ok) { setTimeout(ok, 30); }).then(function () {
+      picks[id] = d;
+      return db.collection("deckPicks").doc(id).set(d);
+    }).then(function () {
+      fx = { prev: prev, key: key, msg: msg || "Сохранено", until: Date.now() + 4000 };
+      rebuild(); bar((msg || "Сохранено") + ". Презентация пересобрана", "ok");
+    }).catch(function (e) {
+      log("решение не сохранилось: " + (e && e.stack || e));
+      if (row) { row.classList.remove("is-saving"); [].forEach.call(row.querySelectorAll("button,input,select"), function (x) { x.disabled = false; }); }
+      if (pv) pv.classList.remove("is-busy");
+      fail(row, "Не сохранилось: " + (e && e.message || e) + ". Журнал записан");
+    });
+  }
+  // после пересборки: строка «✓ Сохранено» на месте закрытого запроса, подсветка изменившихся слайдов
+  function showFx(pv) {
+    // держим отметку 4 с: пересборка по событию базы сразу после сохранения не должна её стереть
+    var f = fx; if (!f || !root) return; if (Date.now() > f.until) { fx = null; return; }
+    var changed = []; slides.forEach(function (h, i) { if (f.prev[i] !== h) changed.push(i); });
+    var frames = pv ? pv.querySelectorAll(".deck-slide") : [];
+    changed.forEach(function (i) { var fr = frames[i]; if (fr) { fr.classList.add("just-changed"); setTimeout(function () { fr.classList.remove("just-changed"); }, 2600); } });
+    var still = f.key && [].filter.call(root.querySelectorAll(".deck-need"), function (r) { return r.dataset.k === f.key; });
+    var nums = changed.map(function (i) { return i + 1; });
+    var tail = nums.length ? (nums.length === 1 ? " · обновился слайд " + nums[0] : " · обновились слайды " + nums.join(", ")) : " · так и стоит на слайдах";
+    if (still && still.length) { still.forEach(function (r) { rowMsg(r, "✓ " + f.msg + tail, "ok"); r.classList.add("just-saved"); }); }
+    var box = root.querySelector(".deck-needs"); if (!box) return;
+    var done = el("div", "deck-done"); done.append(el("span", null, "✓ " + f.msg + tail));
+    if (nums.length && frames[changed[0]]) done.append(btn("Показать", "", function () { frames[changed[0]].scrollIntoView({ behavior: "smooth", block: "center" }); frames[changed[0]].classList.add("just-changed"); setTimeout(function () { frames[changed[0]].classList.remove("just-changed"); }, 2600); }));
+    var h = box.querySelector("h3"); h.after(done);
+    setTimeout(function () { done.classList.add("fade"); }, 6000);
   }
   // фраза до сохранения: объём и законченность. Не подходит — сразу говорим, что не так (раньше молча заменялась прежней)
   function quoteProblem(v, band) {
@@ -111,7 +152,7 @@
     chk.append(ul); root.append(chk);
     // что подтвердить
     var need = res.need;
-    var nb = el("div", "deck-box"); nb.append(el("h3", null, need.length ? "Нужно ваше решение: " + need.length : "Всё подтверждено"));
+    var nb = el("div", "deck-box deck-needs"); nb.append(el("h3", null, need.length ? "Нужно ваше решение: " + need.length : "Всё подтверждено"));
     need.forEach(function (n) { nb.append(needRow(n)); });
     if (!need.length) nb.append(el("p", "hint", "Текст на слайдах можно поправить прямо в предпросмотре: нажмите на текст."));
     nb.append(extraRow());
@@ -158,14 +199,14 @@
 
   /* ---------- решения пользователя ---------- */
   function needRow(n) {
-    var row = el("div", "deck-need"); row.append(el("p", null, n.text));
+    var row = el("div", "deck-need"); row.dataset.k = needKey(n); row.append(el("p", null, n.text));
     if (n.kind === "photo") {
       var kind = KIND_SIZE[n.slot] ? n.slot : n.tall ? "tall" : "face";
       row.append(photoPicker(n.who, kind));
-      if (kind === "face") row.append(btn("Фото нет: перенести в строку «Ещё…»", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick({ gold: g }); }));
+      if (kind === "face") row.append(btn("Фото нет: перенести в строку «Ещё…»", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick(row, { gold: g }); }));
     } else if (n.kind === "quote") {
       var qp = quotePicker(n.options, n.current, n.band, "Цитата");
-      row.append(qp.box, btn("Подтвердить цитату", "primary", function () { var v = qp.value(), bad = quoteProblem(v, n.band) || usedProblem(v, n.used) || (n.stale ? n.stale(v) : ""); if (bad) { bar("Цитата для " + n.short + " не принята: " + bad, "err"); return; } var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick({ quote: q, own: ownList(v, n.options) }, "Цитата для " + n.short + " сохранена"); }));
+      row.append(qp.box, btn("Подтвердить цитату", "primary", function () { var v = qp.value(), bad = quoteProblem(v, n.band) || usedProblem(v, n.used) || (n.stale ? n.stale(v) : ""); if (bad) { fail(row, "Цитата для " + n.short + " не принята: " + bad); return; } var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick(row, { quote: q, own: ownList(v, n.options) }, "Цитата для " + n.short + " сохранена"); }));
     } else if (n.kind === "review") {
       var list = el("div", "deck-opts"), chosen = null, rq = null, rqBox = el("div");
       var setQ = function (o, cur0) { rq = quotePicker(o.quotes && o.quotes.length ? o.quotes : [o.quote], cur0 || o.quote, n.band, "Цитата отзыва недели"); rqBox.textContent = ""; rqBox.append(rq.box); };
@@ -176,7 +217,7 @@
         list.append(lab);
       });
       if (chosen) setQ(chosen);
-      row.append(list, rqBox, btn("Выбрать отзыв недели", "primary", function () { if (!chosen) { bar("Выберите отзыв недели", "err"); return; } var v = rq.value() || chosen.quote, bad = quoteProblem(v, n.band); if (bad) { bar("Цитата отзыва недели не принята: " + bad, "err"); return; } savePick({ review: chosen.key, own: ownList(v, chosen.quotes || [chosen.quote]), reviewText: Object.assign({}, pickDoc().reviewText || {}, { quote: v }) }); }));
+      row.append(list, rqBox, btn("Выбрать отзыв недели", "primary", function () { if (!chosen) { fail(row, "Выберите отзыв недели"); return; } var v = rq.value() || chosen.quote, bad = quoteProblem(v, n.band); if (bad) { fail(row, "Цитата отзыва недели не принята: " + bad); return; } savePick(row, { review: chosen.key, own: ownList(v, chosen.quotes || [chosen.quote]), reviewText: Object.assign({}, pickDoc().reviewText || {}, { quote: v }) }, "Отзыв недели выбран"); }));
     } else if (n.kind === "choice") {
       // выбор одного из вариантов (например, как считать месяц) — сохраняется в решениях периода
       var box = el("div", "deck-opts"), val = n.current, nm = "ch" + Math.random().toString(36).slice(2, 7);
@@ -184,7 +225,7 @@
         var lab = el("label", "deck-opt"), rb = el("input"); rb.type = "radio"; rb.name = nm; rb.value = o.key; rb.checked = o.key === n.current;
         rb.addEventListener("change", function () { val = o.key; }); lab.append(rb, el("span", null, " " + o.label)); box.append(lab);
       });
-      row.append(box, btn("Подтвердить", "primary", function () { var patch = {}; patch[n.field] = val; savePick(patch, "Сохранено: " + ((n.options || []).filter(function (o) { return o.key === val; })[0] || {}).label); }));
+      row.append(box, btn("Подтвердить", "primary", function () { var patch = {}; patch[n.field] = val; savePick(row, patch, "Сохранено: " + ((n.options || []).filter(function (o) { return o.key === val; })[0] || {}).label); }));
     } else if (n.kind === "voices") {
       // у каждого голоса — врач и выбор цитаты из его отзыва (или своя фраза)
       var opts = n.options || [], slots = [0, 1, 2].map(function (i) {
@@ -202,8 +243,8 @@
         var v = slots.map(function (x) { return x.get(); }).filter(Boolean), ownAll = (pickDoc().own || []).slice();
         v.forEach(function (x) { ownAll = ownList(x.quote, x.opts, ownAll); delete x.opts; });
         var bad = v.map(function (x, i) { var p = quoteProblem(x.quote, n.band); return p ? "голос " + (i + 1) + " (" + x.short + "): " + p : ""; }).filter(Boolean);
-        if (bad.length) { bar("Голоса не приняты: " + bad.join("; "), "err"); return; }
-        savePick({ voices: v, own: ownAll }, "Голоса недели сохранены");
+        if (bad.length) { fail(row, "Голоса не приняты: " + bad.join("; ")); return; }
+        savePick(row, { voices: v, own: ownAll }, "Голоса недели сохранены");
       }));
     }
     return row;
@@ -320,7 +361,7 @@
     dropObservers(); pv.textContent = ""; slides = K.slides(res.D);
     var edits = (pickDoc().edits || {}), all = [];
     slides.forEach(function (h, i) {
-      var fr = el("div", "deck-slide"), inner = el("div", "deck-slide-in");
+      var fr = el("div", "deck-slide"), inner = el("div", "deck-slide-in"); fr.dataset.n = String(i + 1);
       setHtml(inner, h); fr.append(inner); pv.append(fr); fit(fr, inner);
       var sec = inner.firstElementChild, id = sec.id, saved = edits[id];
       if (saved && saved.sig === sig(h)) {
@@ -332,6 +373,7 @@
       sec.addEventListener("focusout", function () { clean(sec); var e = Object.assign({}, pickDoc().edits || {}); e[id] = { sig: sig(h), html: lightHtml(sec.innerHTML) }; savePickQuiet({ edits: e }); check(); });
       all.push(sec);
     });
+    try { showFx(pv); } catch (e) { log("отметка сохранения: " + e); }
     function check() {
       // самопроверка — на неуменьшенной копии слайда
       var issues = [], tmp = el("div", "deck-measure");
