@@ -27,6 +27,16 @@ async def main():
         res.append((ok, 'контент-анализ моделью: разборы записаны и доступны «Аналитике» и месячной презентации, выдуманный сотрудник и тема не из перечня отброшены', A))
         P2 = await pg.evaluate("""() => window.__otvAi.parse('мусор без json') === null && window.__otvAi.parse('{\"тон\":\"жалоба\",\"сотрудники\":[],\"благодарят_за\":[],\"жалуются_на\":[\"Запись и ожидание\"],\"вопрос\":\"\",\"суть\":\"x\"}').neg[0] === 'Запись и ожидание'""")
         res.append((P2, 'непонятный ответ модели не ломает разбор', P2))
+        PH = await pg.evaluate("""async () => { const n = await window.__otvPhrases.batch(2); const db = await window.__otvRt.use('db');
+          const all = window.__otvAll('phrases'), prop = Object.entries(all).filter(([k, p]) => p.status === 'proposed');
+          const bad = prop.some(([k, p]) => /извин/i.test(p.text));
+          window.__otvShowTab('kb'); await new Promise(r => setTimeout(r, 500)); const d = document.getElementById('kbPhrases'); d.open = true;
+          const yes = [...d.querySelectorAll('button')].find(b => b.textContent === 'Взять'); const txt = yes.closest('.kb-ph').firstChild.textContent.replace(/[«»]/g, ''); yes.click();
+          await new Promise(r => setTimeout(r, 500));
+          const it = { platform: 'Яндекс', page: 'Карточка больницы', author: 'Олег', rating: 5, review: 'Спасибо всем, отличная больница, внимательные сотрудники, всё понравилось.' };
+          const used = window.__otvCompose.variants(it, { tone: 'positive', type: 'hospital' }, 60).some(v => v.text.includes(txt));
+          return { n, prop: prop.length, bad, txt, used }; }""")
+        res.append((PH['n'] >= 2 and not PH['bad'] and PH['used'], 'новые формулировки модели: неподходящие (с извинением) отброшены, взятая вами — в ответах', PH))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         for ok, t, d in res: print(('OK  ' if ok else 'FAIL') + ' ' + t, '' if ok else json.dumps(d, ensure_ascii=False)[:2500])
         await b.close(); print('ALL OK' if all(x[0] for x in res) else 'SOME FAILED')

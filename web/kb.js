@@ -211,6 +211,7 @@
     box.append(top);
     box.append(learnBlock());
     if (window.__otvFacts) box.append(window.__otvFacts.block());
+    box.append(phrasesBlock());
     var res = el("div"); res.id = "kbList"; box.append(res);
     list();
   }
@@ -254,6 +255,31 @@
     });
     return lb;
   }
+  /* новые формулировки от модели — на согласование: «Взять» — и программа начнёт ставить их в ответы */
+  var phOpen = false;
+  function phrasesBlock() {
+    var PH = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("phrases")) || {};
+    var prop = Object.keys(PH).filter(function (k) { return PH[k] && PH[k].status === "proposed"; }), appr = Object.keys(PH).filter(function (k) { return PH[k] && PH[k].status === "approved"; });
+    var d = el("details", "card"); d.id = "kbPhrases"; d.open = phOpen; d.addEventListener("toggle", function () { phOpen = d.open; });
+    d.hidden = !prop.length && !appr.length;
+    d.append(el("summary", null, "Новые формулировки от модели" + (prop.length ? ": на согласование " + prop.length : "") + (appr.length ? " · взяты " + appr.length : "")));
+    var SL = { open: "вступление", mid: "середина", nOpen: "начало ответа на жалобу", concern: "о рассмотрении", promise: "обещание ответить" };
+    prop.slice(0, 40).forEach(function (k) {
+      var p = PH[k], row = el("div", "kb-ph");
+      row.append(el("div", null, "«" + p.text + "»"), el("div", "meta", (p.tone === "neg" ? "жалоба · " : "благодарность · ") + (SL[p.slot] || p.slot) + " · вместо «" + p.from + "»"));
+      var a = el("div", "actions"), yes = el("button", "btn", "Взять"), no = el("button", "btn ghost", "Не брать"); yes.type = no.type = "button";
+      var set = function (stv) { yes.disabled = no.disabled = true; db.collection("phrases").doc(k).update({ status: stv, decidedAt: new Date().toISOString() }).then(refreshPhrases, refreshPhrases); };
+      yes.addEventListener("click", function () { set("approved"); }); no.addEventListener("click", function () { set("rejected"); });
+      a.append(yes, no); row.append(a); d.append(row);
+    });
+    if (appr.length) {
+      var dd = el("details"); dd.append(el("summary", null, "Взятые формулировки: " + appr.length));
+      appr.forEach(function (k) { var p = PH[k], r = el("p", "meta", "«" + p.text + "» "), x = el("button", "link", "убрать"); x.type = "button"; x.addEventListener("click", function () { db.collection("phrases").doc(k).update({ status: "rejected" }).then(refreshPhrases); }); r.append(x); dd.append(r); });
+      d.append(dd);
+    }
+    return d;
+  }
+  function refreshPhrases() { var o = document.getElementById("kbPhrases"); if (o) o.replaceWith(phrasesBlock()); }
   function refreshLearn() { var old = document.getElementById("kbLearn"); if (old) old.replaceWith(learnBlock()); }
 
   function list() {
@@ -289,6 +315,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     window.claude.use("db").then(function (d) {
       db = d;
+      db.collection("phrases").onSnapshot(function () { refreshPhrases(); }, function () {});
       db.collection("kb").onSnapshot(function (snap) {
         rows = snap.docs.map(function (x) { var o = x.data() || {}; o.id = x.id; return o; });
         if (document.getElementById("kbList")) { list(); refreshLearn(); } else render();

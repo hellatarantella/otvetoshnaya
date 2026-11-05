@@ -244,6 +244,57 @@
     }, Promise.resolve()).then(function () { anBusy = false; refresh(); return done; }, function () { anBusy = false; return done; });
   }
   setInterval(function () { analyzeBatch(10); }, 10 * 60 * 1000);
+
+  /* ---------- новые формулировки: модель перефразирует фразы ответов, программа проверяет, вы согласуете ---------- */
+  // источники — фразы сборщика и ваша копилка (вступления и середина благодарностей, фразы ответа на жалобу); концовки и просьбы с почтой — не трогаем
+  var PH_SLOTS = { pOpen: ["pos", "open"], pMid: ["pos", "mid"], nOpen: ["neg", "nOpen"], nConcern: ["neg", "concern"], nPromise: ["neg", "promise"] };
+  function phraseSources() {
+    var C = window.__otvCompose, L = window.__otvLearn, out = [];
+    Object.keys(PH_SLOTS).forEach(function (b) {
+      var m = PH_SLOTS[b];
+      (C && C.banks[b] || []).forEach(function (x) { out.push({ text: x[1], tone: m[0], slot: m[1] }); });
+      if (L && L.myPhrases) L.myPhrases(m[0], m[1]).forEach(function (p) { out.push({ text: p.text, tone: m[0], slot: m[1] }); });
+    });
+    return out;
+  }
+  function phKey(t) { var h = 0; t = s(t).toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim(); for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return "ph" + (h >>> 0).toString(36); }
+  function phOk(v, src) {
+    var SP = window.__otvSpeech, C = window.__otvCompose, t = s(v).trim().replace(/^[«"—-]\s*|[»"]$/g, "");
+    if (t.length < 15 || t.length > Math.max(160, src.text.length * 1.6) || !/[.!?]$/.test(t)) return "";
+    if (/[A-Za-z]|\d|gkb24|@|[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]+(вна|вич)/.test(t)) return "";                 // без латиницы, цифр, почты, имён
+    if (src.tone === "neg" && /извин|сожале|прост(ите|и)\b/i.test(t)) return "";                     // правило: без извинений
+    if (/клиник|помога\S* нам станов|врачи и персонал|особенно ценим/i.test(t)) return "";            // запреты справочника
+    if (SP && SP.audit(t).score < 8) return "";
+    if (C && C.repeats && C.repeats(t)) return "";
+    if (t.toLowerCase() === src.text.toLowerCase()) return "";
+    return t;
+  }
+  var phBusy = false;
+  function paraphraseBatch(n) {
+    if (phBusy || !st.installed || !st.enabled || !db) return Promise.resolve(0);
+    var have = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("phrases")) || {}, done = {};
+    Object.keys(have).forEach(function (k) { if (have[k] && have[k].from) done[phKey(have[k].from)] = 1; });
+    var todo = phraseSources().filter(function (x) { return !done[phKey(x.text)]; }).slice(0, n || 4); if (!todo.length) return Promise.resolve(0);
+    phBusy = true; var added = 0;
+    return todo.reduce(function (p, src) {
+      return p.then(function () {
+        var msgs = [{ role: "system", content: "Перефразируй фразу из ответа больницы на отзыв пациента: 3 разных варианта с тем же смыслом и тоном, так же коротко, просто, по-человечески, «вы» со строчной, без канцелярита и штампов" + (src.tone === "neg" ? ", без извинений" : "") + ". Ответь строго JSON-массивом из 3 строк." },
+                    { role: "user", content: "Фраза: «" + src.text + "» /no_think" }];
+        return generate(msgs, 0.8).then(function (out) {
+          var t = s(out).replace(/<think>[\s\S]*?<\/think>/g, ""), a = t.indexOf("["), b = t.lastIndexOf("]"), arr = [];
+          try { arr = JSON.parse(t.slice(a, b + 1)); } catch (e) { arr = []; }
+          var jobs = [db.collection("phrases").doc(phKey(src.text) + "-src").set({ from: src.text, src: true, at: new Date().toISOString() })];   // отметка: фраза обработана
+          (Array.isArray(arr) ? arr : []).map(function (x) { return phOk(x, src); }).filter(Boolean).forEach(function (v) {
+            var id = phKey(v); if (have[id]) return; added++;
+            jobs.push(db.collection("phrases").doc(id).set({ text: v, from: src.text, tone: src.tone, slot: src.slot, status: "proposed", at: new Date().toISOString() }));
+          });
+          return Promise.all(jobs);
+        }, function () {});
+      });
+    }, Promise.resolve()).then(function () { phBusy = false; return added; }, function () { phBusy = false; return added; });
+  }
+  setInterval(function () { if (!anBusy) paraphraseBatch(3); }, 15 * 60 * 1000);
+  window.__otvPhrases = { batch: paraphraseBatch, ok: phOk, sources: phraseSources };
   window.__otvAi = { analyzeBatch: analyzeBatch, parse: parseAn, pending: function () { return anPending().length; }, busy: function () { return anBusy; }, stat: function () { return anStat; } };
 
   window.__otvModel = {

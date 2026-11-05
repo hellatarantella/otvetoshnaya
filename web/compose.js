@@ -77,6 +77,11 @@
       if (arr.some(function (x) { return x.text.toLowerCase() === p.text.toLowerCase(); })) return;
       arr.push({ id: hid(p.text), text: p.text, w: 1.5 + Math.min(3, p.n) * 0.5 + (p.mine ? 1 : 0) });
     });
+    // новые формулировки модели, которые вы согласовали (в «Базе ответов»)
+    if (m) { var PH = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("phrases")) || {};
+      Object.keys(PH).forEach(function (k) { var p = PH[k]; if (!p || p.status !== "approved" || p.tone !== m[0] || p.slot !== m[1]) return;
+        if (c.type === "doctor" && /передад|больниц|стационар|отделени|наш\S* сотрудник/i.test(p.text)) return;
+        if (!arr.some(function (x) { return x.text.toLowerCase() === p.text.toLowerCase(); })) arr.push({ id: k, text: p.text, w: 1.3 }); }); }
     // ваш стиль: любимое первое слово вступления — чаще
     var st = L && L.style ? L.style() : null, fav = st && st.open[0] && st.open[0].n >= 3 ? st.open[0].word : "";
     if (fav && /Open$/.test(name)) arr.forEach(function (x) { if (x.text.toLowerCase().replace(/ё/g, "е").indexOf(fav) === 0) x.w *= 2; });
