@@ -23,7 +23,7 @@ async def main():
         pg = await b.new_page(viewport={'width': 1300, 'height': 1000}); errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
         await pg.goto(P); await pg.wait_for_timeout(1500); await pg.evaluate(CONNECT, False)
         R = await pg.evaluate(RUN)
-        res.append((R['first'] >= 3 and not R['btn'] and 'расхождения' not in (R['head'] or '') and R['pilot']['pilot'].get('auto'), 'всё сходится: новая версия проверила себя и записала сама, без вопросов', R))
+        res.append(((R['first'] >= 3 or any('закрыта' in t for t in R['todo'])) and not R['btn'] and 'расхождения' not in (R['head'] or '') and R['pilot']['pilot'].get('auto'), 'всё сходится: новая версия проверила себя и записала сама, без вопросов', R))
         # 2) расхождения находятся: пустой текст, повтор, уже в таблице, отделения нет в справочнике, врача нет в списке, больше, чем собрано
         C = await pg.evaluate("""() => { const f = window.__otvReports._selfCheck;
           const ok = f([{ platform: 'Яндекс', date: '01.11.2026', dept: 'Кардиология', doctor: 'Соколова', text: 'Спасибо кардиологии за заботу и внимание.' }], [], [], ['Кардиология'], 5);

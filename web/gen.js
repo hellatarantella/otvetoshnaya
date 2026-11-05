@@ -360,7 +360,8 @@
     // сборщик: ответ из частей по разбору отзыва (сотни сочетаний, без повторов)
     if (window.__otvCompose && !it.kbId) window.__otvCompose.variants(it, { tone: tone, type: type }, 10).forEach(function (v) {
       var hasFact = type === "question" && /\.f[0-9a-z]+(\.|$)/.test(v.key.replace(/^cmp:[^:]+:/, "."));
-      list.push({ key: v.key, raw: v.text, score: (type === "question" ? (hasFact ? 1.3 : 0.7) : 1.15) + learned(v.key) * 0.5 });
+      var pers = /[.:]p[pn]_/.test(v.key) ? 0.45 : 0;   // подобран под повод из отзыва — выше общих
+      list.push({ key: v.key, raw: v.text, score: (type === "question" ? (hasFact ? 1.3 : 0.7) : 1.15) + pers + learned(v.key) * 0.5 });
     });
     var uniq = {};
     list = list.filter(function (c) { var k = norm(c.raw).replace(/^здравствуйте\S*( \S+)? /, "").slice(0, 200); if (uniq[k]) return false; uniq[k] = 1; return true; });
@@ -429,7 +430,8 @@
       return body && body !== cur && !(cur && sim(body, cur) > 0.8) && !recent[body]; // правило 15: подряд одинаковых не публикуем
     }).sort(function (a, b) { return b.score - a.score; });
     // варианты, на которые ругается проверка текста, не предлагаем, пока есть чистые
-    var cleanC = cands.filter(function (c) { return !c.lint; }); if (cleanC.length) cands = cleanC;
+    var cleanC = cands.filter(function (c) { return !c.lint; });
+    if (cleanC.length || (opts.exclude && opts.exclude.length)) cands = cleanC;   // «ещё вариант» — только чистые; первый черновик — лучший из того, что есть
     // судья (учится на ваших выборах) переставляет первые 10 вариантов
     var J = window.__otvJudge;
     if (J && cands.length > 1) {

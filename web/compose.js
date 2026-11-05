@@ -98,6 +98,35 @@
     var G = window.__otvGen; if (G && G.learnedOf) arr.forEach(function (x) { x.w *= Math.exp(Math.max(-2, Math.min(2, G.learnedOf("cs:" + x.id)))); });
     return arr;
   }
+  /* ---------- персонализация: подбор фраз под конкретный отзыв (05.11) ----------
+     Программа замечает в отзыве повод — рекомендует, вернулся снова, впервые, лечились близкие, привезли по скорой или ночью,
+     благодарит медсестёр, хвалит питание или чистоту; в жалобе — на что именно (ожидание, отношение, питание, чистота, документы, оплата)
+     — и ставит фразу именно под этот повод. Отзыв не пересказываем, о лечении не говорим, на странице врача ничего не «передаём» */
+  var PERS = [
+    // [повод, признак в отзыве, фразы, где можно: all | hospital]
+    ["rec", /рекоменд|советую|всем совет/i, ["Приятно, что вы рекомендуете нас.", "Ценим вашу рекомендацию."], "all"],
+    ["back", /не первый раз|не в первый раз|снова|повторно|опять (обратил|лег|леж|приш)|уже (\S+ )?(раз|год)/i, ["Рады, что вы снова выбрали нас.", "Ценим, что вы возвращаетесь к нам."], "all"],
+    ["first", /впервые|первый раз|в первый раз/i, ["Рады, что первое знакомство с больницей оставило хорошее впечатление."], "all"],
+    ["fam", /(мам[аеуы]|пап[аеуы]|муж[аеу]?|жен[аеуы]|сын[аеу]?|доч[ьи]|бабушк|дедушк|родствен|отц[аеу]|отец)(?![а-яё])|моей мамы|моего папы/i, ["Ценим, что вы доверили нам заботу о родном человеке."], "all"],
+    ["sos", /скор(ой|ая|ую)|экстренн|ночью|среди ночи|в выходн|в праздник/i, ["Ценим, что вы доверились нам в непростой момент."], "all"],
+    ["nurse", /медсестр|медсёстр|медбрат|сестрички|сёстр|сестр(ы|ам|ами) /i, ["Обязательно передадим ваши слова медсёстрам.", "Медсёстрам будет приятно узнать о ваших словах."], "hospital"],
+    ["food", /кормят|кормили|питани|еда |вкусн/i, ["Передадим ваши слова сотрудникам пищеблока."], "hospital"],
+    ["clean", /чисто|чистот|уборк|убира/i, ["Передадим ваши слова сотрудникам, которые следят за чистотой."], "hospital"]
+  ];
+  var NPERS = [
+    ["wait", /ждал|ждать|ожидан|очеред|часа|долго/i, ["Нам важно, чтобы ожидание было как можно короче."]],
+    ["rude", /груб|хам|нагруб|невежлив|кричал|равнодуш|безразлич/i, ["Уважительное отношение к пациентам для нас обязательно."]],
+    ["food", /кормят|кормили|питани|еда|невкусн|холодн\S* (еда|обед|завтрак|ужин)/i, ["Качество питания мы контролируем постоянно."]],
+    ["clean", /грязн|не убира|тарака|антисанитар/i, ["Чистота и порядок в отделениях — наша ответственность."]],
+    ["docs", /выписк|справк|документ|не выдали|результат(ы)? анализ/i, ["Выясним, почему документы не выдали вовремя."]],
+    ["money", /платн|оплат|заплатил|деньг|касс/i, ["Выясним все детали по оплате."]]
+  ];
+  function persOf(review, type, tone) {
+    var t = s(review), out = [];
+    if (tone === "negative") { NPERS.forEach(function (p) { if (p[1].test(t)) out.push({ id: "pn_" + p[0], lines: p[2] }); }); return out; }
+    PERS.forEach(function (p) { if (p[1].test(t) && (p[3] === "all" || type !== "doctor")) out.push({ id: "pp_" + p[0], lines: p[2] }); });
+    return out;
+  }
   function pickOne(name, c, rnd) {
     var a = bank(name, c); if (!a.length) return null;
     var sum = a.reduce(function (t, x) { return t + x.w; }, 0), r = rnd() * sum;
@@ -116,18 +145,31 @@
       if (rnd() < 0.6) add("qMail");
     }
     else if (c.tone === "negative") {
-      if (c.mixed && c.type !== "doctor") { add("mOpen"); add("mTurn"); }
-      else { add("nOpen"); if (c.emotion >= 2) add("nEmp"); add("nConcern"); }
+      // жалоба: фраза о рассмотрении — под то, на что жалуются (если повод нашёлся)
+      var np = (c.pers || []).filter(function (p) { return /^pn_/.test(p.id); }), pn = np.length && rnd() < 0.8 ? np[Math.floor(rnd() * np.length)] : null;
+      var pnLine = pn ? [pn.id, pn.lines[Math.floor(rnd() * pn.lines.length)]] : null;
+      if (c.mixed && c.type !== "doctor") { add("mOpen"); if (pnLine) parts.push(pnLine); else add("mTurn"); }
+      else { add("nOpen"); if (c.emotion >= 2) add("nEmp"); if (pnLine) parts.push(pnLine); else add("nConcern"); }
       add("nAsk"); add("nPromise");
     } else if (c.type === "doctor") {
-      add("dOpen"); if (c.len > 120 && rnd() < 0.7) add("dMid"); add("close");
+      add("dOpen"); var dp = persLine(c, rnd);
+      if (dp) parts.push(dp); else if (c.len > 120 && rnd() < 0.7) add("dMid");
+      add("close");
     } else {
       // длина — по вашему стилю: обычно сколько предложений в ваших ответах на благодарности
       var L = window.__otvLearn, st = L && L.style ? L.style() : null, want = st && st.total >= 5 ? st.posLen : 0;
       var mids = want ? Math.max(0, Math.min(2, want - 2 + (c.len > 400 ? 1 : 0) - (c.len < 80 ? 1 : 0))) : c.len > 400 ? 1 : c.len > 120 ? (rnd() < 0.6 ? 1 : 0) : (rnd() < 0.4 ? 1 : 0);   // на короткий — иногда «Рады, что вам у нас понравилось»
-      add("pOpen"); for (var mi = 0; mi < mids; mi++) add("pMid"); add("close");
+      add("pOpen");
+      // повод из отзыва (рекомендует, снова с нами, близкие, медсёстры…) — вместо одной общей фразы середины
+      var pp = persLine(c, rnd); if (pp) { parts.push(pp); mids = Math.max(0, mids - 1); }
+      for (var mi = 0; mi < mids; mi++) add("pMid"); add("close");
     }
     return { key: "cmp:" + c.tone + ":" + parts.map(function (p) { return p[0]; }).join("."), parts: parts.map(function (p) { return p[0]; }), text: parts.map(function (p) { return p[1]; }).join(" ") };
+  }
+  function persLine(c, rnd) {
+    var pp = (c.pers || []).filter(function (p) { return /^pp_/.test(p.id); });
+    if (!pp.length || rnd() > 0.85) return null;
+    var p = pp[Math.floor(rnd() * pp.length)]; return [p.id, p.lines[Math.floor(rnd() * p.lines.length)]];
   }
   // повтор слова (первые 4 буквы) в одной фразе или в соседних — как в проверке текста карточки; плюс одно слово (6 букв) в любых двух фразах
   var FUNC = /^(что|чтобы|это|этот|эта|эти|этого|ваш|ваше|вашей|вашу|ваши|ваших|наш|наше|нашей|нашу|наши|наших|нам|нас|вам|вас|всего|всегда|всё|все|очень|было|были|быть|себя|свой|своё|свою|свои|которые|который)$/;
@@ -153,10 +195,10 @@
   function variants(it, info, n) {
     var SP = window.__otvSpeech, a = SP ? SP.analyze(s(it.review)) : { tone: "", emotion: 0 };
     var F = info.type === "question" && window.__otvFacts ? window.__otvFacts.forQuestion(s(it.review), 3) : [];
-    var c = { themes: (a && a.posThemes) || [], facts: F, tone: info.tone, type: info.type, mixed: a.tone === "mixed", emotion: a.emotion || 0, len: s(it.review).length, rating: Number(it.rating) || 0 };
+    var c = { pers: persOf(it.review, info.type, info.tone), themes: (a && a.posThemes) || [], facts: F, tone: info.tone, type: info.type, mixed: a.tone === "mixed", emotion: a.emotion || 0, len: s(it.review).length, rating: Number(it.rating) || 0 };
     var rnd = rng(Math.floor(Math.random() * 2147483646) + 1), out = [], seen = {};
     for (var i = 0; i < (n || 10) * 4 && out.length < (n || 10); i++) { var v = one(c, rnd); if (seen[v.key] || repeats(v.text)) continue; seen[v.key] = 1; out.push(v); }
     return out;
   }
-  window.__otvCompose = { variants: variants, banks: B, repeats: repeats };
+  window.__otvCompose = { variants: variants, banks: B, repeats: repeats, persOf: persOf };
 })();
