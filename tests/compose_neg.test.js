@@ -1,0 +1,20 @@
+// Жалобы (05.11): фраза о рассмотрении — под повод жалобы, в том числе «не объяснил», «никто не подходил», «не дозвониться».
+// Повод попадает в ответ почти всегда, текст без повторов слов. Данные выдуманные
+global.window = {}; global.document = {}; require('../web/speech.js'); require('../web/compose.js');
+const C = window.__otvCompose; let bad = 0;
+const t = (ok, name, d) => { console.log((ok ? 'ok   ' : 'FAIL ') + name + (ok ? '' : ' ' + JSON.stringify(d))); if (!ok) bad++; };
+const cases = [
+  ['Врач не объяснил диагноз, разговаривал свысока, ушла ни с чем.', /понятно объяснить/],
+  ['Лежала после операции, никто не подходил всю ночь, звала медсестру.', /без внимания персонала/],
+  ['Невозможно дозвониться в отделение, трубку не берут третий день.', /дозвониться/],
+  ['Медсестра нагрубила маме, хамское отношение к пожилым.', /Уважительное отношение/],
+  ['Ждали в приёмном отделении пять часов.', /ожидание/]];
+for (const [r, re] of cases) {
+  let n = 0, m = 0, rep = 0;
+  for (let k = 0; k < 20; k++) { const V = C.variants({ review: r, rating: 1 }, { tone: 'negative', type: 'hospital' }, 5); n += V.length; m += V.filter(v => re.test(v.text)).length; rep += V.filter(v => C.repeats(v.text)).length; }
+  t(n > 0 && m / n >= 0.6 && !rep, 'повод в ответе: ' + r.slice(0, 40), [m / n, rep]);
+}
+// без повода — общая фраза, не случайная из чужого повода
+const V = C.variants({ review: 'Очень плохо, не рекомендую.', rating: 1 }, { tone: 'negative', type: 'hospital' }, 8);
+t(!V.some(v => /дозвониться|без внимания|понятно объяснить|питания|Чистота/.test(v.text)), 'нет повода — нет чужих фраз', V.map(v => v.text));
+console.log(bad ? 'SOME FAILED' : 'ALL OK');
