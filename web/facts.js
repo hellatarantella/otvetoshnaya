@@ -40,7 +40,7 @@
       var f = facts[id]; if (!f || f.off) return;
       var F = stems(f.text + " " + s(f.topic)), sc = 0;
       for (var k in Q) if (F[k]) sc++;
-      if (sc >= 2 || (sc >= 1 && Object.keys(Q).length <= 3)) out.push({ id: id, text: f.text, score: sc + (f.auto ? 0 : 0.5) });
+      if (sc >= 2 || (sc >= 1 && Object.keys(Q).length <= 2)) out.push({ id: id, text: f.text, score: sc + (f.auto ? 0 : 0.5) });
     });
     return out.sort(function (a, b) { return b.score - a.score; }).slice(0, n || 3);
   }

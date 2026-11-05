@@ -75,7 +75,7 @@
     if (L && L.myPhrases && m && !(c.type === "doctor" && /mid/i.test(name) && false)) L.myPhrases(m[0], m[1]).forEach(function (p) {
       if (c.type === "doctor" && /передад|больниц|стационар|отделени|наш\S* сотрудник/i.test(p.text)) return;   // правило страницы врача
       if (arr.some(function (x) { return x.text.toLowerCase() === p.text.toLowerCase(); })) return;
-      arr.push({ id: hid(p.text), text: p.text, w: 1.5 + Math.min(3, p.n) * 0.5 + (p.mine ? 1 : 0) });
+      arr.push({ id: hid(p.text), text: p.text, w: 2.5 + Math.min(3, p.n) * 0.7 + (p.mine ? 1.5 : 0) });
     });
     // новые формулировки модели, которые вы согласовали (в «Базе ответов»)
     if (m) { var PH = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("phrases")) || {};
@@ -85,6 +85,16 @@
     // ваш стиль: любимое первое слово вступления — чаще
     var st = L && L.style ? L.style() : null, fav = st && st.open[0] && st.open[0].n >= 3 ? st.open[0].word : "";
     if (fav && /Open$/.test(name)) arr.forEach(function (x) { if (x.text.toLowerCase().replace(/ё/g, "е").indexOf(fav) === 0) x.w *= 2; });
+    // середина под тему отзыва (разбор): «команда» — сотрудникам будет приятно; «забота», «условия» — стараемся, чтобы было комфортно;
+    // подробный — «важно и приятно получать такие отзывы»; короткий — «рады, что вам у нас понравилось»
+    if (name === "pMid" || name === "dMid") {
+      var T = c.themes || [], pref = {};
+      if (T.indexOf("медсёстры и команда") >= 0) { pref.pm6 = 4; pref.pm2 = 3; pref.pm3 = 3; }
+      if (T.indexOf("внимание и забота") >= 0 || T.indexOf("условия, питание") >= 0) pref.pm8 = 3;
+      if (c.len > 300) pref.pm10 = 3;
+      if (c.len <= 120) pref.pm11 = 3;
+      arr.forEach(function (x) { if (pref[x.id]) x.w *= pref[x.id]; });
+    }
     var G = window.__otvGen; if (G && G.learnedOf) arr.forEach(function (x) { x.w *= Math.exp(Math.max(-2, Math.min(2, G.learnedOf("cs:" + x.id)))); });
     return arr;
   }
@@ -143,8 +153,8 @@
   function variants(it, info, n) {
     var SP = window.__otvSpeech, a = SP ? SP.analyze(s(it.review)) : { tone: "", emotion: 0 };
     var F = info.type === "question" && window.__otvFacts ? window.__otvFacts.forQuestion(s(it.review), 3) : [];
-    var c = { facts: F, tone: info.tone, type: info.type, mixed: a.tone === "mixed", emotion: a.emotion || 0, len: s(it.review).length, rating: Number(it.rating) || 0 };
-    var rnd = rng(Date.now() % 100000 + 7), out = [], seen = {};
+    var c = { themes: (a && a.posThemes) || [], facts: F, tone: info.tone, type: info.type, mixed: a.tone === "mixed", emotion: a.emotion || 0, len: s(it.review).length, rating: Number(it.rating) || 0 };
+    var rnd = rng(Math.floor(Math.random() * 2147483646) + 1), out = [], seen = {};
     for (var i = 0; i < (n || 10) * 4 && out.length < (n || 10); i++) { var v = one(c, rnd); if (seen[v.key] || repeats(v.text)) continue; seen[v.key] = 1; out.push(v); }
     return out;
   }

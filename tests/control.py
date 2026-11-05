@@ -26,6 +26,13 @@ async def main():
         import re
         n0 = int(re.search(r'суток: (\d+)', ' '.join(R['items'])).group(1)); m = re.search(r'суток: (\d+)', ' '.join(C)); n1 = int(m.group(1)) if m else 0
         res.append((n1 == n0 - 1 and not any('не совпадает' in x for x in C), 'после ответа замечания сами исчезают', [n0, C]))
+        Q = await pg.evaluate("""async () => { const db = await window.__otvRt.use('db'), S = 'С уважением, администрация 24 Московской больницы';
+          await db.collection('answers').doc('c-q').set({ kind: 'question', platform: 'Сайт', page: 'Письмо с сайта', date: '05.11.2026', author: 'Анна', status: 'pending', review: 'Есть ли у вас бассейн для пациентов на реабилитации?', answer: '' });
+          for (let i = 0; i < 12; i++) await db.collection('answers').doc('c-v' + i).set({ platform: 'Яндекс', page: 'Карточка больницы', date: '05.11.2026', status: 'pending', review: 'Спасибо ' + i, answer: 'Здравствуйте!\\nСпасибо за отзыв и тёплые слова. Ценим ваше доверие.\\n' + S, createdAt: '2026-11-05T10:0' + (i % 10) + ':00Z' });
+          window.__otvControl._journal(['ВЫЛЕТ: прошлый сеанс не закрылся нормально']);
+          const t = window.__otvControl.issues().map(i => i.text);
+          return { q: t.some(x => /Вопросы без справки: \\d/.test(x)), v: t.some(x => /однообразными/.test(x)), j: t.some(x => /Сбои программы/.test(x)), share: window.__otvControl.variety().share }; }""")
+        res.append((Q['q'] and Q['v'] and Q['j'], 'самоконтроль: вопрос без справки, однообразные ответы, сбои из журнала', Q))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         for ok, t, d in res: print(('OK  ' if ok else 'FAIL') + ' ' + t, '' if ok else json.dumps(d, ensure_ascii=False)[:1500])
         await b.close(); print('ALL OK' if all(x[0] for x in res) else 'SOME FAILED')

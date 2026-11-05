@@ -11,6 +11,14 @@
   /* журнал работы: только события и ошибки (без текстов отзывов, писем и имён) */
   function jlog(line) { try { invoke("log_append", { line: String(line).slice(0, 500) }).catch(function () {}); } catch (e) {} }
   window.__otvLog = jlog;
+  function saveJournal() {
+    return Promise.all([invoke("log_read"), window.claude.use("downloads")]).then(function (r) {
+      var d = new Date(), p2 = function (x) { return (x < 10 ? "0" : "") + x; };
+      return r[1].save({ filename: "Ответошная · журнал " + d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) + ".txt", data: new Blob([r[0] || "(пусто)"], { type: "text/plain" }) });
+    });
+  }
+  window.__otvSaveJournal = saveJournal;
+  window.__otvReadJournal = function () { return invoke("log_read"); };
   window.addEventListener("error", function (e) { jlog("ошибка страницы: " + (e && e.message || "") + " @" + String(e && e.filename || "").split("/").pop() + ":" + (e && e.lineno || "")); });
   window.addEventListener("unhandledrejection", function (e) { jlog("ошибка (promise): " + String(e && e.reason && (e.reason.message || e.reason) || "").slice(0, 200)); });
 
@@ -1992,12 +2000,7 @@
     box.append(addCard);
     // журнал работы — для разбора, если что-то не собирается или не публикуется (без текстов отзывов)
     var jl = el("button", "link", "Сохранить журнал работы в «Загрузки»"); jl.type = "button";
-    jl.addEventListener("click", function () {
-      Promise.all([invoke("log_read"), window.claude.use("downloads")]).then(function (r) {
-        var d = new Date(), p2 = function (x) { return (x < 10 ? "0" : "") + x; };
-        return r[1].save({ filename: "Ответошная · журнал " + d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) + ".txt", data: new Blob([r[0] || "(пусто)"], { type: "text/plain" }) });
-      }).then(function () { jl.textContent = "Журнал сохранён в «Загрузки»"; }, function (e) { jl.textContent = "Не сохранился: " + (e && e.message || e); });
-    });
+    jl.addEventListener("click", function () { saveJournal().then(function () { jl.textContent = "Журнал сохранён в «Загрузки»"; }, function (e) { jl.textContent = "Не сохранился: " + (e && e.message || e); }); });
     var jp = el("p", "meta"); jp.append(jl); box.append(jp);
   }
 

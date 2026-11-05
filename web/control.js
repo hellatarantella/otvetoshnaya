@@ -34,8 +34,36 @@
     // презентация закрытой недели (четверг после 15:00 и позже) ждёт решений
     var U = window.__otvDeckUi, msk = new Date(Date.now() + 3 * 3600e3), dow = msk.getUTCDay(), hr = msk.getUTCHours();
     if (U && U._state && (dow === 4 && hr >= 15 || dow === 5)) { try { var st = U._state(), n = st && st.res && st.res.need ? st.res.need.length : 0; if (n) out.push({ text: "Презентация недели: нужно ваше решение — " + n, tab: "deckw" }); } catch (e) {} }
+    // вопросы без справки: программе нечем ответить по существу — добавьте факт
+    var FX = window.__otvFacts, qNo = 0;
+    if (FX && FX.forQuestion) Object.keys(A).forEach(function (id) { var a = A[id]; if (a && a.kind === "question" && WAIT.test(s(a.status)) && !FX.forQuestion(s(a.review), 1).length) qNo++; });
+    if (qNo) out.push({ text: "Вопросы без справки: " + qNo + " — программе нечем ответить по существу. Добавьте факт в «Базе ответов» → «Справка для ответов на вопросы»", tab: "qa" });
+    // разнообразие: доля разных фраз в последних 30 ответах (черновики и опубликованные)
+    var V = variety(A); if (V && V.n >= 10 && V.share < 0.5) out.push({ text: "Ответы стали однообразными: разных фраз " + Math.round(V.share * 100) + "%. Возьмите новые формулировки от модели или загрузите свои ответы", tab: "pos" });
+    // сбои программы за двое суток — из журнала
+    if (jErr.length) out.push({ text: "Сбои программы за двое суток: " + jErr.length + " (последний: " + jErr[jErr.length - 1].slice(0, 120) + "). Сохраните журнал и пришлите мне", tab: "", act: ["Сохранить журнал", function () { return window.__otvSaveJournal && window.__otvSaveJournal(); }] });
     if (window.__otvSaveErr) out.push({ text: "Данные не сохраняются: " + window.__otvSaveErr + " — программа повторяет сама; если не пройдёт, перезапустите программу", tab: "" });
     return out;
+  }
+  function variety(A) {
+    var list = Object.keys(A).map(function (k) { return A[k]; }).filter(function (a) { return a && s(a.answer).trim() && a.kind !== "appeal" && /^(pending|approved|fix|published)$/.test(s(a.status)); })
+      .sort(function (a, b) { return s(b.publishedAt || b.createdAt || b.date).localeCompare(s(a.publishedAt || a.createdAt || a.date)); }).slice(0, 30);
+    var sents = [];
+    list.forEach(function (a) { (s(a.answer).replace(/^\s*Здравствуйте[^\n]*\n/, "").replace(/С уважением[\s\S]*$/, "").match(/[^.!?]+[.!?]*/g) || []).forEach(function (x) { x = norm(x); if (x.length > 12 && !/^(желаем здоровья|пожалуйста напишите|напишите пожалуйста)/.test(x)) sents.push(x); }); });
+    if (!sents.length) return null;
+    var u = {}; sents.forEach(function (x) { u[x] = 1; });
+    return { n: list.length, share: Object.keys(u).length / sents.length };
+  }
+  // журнал: сбои за двое суток (вылеты, внутренние ошибки, ошибки страницы)
+  var jErr = [], jAt = 0;
+  function scanJournal() {
+    if (!window.__otvReadJournal || Date.now() - jAt < 5 * 60 * 1000) return;
+    jAt = Date.now();
+    window.__otvReadJournal().then(function (txt) {
+      var cut = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10) + " " + new Date(Date.now() - 2 * 864e5).toISOString().slice(11, 19);
+      jErr = s(txt).split("\n").filter(function (l) { return l.slice(0, 19) >= cut && /ВЫЛЕТ|ВНУТРЕННЯЯ ОШИБКА|ошибка страницы/.test(l); }).map(function (l) { return l.slice(24); });
+      paint();
+    }, function () {});
   }
   var chip, pop, timer = 0, last = [];
   function paint() {
@@ -52,6 +80,7 @@
     var ul = el("ul", "ctrl-list");
     last.forEach(function (i) {
       var li = el("li", null, i.text);
+      if (i.act) { var ab = el("button", "link", i.act[0]); ab.type = "button"; ab.addEventListener("click", function () { Promise.resolve(i.act[1]()).then(function () { ab.textContent = "Готово: в «Загрузках»"; }, function () { ab.textContent = "Не получилось"; }); }); li.append(" ", ab); }
       if (i.tab) { var b = el("button", "link", "Открыть"); b.type = "button"; b.addEventListener("click", function () { pop.hidden = true; if (window.__otvShowTab) window.__otvShowTab(i.tab); }); li.append(" ", b); }
       ul.append(li);
     });
@@ -68,9 +97,9 @@
     var h1 = document.querySelector("h1.brand");   // отметка — в строке с названием программы, справа
     if (h1) { h1.classList.add("has-ctrl"); h1.append(wrap); } else nav.parentNode.insertBefore(wrap, nav);
     window.addEventListener("otv-write", soon);
-    setInterval(paint, 5 * 60 * 1000);
-    setTimeout(paint, 3000);
+    setInterval(function () { scanJournal(); paint(); }, 5 * 60 * 1000);
+    setTimeout(function () { scanJournal(); paint(); }, 3000);
   }
-  window.__otvControl = { issues: issues, refresh: paint };
+  window.__otvControl = { issues: issues, refresh: paint, variety: function () { return variety(all("answers")); }, _journal: function (lines) { jErr = lines; } };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 })();
