@@ -425,6 +425,10 @@
     return { ok: !why.length, why: why };
   }
   var given = {};   // какие тексты уже показаны для отзыва (в этом сеансе)
+  // 06.11: два разных отзыва получили один и тот же ответ — черновики пачки ещё не были в базе.
+  // Тексты, выданные за последние 30 минут любому отзыву, второй раз не выдаём
+  var issued = [];
+  function issuedRecently(b) { var t = Date.now() - 30 * 60000; issued = issued.filter(function (x) { return x.at > t; }); return issued.some(function (x) { return x.b === b; }); }
   function answer(it, opts) {
     opts = opts || {};
     var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform, it.review), rs = recentSents(it.review);
@@ -447,6 +451,7 @@
       var sp = tx && SP ? SP.penalty(tx) + 0.8 * SP.covers(tx, it.review).length : 0;
       var stale = tx ? sentsOf(tx).reduce(function (a, x) { return a + Math.min(2, rs[x] || 0) * 0.25; }, 0) : 0;   // свежесть формулировок
       var LN = window.__otvLint, lintBad = 0; if (tx && LN) { try { lintBad = LN({ page: it.page, kind: it.kind === "question" ? "question" : "", review: it.review }, tx).length; stale += 10 * lintBad; } catch (e) {} }
+      if (tx && issuedRecently(norm(tx.replace(/^Здравствуйте[^\n]*\n/, "")))) stale += 4;   // этот текст только что получил другой отзыв
       var CP = window.__otvCompose; if (tx && CP && CP.repeats && CP.repeats(tx.replace(/^Здравствуйте[^\n]*\n/, "").replace(SIGN, ""))) stale += 1.5;   // одно слово в двух фразах
       return { lint: lintBad, key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) - sp - stale };
     }).filter(function (c) {
@@ -469,7 +474,7 @@
     var seen = {}, best = null;
     for (var i = 0; i < cands.length; i++) { var b = norm(cands[i].text); if (seen[b] || was[b]) continue; seen[b] = 1; best = cands[i]; break; }
     if (!best && cands.length && !opts.current) best = cands[0];
-    if (best) { if (Object.keys(given).length > 300) given = {}; (given[gk] = given[gk] || {})[norm(best.text)] = 1; }
+    if (best) { if (Object.keys(given).length > 300) given = {}; (given[gk] = given[gk] || {})[norm(best.text)] = 1; issued.push({ b: norm(best.text.replace(/^Здравствуйте[^\n]*\n/, "")), at: Date.now() }); if (issued.length > 400) issued.shift(); }
     if (!best && opts.current && p.list.length) return null;
     return best ? { text: best.text, key: best.key, tone: p.tone } : null;
   }

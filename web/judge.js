@@ -14,8 +14,20 @@
   function sents(t) { return (body(t).match(/[^.!?]+[.!?]*/g) || []).map(function (x) { return x.trim(); }).filter(Boolean); }
   var NEG = /разобрат|разбер|gkb24@|напишите|свяж|ответственн|рассмотрени|обеспокои/i;
 
-  var NAMES = ["Речь (Ильяхов)", "Закрыты жалоба и вопрос", "Длина как у вас", "Похоже на ваши ответы", "Ваши фразы", "Ваше начало", "Ваши правки", "Не слишком коротко", "Без повторов"];
-  var W0 = [1.5, 1.2, 0.8, 2.2, 1.2, 0.4, 1.0, 0.6, 0.6], W = W0.slice(), db = null, pairs = 0;
+  var NAMES = ["Речь (Ильяхов)", "Закрыты жалоба и вопрос", "Длина как у вас", "Похоже на ваши ответы", "Ваши фразы", "Ваше начало", "Ваши правки", "Не слишком коротко", "Без повторов", "Под повод отзыва"];
+  var W0 = [1.5, 1.2, 0.8, 2.2, 1.2, 0.4, 1.0, 0.6, 0.6, 1.4], W = W0.slice(), db = null, pairs = 0;
+  // 06.11: на подробные отзывы выбирались короткие общие ответы («Спасибо за подробный отзыв. Ценим ваше доверие…»).
+  // Новый признак: ответ откликается на повод из отзыва (помогло лечение, всё объяснили, рекомендует, жалоба на ожидание…)
+  // или называет врача, которого назвал пациент. Нет повода — нейтрально
+  function personal(text, req, negT) {
+    var C = window.__otvCompose; if (!C || !C.persOf) return 0.5;
+    var doc = /Страница врача/i.test(s(req.page)), P = C.persOf(req.review, doc ? "doctor" : "hospital", negT ? "negative" : "positive"), t = norm(text);
+    var named = (s(req.review).match(/[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]*(?:вн|вич|ичн)[а-яё]{0,3}/g) || []).map(function (x) { return norm(x).split(" ")[0].slice(0, 4); });
+    var hitName = !doc && named.some(function (n) { return n && t.indexOf(" " + n) >= 0; });
+    if (!P.length && !named.length) return 0.5;
+    var hit = P.some(function (p) { return p.lines.some(function (l) { return t.indexOf(norm(l)) >= 0; }); });
+    return hit || hitName ? 1 : 0;
+  }
 
   // ваши ответы на похожие отзывы (того же тона): с чем сравнивать вариант
   var herCache = { v: -1, list: [] };
@@ -49,7 +61,7 @@
     var learned = L && L.penalty ? Math.max(-1, Math.min(1, -L.penalty(text, lc) / 5)) : 0;
     var shortP = b.length < 60 ? 0 : 1;
     var rep = C && C.repeats && C.repeats(b) ? 0 : 1;
-    return [a, -miss, lenFit, her, phr, fav, learned, shortP, rep];
+    return [a, -miss, lenFit, her, phr, fav, learned, shortP, rep, personal(b, req, negT)];
   }
   function score(text, req) { var f = features(text, req), t = 0; for (var i = 0; i < f.length; i++) t += W[i] * f[i]; return t; }
   function best(cands, req) {
@@ -69,7 +81,7 @@
   function explain(text, req) { var f = features(text, req); return NAMES.map(function (n, i) { return n + ": " + (Math.round(f[i] * 100) / 100) + " × " + (Math.round(W[i] * 100) / 100); }).join("\n"); }
   if (window.claude && window.claude.use) window.claude.use("db").then(function (d) {
     db = d; if (!d) return;
-    return d.collection("settings").doc("judge").get().then(function (sn) { if (sn && sn.exists) { var v = sn.data() || {}; if (Array.isArray(v.w) && v.w.length === W0.length) W = v.w.slice(); pairs = v.pairs || 0; } });
+    return d.collection("settings").doc("judge").get().then(function (sn) { if (sn && sn.exists) { var v = sn.data() || {}; if (Array.isArray(v.w) && v.w.length <= W0.length) W = v.w.concat(W0.slice(v.w.length)); /* новые признаки — с начальным весом, выученное сохраняется */ pairs = v.pairs || 0; } });
   }).catch(function () {});
   window.__otvJudge = { features: features, score: score, best: best, learn: learn, explain: explain, weights: function () { return W.slice(); }, pairs: function () { return pairs; }, NAMES: NAMES, reset: function () { W = W0.slice(); pairs = 0; return save(); } };
 })();

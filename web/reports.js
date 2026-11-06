@@ -667,7 +667,9 @@
       // коротко: одна строка итога + что сделать; всё остальное — в «Подробнее»
       var head = "Отчёт " + s(st.period) + ": " + parts[0] + (site && site.total ? " · в отчёте " + site.inRep + " из " + site.total + " собранных" : "");
       var todo = [];
-      if (badSrc.length) todo.push("Не собраны " + badSrc.map(function (h) { return h.name + (h.needLogin ? " (нужен вход)" : ""); }).join(", ") + " — нажмите «Собрать отзывы»");
+      // 06.11: «нажмите Собрать» не помогает, если нужен вход — тогда подсказываем «Войти»
+      if (badSrc.length) { var allLogin = badSrc.every(function (h) { return h.needLogin; });
+        todo.push("Не собраны " + badSrc.map(function (h) { return h.name + (h.needLogin ? " (нужен вход)" : ""); }).join(", ") + (allLogin ? " — нажмите «Войти: …» рядом с «Собрать отзывы», войдите и соберите снова" : " — нажмите «Собрать отзывы»")); }
       if (checks || (site && site.check)) todo.push("Ждут решения в «Нужна проверка»: " + (checks || site.check));
       if (site && site.adding > 0) todo.push("Не записались в Google: " + site.adding + " — нажмите «Обновить отчёт» ещё раз");
       if (extraRows.length) todo.push("Один отзыв стоит в таблице дважды: " + extraRows.slice(0, 3).join("; "));

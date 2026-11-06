@@ -830,7 +830,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.incB = el("span","incb st-inc","Инцидент"); c.incB.hidden = true;
     head.append(c.badge, c.meta, c.incB, c.status);
     c.author = el("div","author");
-    c.review = el("blockquote","review clamp"); c.reviewTxt = el("div","txt"); c.review.append(c.reviewTxt);
+    c.review = el("blockquote","review"); c.reviewTxt = el("div","txt"); c.review.append(c.reviewTxt);
     var links = el("div","links");
     c.moreBtn = el("button","link","Показать полностью"); c.moreBtn.type = "button";
     c.moreBtn.addEventListener("click", function(){ c.expanded = !c.expanded; c.review.classList.toggle("clamp", !c.expanded); c.moreBtn.textContent = c.expanded ? "Свернуть" : "Показать полностью"; });
@@ -1009,7 +1009,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.author.textContent = "";
     c.author.hidden = true;
     c.reviewTxt.textContent = s(r.review);
-    c.moreBtn.hidden = s(r.review).length < 280;
+    c.moreBtn.hidden = true;   // отзыв всегда целиком (05.11)
     if (r.link) { c.open.href = s(r.link); c.open.hidden = false; } else c.open.hidden = true;
     var nt0 = r.kind === "appeal" ? s(r.note) : s(r.note).replace(/^Сначала\s*—\s*на доп\.? ?проверку\.?$/i, "");
     nt0 = nd(nt0).replace(/^Черновик из базы ответов\.?( Проверьте\.?)?$/i, "");
@@ -1312,7 +1312,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     var head = el("div","head");
     c.badge = el("span","badge"); c.meta = el("span","meta"); c.status = el("span","status");
     head.append(c.badge, c.meta, c.status);
-    c.review = el("blockquote","review clamp"); c.txt = el("div","txt"); c.review.append(c.txt);
+    c.review = el("blockquote","review"); c.txt = el("div","txt"); c.review.append(c.txt);
     var links = el("div","links");
     c.more = el("button","link","Показать полностью"); c.more.type = "button";
     c.more.addEventListener("click", function(){ var x = c.review.classList.toggle("clamp"); c.more.textContent = x ? "Показать полностью" : "Свернуть"; });
@@ -1351,7 +1351,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.status.className = "status " + (st === "todo" ? "st-pending" : st === "done" ? "st-approved" : "st-skip");
     var txt = s(r.text).trim();
     c.txt.textContent = txt || (s(r.subject) + ": текст появится после ближайшего сбора");
-    c.more.hidden = txt.length < 280;
+    c.more.hidden = true;
     c.note.textContent = nd(r.note); c.note.hidden = !s(r.note);
     c.det.hidden = !s(r.draft); c.draft.textContent = s(r.draft);
     c.doneBtn.hidden = st !== "todo"; c.skipBtn.hidden = true; c.backBtn.hidden = st === "todo";
@@ -1418,7 +1418,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.incB = el("span","pill st-inc","Инцидент"); c.incB.hidden = true;
     head.append(c.badge, c.stars, c.meta, c.rep, c.incB, c.status);
     c.author = el("div","author");
-    c.review = el("blockquote","review clamp"); c.txt = el("div","txt"); c.review.append(c.txt);
+    c.review = el("blockquote","review"); c.txt = el("div","txt"); c.review.append(c.txt);
     var links = el("div","links");
     c.more = el("button","link","Показать полностью"); c.more.type = "button";
     c.more.addEventListener("click", function(){ var x = c.review.classList.toggle("clamp"); c.more.textContent = x ? "Показать полностью" : "Свернуть"; });
@@ -1570,7 +1570,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.real.hidden = !realRep; c.real.textContent = "";
     if (realRep) c.real.append(el("b", null, site ? "Ваш ответ из «Отправленных» пресс-службы" : "Ответ больницы на площадке"), document.createTextNode(realRep));
     var au = s(r.author).trim(); c.author.textContent = au && au !== "Пациент" ? "Автор: " + au : ""; c.author.hidden = !c.author.textContent;
-    c.txt.textContent = s(r.text); c.more.hidden = s(r.text).length < 280;
+    c.txt.textContent = s(r.text); c.more.hidden = true;
     if (r.link) { c.open.href = s(r.link); c.open.hidden = false; } else c.open.hidden = true;
     c.offId = s(r.offlineId);
     c.ans.hidden = !c.offId;
@@ -1749,7 +1749,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     var head = el("div","head");
     c.badge = el("span","badge"); c.meta = el("span","meta"); c.status = el("span","status");
     head.append(c.badge, c.meta, c.status);
-    c.review = el("blockquote","review clamp"); c.txt = el("div","txt"); c.review.append(c.txt);
+    c.review = el("blockquote","review"); c.txt = el("div","txt"); c.review.append(c.txt);
     var links = el("div","links");
     c.more = el("button","link","Показать полностью"); c.more.type = "button";
     c.more.addEventListener("click", function(){ var x = c.review.classList.toggle("clamp"); c.more.textContent = x ? "Показать полностью" : "Свернуть"; });
@@ -1795,7 +1795,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.meta.textContent = (dd ? dd[3] + "." + dd[2] + "." + dd[1] : s(r.date)) + (s(r.time) ? ", " + s(r.time) : "");
     var rep = offRep(r);
     c.status.textContent = OFF_REP[rep][0]; c.status.className = "status " + OFF_REP[rep][1];
-    c.txt.textContent = s(r.text); c.more.hidden = s(r.text).length < 280;
+    c.txt.textContent = s(r.text); c.more.hidden = true;
     var note;
     if (r.analysis === "pending") note = "Разбираю запись…";
     else if (r.analysis === "error") note = "Разобрать не получилось. Нажмите «Разобрать ещё раз». В отчёт запись всё равно попадёт.";
@@ -2020,6 +2020,9 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
 - Плановая госпитализация по ОМС — только по направлению. Москвичам направление выдаёт лечащий врач поликлиники по прикреплению. Проект «Москва — столица здоровья» (https://xn--g1ajp.xn--p1ai/) — ТОЛЬКО для жителей Подмосковья и других регионов, не для москвичей; жителям других регионов нужна форма № 057-у.
 - Данные о пациентах по почте не разглашаем. Сервис «Цифровая реанимация»: СМС о состоянии родственника, подключает врач реанимации через ЕМИАС.
 - Страница больницы на ПроДокторов: https://prodoctorov.ru/moskva/lpu/21011-gorodskaya-klinicheskaya-bolnica-24/
+- Въезд и проход на территорию больницы осуществляются по пропускам: так безопаснее, спецтранспорт работает без помех и нет скопления людей. Для планового прохода нужна запись в ЕМИАС на госпитализацию, приём, анализы или обследования, направление из другой медицинской организации, пропуск, заказанный врачом, посещение госпитализированного родственника в установленные часы или участие в программе «Москва — столица здоровья». Чтобы попасть к врачу, нужно заранее записаться через Единый контактный центр или иметь запись в ЕМИАС. В экстренных случаях помощь оказывается безотлагательно и бесплатно, независимо от записи, пропуска или документов.
+- Въезд на территорию и время в парковочной зоне больницы ограничены, чтобы не мешать движению спецтранспорта; правило не касается экстренных случаев и въезда по пропускам.
+- Курение на территории медицинских учреждений запрещено законом.
 
 </script>
 <script type="text/plain" id="ref-thanks-rules">
