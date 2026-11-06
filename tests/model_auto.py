@@ -24,6 +24,12 @@ async def main():
                (sv.get('n') == 20 and 0 <= sv.get('ok', -1) <= 20 and isinstance(sv.get('why'), dict), 'самопроверка прошла 20 отзывов и сохранила итог с причинами', sv),
                (r['passed'] == (sv.get('ok', 0) / max(1, sv.get('n', 1)) >= 0.6), 'переключатель открывается только от 60%', [r['passed'], sv.get('ok'), sv.get('n')]),
                (not errs, 'без ошибок страницы', errs[:3])]
+        E = await pg.evaluate("""async () => { const db = await window.__otvRt.use('db'), S = 'С уважением, администрация 24 Московской больницы';
+          await db.collection('kb').doc('ed1').set({ kind: 'review', status: 'approved', edited: true, platform: 'Яндекс', page: 'Карточка больницы', situation: 'Спасибо кардиологии за заботу.', updatedAt: new Date().toISOString(),
+            draft: 'Здравствуйте!\\nБлагодарим за ваш отзыв. Нам очень приятно.\\n' + S, answer: 'Здравствуйте!\\nСпасибо за тёплые слова о команде кардиологии. Желаем здоровья и всего самого доброго.\\n' + S });
+          const m = window.__otvModelAuto.compact({ kind: 'answer', platform: 'Яндекс', page: 'Карточка больницы', review: 'Спасибо всем за помощь!' });
+          const sys = m.messages[0].content; return { has: /Как автор правит/.test(sys) && /Стало: Спасибо за тёплые слова о команде кардиологии/.test(sys), on: window.__otvModel.state().enabled }; }""")
+        res.insert(-1, (E['has'], 'ваша правка сразу попадает в подсказку модели (было → стало)', E))
         for ok, t, d in res: print(('OK  ' if ok else 'FAIL') + ' ' + t, '' if ok else json.dumps(d, ensure_ascii=False)[:1500])
         await b.close(); print('ALL OK' if all(x[0] for x in res) else 'SOME FAILED')
 asyncio.run(main())

@@ -26,13 +26,15 @@
     }, function () { return st; });
   }
   function saveSettings() {
-    if (db) db.collection("settings").doc("model").set({ enabled: st.enabled, exam: st.exam || null, auto: st.auto || null, updatedAt: new Date().toISOString() }).catch(function () {});
+    if (db) db.collection("settings").doc("model").set({ enabled: st.enabled, userSet: !!st.userSet, on1106: true, exam: st.exam || null, auto: st.auto || null, updatedAt: new Date().toISOString() }).catch(function () {});
   }
   window.claude.use("db").then(function (d) {
     db = d;
     return db.collection("settings").doc("model").get();
   }).then(function (snap) {
-    if (snap && snap.exists) { var v = snap.data() || {}; st.enabled = !!v.enabled; st.exam = v.exam || null; st.auto = v.auto || null; }
+    if (snap && snap.exists) { var v = snap.data() || {}; st.enabled = !!v.enabled; st.userSet = !!v.userSet; st.exam = v.exam || null; st.auto = v.auto || null;
+      if (!v.on1106 && !st.enabled) { st.enabled = true; saveSettings(); }   // 06.11: вы попросили включить модель сразу — один раз; выключите — останется выключенной
+    } else { st.enabled = true; saveSettings(); }
     render();
   }).catch(function () {});
   try { T.event.listen("model-progress", function () { refresh(); }); } catch (e) {}
@@ -121,10 +123,26 @@
     if (tone === "negative") return "Это жалоба: поблагодари, что сообщили; скажи, что разберёмся; попроси написать на gkb24@zdrav.mos.ru с ФИО, датой и телефоном; после проверки ответим. Не извиняйся, не спорь, без пожеланий здоровья.";
     return "Это благодарность. Концовка: «Желаем здоровья и всего самого доброго.»" + (type === "doctor" ? " Отзыв на странице врача: ничего не «передаём», о больнице не пишем." : "");
   }
+  // ваши последние правки черновиков (было → стало): модель видит их сразу в каждой подсказке
+  var edCache = { v: -1, list: [] };
+  function recentEdits(tone, n) {
+    var v = window.__otvVer ? window.__otvVer("kb") : 0;
+    if (edCache.v !== v) {
+      var kb = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("kb")) || {};
+      edCache = { v: v, list: Object.keys(kb).map(function (k) { return kb[k]; }).filter(function (e) { return e && e.edited && s(e.draft).trim() && s(e.answer).trim() && bodyOf(e.draft) !== bodyOf(e.answer); })
+        .sort(function (a, b) { return s(b.updatedAt).localeCompare(s(a.updatedAt)); }).slice(0, 40) };
+    }
+    var neg = function (e) { return window.__otvGen && window.__otvGen.NEG_ANS.test(s(e.answer)); };
+    return edCache.list.filter(function (e) { return tone === "negative" || tone === "mixed" ? neg(e) : !neg(e); }).slice(0, n || 3);
+  }
+  function editsBlock(tone) {
+    var E = recentEdits(tone, 3); if (!E.length) return "";
+    return "\nКак автор правит черновики (делай так же):\n" + E.map(function (e) { return "Было: " + bodyOf(e.draft).slice(0, 260) + "\nСтало: " + bodyOf(e.answer).slice(0, 260); }).join("\n");
+  }
   function compactMessages(req) {
     var G = window.__otvGen, it = itemOf(req), ex = G.examples(it, 3), tone = mixedOf(req, ex.tone);
     var sys = "Ты пишешь ответы на отзывы пациентов от имени 24 Московской больницы. Пиши как в образцах: просто, тепло, коротко (2–4 предложения), «вы» со строчной, " +
-      "не пересказывай отзыв, не оценивай врачей, не обсуждай лечение, не пиши «клиника». Без приветствия и подписи — только текст ответа.\n" + shortRules(tone, ex.type);
+      "не пересказывай отзыв, не оценивай врачей, не обсуждай лечение, не пиши «клиника». Без приветствия и подписи — только текст ответа.\n" + shortRules(tone, ex.type) + editsBlock(tone);
     var FX = req.kind === "question" && window.__otvFacts ? window.__otvFacts.forQuestion(s(req.review), 3) : [];
     if (FX.length) sys += "\nСправка: " + FX.map(function (f) { return f.text; }).join(" ");
     var msgs = [{ role: "system", content: sys }];
@@ -137,7 +155,7 @@
     var sys = "Ты редактор ответов 24 Московской больницы на отзывы пациентов. Тебе дают отзыв и готовый черновик ответа. " +
       "Отредактируй черновик под этот отзыв: сохрани его стиль, тон и длину, меняй не больше одного-двух предложений. " +
       "Если в отзыве есть вопрос или жалоба, а в черновике нет ответа на них — добавь одно предложение. Не добавляй телефонов, имён и фактов, которых нет в черновике или отзыве. " +
-      "Не пересказывай отзыв. «вы» со строчной. Выведи только текст ответа, без приветствия и подписи.\n" + shortRules(tone, ex.type);
+      "Не пересказывай отзыв. «вы» со строчной. Выведи только текст ответа, без приветствия и подписи.\n" + shortRules(tone, ex.type) + editsBlock(tone);
     return { messages: [{ role: "system", content: sys }, { role: "user", content: "Отзыв: «" + s(req.review).slice(0, 1200) + "»\n\nЧерновик: " + bodyOf(draft) }], it: it, tone: ex.tone, type: ex.type };
   }
   var PHONES = ["84956851794", "84956136310"], MAILS = ["gkb24@zdrav.mos.ru", "gkb24-pmu@zdrav.mos.ru"];
@@ -298,7 +316,7 @@
   window.__otvAi = { analyzeBatch: analyzeBatch, parse: parseAn, pending: function () { return anPending().length; }, busy: function () { return anBusy; }, stat: function () { return anStat; } };
 
   window.__otvModel = {
-    ready: function () { return st.installed && st.server && st.enabled && passed(); },
+    ready: function () { return st.installed && st.server && st.enabled; },
     passed: passed,
     write: function (req) { return write(req); },
     state: function () { return st; }
@@ -416,7 +434,7 @@
     a.append(go); c.append(a);
     return c;
   }
-  window.__otvModelAuto = { verdict: autoVerdict, start: startAuto, state: function () { return { auto: auto, saved: st.auto, passed: passed() }; } };
+  window.__otvModelAuto = { verdict: autoVerdict, start: startAuto, edits: editsBlock, compact: function (r) { return compactMessages(r); }, state: function () { return { auto: auto, saved: st.auto, passed: passed() }; } };
 
   /* ---------- вкладка «Модель» ---------- */
   var examMsg = "";
@@ -441,16 +459,14 @@
     } else {
       line.textContent = "Готова · " + gb(st.bytes) + (st.running ? " · работает" : "") + ".";
       top.append(line);
-      if (passed()) {
-        var tg = el("label", "mdl-tg"), cb = el("input"); cb.type = "checkbox"; cb.checked = st.enabled;
-        cb.addEventListener("change", function () { st.enabled = cb.checked; saveSettings(); render(); });
-        tg.append(cb, document.createTextNode(" «Ещё вариант» пишет модель"));
-        top.append(tg);
-        top.append(el("p", "meta", st.enabled ? "Если модель ошибётся или задумается дольше 12 секунд, вариант возьмётся из шаблонов и базы ответов." : "Сейчас варианты берутся из шаблонов и базы ответов, мгновенно."));
-      } else {
-        top.append(el("p", "meta", "Варианты сейчас берутся из шаблонов и базы ответов, мгновенно. Модель подключится к «Ещё вариант», когда самопроверка или проверка вслепую покажет «не хуже» хотя бы в 60% ответов" +
-          (st.auto && st.auto.n ? " (самопроверка: " + Math.round(st.auto.ok * 100 / st.auto.n) + "%)" : "") + (st.exam && st.exam.n ? " (вслепую: " + Math.round((st.exam.model + st.exam.tie) * 100 / st.exam.n) + "%)" : "") + "."));
-      }
+      // 06.11: «пусть начинает писать и запоминать мою редактуру сразу» — переключатель доступен всегда;
+      // модель только добавляет варианты, лучший по-прежнему выбирает судья, а проверка правил отсекает ошибки
+      var tg = el("label", "mdl-tg"), cb = el("input"); cb.type = "checkbox"; cb.checked = st.enabled;
+      cb.addEventListener("change", function () { st.enabled = cb.checked; st.userSet = true; saveSettings(); render(); });
+      tg.append(cb, document.createTextNode(" Модель пишет варианты ответов"));
+      top.append(tg);
+      var q = (st.auto && st.auto.n ? "самопроверка: " + Math.round(st.auto.ok * 100 / st.auto.n) + "%" : "") + (st.exam && st.exam.n ? (st.auto && st.auto.n ? ", " : "") + "вслепую: " + Math.round((st.exam.model + st.exam.tie) * 100 / st.exam.n) + "%" : "");
+      top.append(el("p", "meta", (st.enabled ? "Модель пишет варианты вместе с программой, лучший выбирает судья, обученный на ваших выборах. Ваши правки модель видит сразу: последние из них — в каждой её подсказке. Если модель ошибётся или задумается дольше 12 секунд, вариант возьмётся из шаблонов и базы ответов." : "Сейчас варианты берутся из шаблонов и базы ответов, мгновенно.") + (q ? " Качество сейчас — " + q + "." : "")));
       var del = el("button", "btn ghost", "Удалить модель"); del.type = "button";
       del.addEventListener("click", function () {
         if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Точно удалить?"; setTimeout(function () { del.dataset.armed = ""; del.textContent = "Удалить модель"; }, 4000); return; }
