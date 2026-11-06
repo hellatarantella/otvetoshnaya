@@ -345,21 +345,48 @@ const DIAG_REPORT: &str = r#"(function(){ if (window.top !== window) return;
 async fn source_open(app: tauri::AppHandle, id: String, url: String, title: String, script: Option<String>) -> Result<(), String> {
     let id = safe_id(&id)?;
     let label = format!("src-{id}");
+    let u = parse_https(&url)?;
     if let Some(w) = app.get_webview_window(&label) {
-        if script.is_some() {
-            let _ = w.close();
-        } else {
+        let alive = COMMITTED.lock().map(|g| g.iter().any(|l| l == &label)).unwrap_or(true);
+        if script.is_none() && alive {
             let _ = w.show();
             let _ = w.set_focus();
             return Ok(());
         }
+        // окно с другим заданием или «пустое» (страница в нём так и не начала грузиться) — убираем наверняка:
+        // close() только просит закрыть, и зависшее окно оставалось на экране чёрным (05.11)
+        let _ = w.destroy();
+        std::thread::sleep(std::time::Duration::from_millis(300));
     }
-    let u = parse_https(&url)?;
-    let u2 = u.clone();
-    let base_title = title.clone();
-    let sid = id.clone();
-    let sid2 = id.clone();
-    let b = source_window(&app, label, u)
+    open_login(&app, &label, &id, u.clone(), &title, script.clone())?;
+    // страница так и не начала загружаться (05.11: «Вход: ДокТу» стоял пустым минутами, потом чёрным):
+    // через 15 и через 45 секунд окно пересоздаётся. Всё пишется в журнал
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        for (i, wait) in [15u64, 30].iter().enumerate() {
+            std::thread::sleep(std::time::Duration::from_secs(*wait));
+            if COMMITTED.lock().map(|g| g.iter().any(|l| l == &label)).unwrap_or(true) { return; }
+            let w = match app2.get_webview_window(&label) { Some(w) => w, None => return };
+            if let Some(st) = app2.try_state::<Store>() {
+                journal_line(&st.dir, &format!("окно «{title}»: страница не начала загружаться за {} с — открываю окно заново (попытка {})", if i == 0 { 15 } else { 45 }, i + 1));
+            }
+            let _ = w.destroy();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if let Err(e) = open_login(&app2, &label, &id, u.clone(), &title, script.clone()) {
+                if let Some(st) = app2.try_state::<Store>() { journal_line(&st.dir, &format!("окно «{title}» не открылось заново: {e}")); }
+                return;
+            }
+        }
+    });
+    Ok(())
+}
+
+fn open_login(app: &tauri::AppHandle, label: &str, id: &str, u: tauri::Url, title: &str, script: Option<String>) -> Result<tauri::WebviewWindow, String> {
+    if let Ok(mut g) = COMMITTED.lock() { g.retain(|l| l != label); }
+    let base_title = title.to_string();
+    let sid = id.to_string();
+    let sid2 = id.to_string();
+    let b = source_window(app, label.to_string(), u)
         .title(title)
         .inner_size(1100.0, 820.0)
         .initialization_script(DIAG_INIT)
@@ -383,24 +410,7 @@ async fn source_open(app: tauri::AppHandle, id: String, url: String, title: Stri
                 let _ = w.emit_to("main", "source-diag", serde_json::json!({ "id": sid2, "diag": d }));
             }
         });
-    let w = b.build().map_err(|e| e.to_string())?;
-    // окно, в котором страница так и не начала загружаться (05.11: «Вход: ДокТу» стоял пустым минутами),
-    // через 15 секунд открывает страницу заново; второй раз — через 45 секунд. Всё пишется в журнал
-    let lbl = w.label().to_string();
-    if let Ok(mut g) = COMMITTED.lock() { g.retain(|l| l != &lbl); }
-    let app2 = app.clone();
-    std::thread::spawn(move || {
-        for (i, wait) in [15u64, 30].iter().enumerate() {
-            std::thread::sleep(std::time::Duration::from_secs(*wait));
-            if COMMITTED.lock().map(|g| g.iter().any(|l| l == &lbl)).unwrap_or(true) { return; }
-            let w = match app2.get_webview_window(&lbl) { Some(w) => w, None => return };
-            if let Some(st) = app2.try_state::<Store>() {
-                journal_line(&st.dir, &format!("окно «{lbl}»: страница не начала загружаться за {} с — открываю заново (попытка {})", if i == 0 { 15 } else { 45 }, i + 1));
-            }
-            let _ = w.navigate(u2.clone());
-        }
-    });
-    Ok(())
+    b.build().map_err(|e| e.to_string())
 }
 
 /// Окна входа, в которых страница начала загружаться (для повторной попытки, если не начала).
