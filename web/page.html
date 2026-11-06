@@ -986,8 +986,10 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
       c.spEl.dataset.score = a.score >= 8 ? "good" : a.score >= 6 ? "mid" : "low";
       c.spEl.title = a.issues.slice(0, 8).map(function(i){ return "«" + i.word + "» — " + i.hint; }).join("\n");
       var A = SP.analyze(s((c.row||{}).review)), note = [];
-      if (A.alarm) note.push("⚠ жалоба на исход лечения");
-      if (A.tone === "mixed") note.push("есть и благодарность, и жалоба — ответьте на обе части");
+      // разбор моделью (если есть) точнее правил: тон берём у неё (06.11: благодарность помечалась «есть и жалоба»)
+      var DM = window.__otvDeckMonth, AI = DM && DM.aiOf ? DM.aiOf({ text: s((c.row||{}).review) }) : null, tone = AI && AI.tone && AI.tone !== "other" ? AI.tone : A.tone;
+      if (A.alarm && tone !== "positive") note.push("⚠ жалоба на исход лечения");
+      if (tone === "mixed") note.push("есть и благодарность, и жалоба — ответьте на обе части");
       if (A.questions.length) note.push("в отзыве вопрос — нужен ответ по существу");
       c.anEl.textContent = note.join(" · "); c.anEl.hidden = !note.length;
     }

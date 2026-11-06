@@ -128,7 +128,16 @@
   function analyze0(review) {
     var t = s(review).replace(/ё/g, "е").replace(/Ё/g, "Е"), parts = sentences(t), thanks = [], complaints = [], questions = [], asks = [];
     parts.forEach(function (x) {
-      var q = QUEST.test(x), th = THANK.test(x), cp = COMPL.test(x) || (!q && NEG_T.some(function (n) { return n[1].test(x) && !/не было|без /.test(low(x)); }));
+      // тема жалобы сама по себе — ещё не жалоба: «понравилось всё, от консультации до выписки» — благодарность (06.11).
+      // Нужен признак недовольства в той же фразе: отрицание, «плохо», «пришлось», «так и не»…
+      var lx = low(x), negCtx = /(^|[^а-я])(не|нет|никто|ничего|никак|отказ\S*|плох\S*|пришлось|невозможно|так и не|почему|зачем|ужас\S*|долго)([^а-я]|$)/.test(lx) && !/не было|без |не пожалел|не зря|не ошибл/.test(lx);
+      var pos = /понрав|отличн|превосход|прекрасн|замечательн|вежлив|внимательн|профессионал|благодар|спасибо|рекоменд/.test(lx);
+      var q = QUEST.test(x), th = THANK.test(x) || (pos && !negCtx), cp = (COMPL.test(x) && !/долго не (ждал|ждать|пришлось)|не долго|недолго|без долг/.test(lx)) || (!q && !/долго не (ждал|ждать|пришлось)/.test(lx) && (function () {
+        // нейтральные слова темы (выписка, документы, запись, уход, условия…) — жалоба только при признаке недовольства;
+        // остальное («ждали 4 часа», «грязно», «сломан») — жалоба само по себе
+        var strong = x.replace(/выписк\S*|документ\S*|запис\S*|уход\S*|лекарств\S*|капельниц\S*|уко\S*|информац\S*|услови\S*|справк\S*|результат\S*|оплат\S*|касс\S*/gi, " ");
+        return NEG_T.some(function (n) { return n[1].test(strong); }) || (negCtx && NEG_T.some(function (n) { return n[1].test(x); }));
+      })() && !/не было|без /.test(lx));
       if (th && !cp) thanks.push(x); else if (cp) complaints.push(x);
       if (q) questions.push(x);
       if (ASK.test(x)) asks.push(x);
