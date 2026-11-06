@@ -163,11 +163,34 @@
     }
     return out;
   }
-  function thanksLine(it) {
+  // кого благодарят (врач из списка сотрудников и его отделение) — разными словами, чтобы ответы не были под копирку (06.11);
+  // seed — от текста варианта: у разных вариантов разные формулировки; rest — остальные фразы ответа, с ними не повторяемся
+  var THX = [
+    function (x) { return "Обязательно передадим вашу благодарность " + x + "."; },
+    function (x) { return "Передадим ваши слова " + x + "."; },
+    function (x) { return x.charAt(0).toUpperCase() + x.slice(1) + " будет приятно прочитать ваш отзыв."; },
+    function (x) { return "Обязательно расскажем " + x + " о вашем отзыве."; },
+    function (x) { return "Ваши тёплые слова обязательно передадим " + x + "."; },
+    function (x) { return "Вашу благодарность обязательно передадим " + x + "."; }
+  ];
+  var TEAM = ["всей команде ", "коллективу ", "сотрудникам "];
+  function thanksLine(it, seed, rest) {
     var pp = people(it), who = pp.names.length ? pp.names.slice(0, -1).join(", ") + (pp.names.length > 1 ? " и " : "") + pp.names[pp.names.length - 1] : "";
-    var team = pp.dept ? "всей команде " + DEPT_GEN[pp.dept] : "";
-    if (!who && !team) return "";
-    return "Обязательно передадим вашу благодарность " + (who && team ? who + " и " + team : who || team) + ".";
+    if (!who && !pp.dept) return "";
+    var h = 0, k6 = function (t) { var o = {}; (norm(t).match(/[а-яa-z]{5,}/g) || []).forEach(function (w) { o[w.slice(0, 5)] = 1; }); return o; };
+    for (var i = 0; i < s(seed).length; i++) h = (h * 31 + s(seed).charCodeAt(i)) | 0;
+    h = Math.abs(h);
+    var R = k6(rest), R4 = {}, best = "", bestN = 1e9;
+    (norm(rest).match(/[а-я]{4,}/g) || []).forEach(function (x) { if (!/^(ваш|наш|всег|кото|чтоб|этог)/.test(x)) R4[x.slice(0, 4)] = 1; });
+    for (var j = 0; j < THX.length * TEAM.length; j++) {
+      var team = pp.dept ? TEAM[((h >> 3) + Math.floor(j / THX.length)) % TEAM.length] + DEPT_GEN[pp.dept] : "";
+      var line = THX[(h + j) % THX.length](who && team ? who + " и " + team : who || team), L = k6(line), n = 0;
+      for (var w in L) if (R[w]) n++;
+      // 4 буквы — как проверка повторов в карточке («благодарим» / «благодарность», «сотрудников» / «сотрудникам»)
+      (norm(line).match(/[а-я]{4,}/g) || []).forEach(function (x) { if (R4[x.slice(0, 4)]) n += 0.5; });
+      if (n < bestN) { best = line; bestN = n; if (!n) break; }
+    }
+    return best;
   }
   var PH = "\u0001", DOT = "\u0002";
   // имя-отчество в дательном падеже из самого отзыва («Спасибо Анне Викторовне») — им можно заполнить «доктору [...]»
@@ -197,12 +220,15 @@
       if (dropped || !sents.length) x = x.replace(/^Также,?\s+/, "");                 // «Также…» после выброшенной фразы
       sents.push(x); dropped = false;
     });
-    var thx = tone === "positive" && (type === "hospital" || type === "letter") ? thanksLine(it) : "";
-    if (thx) {
-      // своя фраза вместо общих «передадим…», «лечащему врачу», «команде отделения»
-      sents = sents.filter(function (x) { return !/передад|переда[её]м|передали|лечащ\S* врач|команд\S* (\S+ )?отделени|сотрудникам отделения/i.test(x); });
-      var at = sents.length && /спасибо|благодар/i.test(sents[0]) ? 1 : 0;
-      sents.splice(at, 0, thx);
+    if (tone === "positive" && (type === "hospital" || type === "letter")) {
+      // своя фраза вместо общих «передадим…», «лечащему врачу», «команде отделения», «сотрудникам будет приятно»
+      var gen0 = sents.filter(function (x) { return /медс[её]стр/i.test(x) || !/передад|переда[её]м|передали|лечащ\S* врач|команд\S* (\S+ )?отделени|сотрудникам отделения|Сотрудникам будет приятно|расскажем/i.test(x); });   // о медсёстрах — оставляем
+      var thx = thanksLine(it, text, gen0.join(" "));
+      if (thx) {
+        sents = gen0;
+        var at = sents.length && /спасибо|благодар/i.test(sents[0]) ? 1 : 0;
+        sents.splice(at, 0, thx);
+      }
     }
     function keepSent(x) {
       if (!x || x.length < 3) return false;

@@ -89,6 +89,7 @@ textarea.comment{min-height:70px}
 .kb-style{margin:4px 0 8px;padding-left:18px;font-size:14px}
 .kb-own{margin:8px 0 0;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .src-why{margin:4px 0 8px;color:var(--fix)}
+.staff-line{margin:6px 0 0}.staff-warn{color:var(--fix);font-weight:600}
 .speech{margin:6px 0 0;font-size:13px;color:var(--muted)}
 .speech[data-score="good"]::before{content:"● ";color:var(--ok)}
 .speech[data-score="mid"]::before{content:"● ";color:#d6a33a}
@@ -693,6 +694,9 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
   function echoHits(answer, review){
     if (!review) return [];
     var lines = s(answer).split("\n"); var body = lines.slice(1, lines.length - 1).join(" ");
+    // имя и отчество врача — не «повтор слов из отзыва»: его и нужно назвать (06.11: «ещё вариант» не работал на таких отзывах)
+    var NP = /[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]*(?:вн|вич|ичн)[а-яё]{0,3}(?![а-яё])/g;
+    body = body.replace(NP, " | "); review = s(review).replace(NP, " | ");
     var aw = words(body), rw = " " + words(review).join(" ") + " ", hits = [];
     for (var i = 0; i + 2 < aw.length; i++) {
       var tri = aw.slice(i, i + 3);

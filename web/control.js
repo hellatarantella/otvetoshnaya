@@ -39,6 +39,9 @@
     });
     if (negOld) out.push({ text: "Жалобы без ответа больше суток: " + negOld, tab: "neg" });
     if (posOld) out.push({ text: "Ответы ждут согласования больше 3 дней: " + posOld, tab: "pos" });
+    // список сотрудников за текущий месяц: по нему в ответах и отчётах имена и отделения
+    var SS = window.__otvReports && window.__otvReports.staffStatus ? window.__otvReports.staffStatus() : null;
+    if (SS && (SS.stale || SS.empty)) out.push({ text: "Список сотрудников: " + (SS.empty ? "пустой" : "нет вкладки «" + SS.want + "», в работе «" + SS.tab + "»") + " — добавьте новую вкладку в таблицу «[ГКБ24] Список врачей» и нажмите «Обновить список»", tab: "check" });
     if (diff.length) out.push({ text: "На площадке текст ответа не совпадает с согласованным: " + diff.slice(0, 3).join("; ") + (diff.length > 3 ? " и ещё " + (diff.length - 3) : ""), tab: "pos" });
     var R = window.__otvReports; if (R && R.lastTodo) R.lastTodo().forEach(function (t) { out.push({ text: "Отчёт: " + t, tab: "check" }); });
     // презентация закрытой недели (четверг после 15:00 и позже) ждёт решений

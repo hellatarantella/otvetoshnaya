@@ -850,6 +850,39 @@
   }
   function saveLast(msg, head, todo) { last = { at: nowIso(), msg: msg, head: head || "", todo: todo || [] }; if (db) db.collection("settings").doc("report").set(last).catch(function () {}); }
 
+  /* ---------- список сотрудников (06.11: «куда грузить новые списки сотрудников») ----------
+     Список берётся из Google-таблицы «[ГКБ24] Список врачей»: вкладка с названием месяца («Ноябрь 2026»),
+     столбцы «Фамилия, имя, отчество», «Штатная должность», «Штатное подразделение». Новая вкладка — и программа
+     сама берёт самую свежую. Здесь видно, какая вкладка в работе, и можно обновить сразу, не дожидаясь 6 часов */
+  var STAFF_URL = "https://docs.google.com/spreadsheets/d/11WQHQVWv-ZmvQr04DpK84ZlzhIWE5gLVbhr0CbXMzmY/edit";
+  var MONTHS_NOM = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  var staffKick = 0;
+  function staffStatus() {
+    if (!refs) return null;
+    var now = new Date(), want = MONTHS_NOM[now.getMonth()] + " " + now.getFullYear(), tab = s(refs.staffTab).trim();
+    // справочник прошлого месяца — сначала перечитываем (новая вкладка могла появиться), замечание — только по свежему
+    var fresh = (refs.at || 0) >= new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    if (!fresh && ready() && !staffKick) { staffKick = 1; loadRefs(true).then(function () { staffKick = 0; render(); }, function () {}); }
+    return { tab: tab, want: want, n: (refs.staff || []).length, at: refs.at || 0, stale: fresh && !!tab && tab.toLowerCase() !== want.toLowerCase(), empty: fresh && !(refs.staff || []).length };
+  }
+  function staffBox() {
+    var S = staffStatus(), box = el("p", "meta staff-line");
+    if (!S) { box.textContent = "Список сотрудников ещё не загружен — нажмите «Обновить список»."; }
+    else {
+      box.append("Список сотрудников: " + (S.tab ? "вкладка «" + S.tab + "», " : "") + S.n + " чел." + (S.at ? " · обновлён " + new Date(S.at).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "") + ". ");
+      if (S.stale || S.empty) { var w = el("span", "staff-warn", S.empty ? "Список пустой. " : "Вкладки «" + S.want + "» нет — программа берёт «" + S.tab + "». "); box.append(w); }
+    }
+    var a = el("a", "link", "Открыть таблицу"); a.href = STAFF_URL; a.target = "_blank"; a.title = "Новый список — новой вкладкой с названием месяца, например «" + MONTHS_NOM[new Date().getMonth()] + " " + new Date().getFullYear() + "»";
+    var b = el("button", "link", "Обновить список"); b.type = "button";
+    b.addEventListener("click", function () {
+      b.disabled = true; b.textContent = "Обновляю…";
+      loadRefs(true).then(function () { render(); var S2 = staffStatus(); if (window.__otvBar) window.__otvBar.show("Список сотрудников обновлён: " + (S2 && S2.tab ? "«" + S2.tab + "», " : "") + (S2 ? S2.n : 0) + " чел.", "ok"); })
+        .catch(function (e) { b.disabled = false; b.textContent = "Обновить список"; if (window.__otvBar) window.__otvBar.show("Список не обновился: " + (e && e.message || e), "err"); });
+    });
+    box.append(a, " · ", b);
+    return box;
+  }
+
   function render() {
     var ctl = $("ckCtl"); if (!ctl) return;
     if (!line) {
@@ -869,6 +902,7 @@
       });
       p.append(" ", off); line.append(p);
       if (oldScript()) line.append(updateBox());
+      line.append(staffBox());
       if (last && last.msg && !runMsg) {
         var when = new Date(last.at).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
         var l = el("div", "ctl-last");
@@ -1012,7 +1046,7 @@
     var o = list[0], c = catOf(o);
     return { fio: o.fio, short: o.short, sur: o.sur, name: o.name, pat: o.pat, pos: o.pos, dept: o.dept, cat: c.cat || "", catSure: !!c.sure };
   }
-  window.__otvReports = { lastTodo: function () { return last && last.todo ? last.todo.slice() : []; }, _selfCheck: selfCheckOf, _pilot: function () { return { pilot: pilot, waiting: pilotWaiting }; }, confirmPilot: confirmPilot, _short: function (m) { render(); setRun(m.cls || "warn", m.text, m); }, refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
+  window.__otvReports = { lastTodo: function () { return last && last.todo ? last.todo.slice() : []; }, _selfCheck: selfCheckOf, _pilot: function () { return { pilot: pilot, waiting: pilotWaiting }; }, confirmPilot: confirmPilot, _short: function (m) { render(); setRun(m.cls || "warn", m.text, m); }, refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, staffStatus: staffStatus, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
     // для ответов: кто упомянут и из какого отделения (без запросов в Google)
     strongNeg: function (t) { return NEG_STRONG.test(String(t || "")); },
     people: function (text, page) { return idx ? findPeople(text, page) : []; }, catOf: function (p) { return idx ? catOf(p) : {}; }, textDepts: function (t) { return textDepts(t); } };
