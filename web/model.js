@@ -26,13 +26,13 @@
     }, function () { return st; });
   }
   function saveSettings() {
-    if (db) db.collection("settings").doc("model").set({ enabled: st.enabled, exam: st.exam || null, updatedAt: new Date().toISOString() }).catch(function () {});
+    if (db) db.collection("settings").doc("model").set({ enabled: st.enabled, exam: st.exam || null, auto: st.auto || null, updatedAt: new Date().toISOString() }).catch(function () {});
   }
   window.claude.use("db").then(function (d) {
     db = d;
     return db.collection("settings").doc("model").get();
   }).then(function (snap) {
-    if (snap && snap.exists) { var v = snap.data() || {}; st.enabled = !!v.enabled; st.exam = v.exam || null; }
+    if (snap && snap.exists) { var v = snap.data() || {}; st.enabled = !!v.enabled; st.exam = v.exam || null; st.auto = v.auto || null; }
     render();
   }).catch(function () {});
   try { T.event.listen("model-progress", function () { refresh(); }); } catch (e) {}
@@ -199,7 +199,7 @@
   }
   // модель пишет варианты, только если проверка вслепую показала «не хуже» хотя бы в 60% (не меньше 10 отзывов)
   var PASS = 0.6;
-  function passed() { var r = st.exam; return !!(r && r.n >= 10 && (r.model + r.tie) / r.n >= PASS); }
+  function passed() { var r = st.exam, a = st.auto; return !!((r && r.n >= 10 && (r.model + r.tie) / r.n >= PASS) || (a && a.n >= 20 && a.ok / a.n >= PASS)); }
   /* ---------- контент-анализ моделью: разбор каждого отзыва (тон, сотрудники, за что благодарят, на что жалуются, вопрос, суть).
      Модель отвечает строго по спискам; программа проверяет ответ (сотрудники — только из списка, темы — только из перечня)
      и пишет разбор в отзыв. «Аналитика» и месячная презентация считают темы по нему. Работает пачками по 10, когда модель включена */
@@ -347,6 +347,77 @@
       " (" + Math.round(ok * 100 / r.n) + "%). Лучше модель: " + r.model + ", лучше ваш: " + r.mine + ", одинаково: " + r.tie + (r.bad ? ", оба плохие: " + r.bad : "") + ".";
   }
 
+  /* ---------- самопроверка (06.11: «погоняй её по проверке сам, когда будет готова — подключу») ----------
+     Без вас: модель пишет ответ на отзыв из базы (ваш же ответ ей не виден), программа сравнивает его с вашим
+     опубликованным по вашим правилам и судье, обученному на ваших выборах. «Не хуже» — если нет замечаний проверки,
+     не пропущена жалоба или вопрос, нет чужих имён и оценка судьи не ниже вашей больше чем на 0,3.
+     Результат ≥ 60% на 20 отзывах открывает переключатель «Ещё вариант пишет модель» — включаете вы */
+  var auto = null;
+  function autoVerdict(req, model, mine) {
+    var why = [], LN = window.__otvLint, G = window.__otvGen, SP = window.__otvSpeech, J = window.__otvJudge;
+    if (!model) return { ok: false, why: ["модель не написала ответ"] };
+    var lint = []; try { lint = LN ? LN({ page: req.page, review: req.review }, model) : []; } catch (e) {}
+    if (lint.length) why.push("замечание проверки: " + (lint[0].text || lint[0].msg || lint[0]));
+    if (G && G.check && !G.check(model, { platform: req.platform, page: req.page, review: req.review, author: req.author }, req.tone).ok) why.push("чужое имя или не тот тон");
+    if (SP && req.tone === "negative") { var mm = SP.covers(model, req.review).length, hm = SP.covers(mine, req.review).length; if (mm > hm) why.push("пропущена часть жалобы"); }
+    if (bodyOf(model).length < 50) why.push("слишком коротко");
+    var sm = J ? J.score(model, req) : 0, sh = J ? J.score(mine, req) : 0;
+    if (J && sm < sh - 0.3) why.push("судья ставит ваш выше (" + sm.toFixed(1) + " < " + sh.toFixed(1) + ")");
+    return { ok: !why.length, why: why, sm: sm, sh: sh };
+  }
+  function startAuto(n) {
+    if (auto && auto.running) return;
+    var list = examPool().slice(0, n || 20);
+    if (!list.length) { examMsg = "В базе пока нет опубликованных ответов на отзывы. Проверять не на чем."; render(); return; }
+    auto = { running: true, items: list.map(function (e) { return { req: reqOfKb(e), mine: s(e.answer), model: null, v: null }; }), i: 0 };
+    render();
+    var step = function () {
+      if (!auto || !auto.running) return;
+      var x = auto.items[auto.i]; if (!x) return finishAuto();
+      write(x.req).then(function (t) { x.model = t || null; }, function () { x.model = null; }).then(function () {
+        x.v = autoVerdict(x.req, x.model, x.mine); auto.i++; render(); setTimeout(step, 50);
+      });
+    };
+    step();
+  }
+  function finishAuto() {
+    var it = auto.items.filter(function (x) { return x.v; }), ok = it.filter(function (x) { return x.v.ok; }).length;
+    var why = {}; it.forEach(function (x) { if (!x.v.ok) x.v.why.forEach(function (w) { var k = w.replace(/\s*\(.*$/, "").replace(/:.*$/, ""); why[k] = (why[k] || 0) + 1; }); });
+    st.auto = { at: new Date().toISOString(), n: it.length, ok: ok, why: why, lost: it.filter(function (x) { return !x.v.ok; }).slice(0, 3).map(function (x) { return { review: x.req.review.slice(0, 200), model: x.model || "", mine: x.mine, why: x.v.why }; }) };
+    auto.running = false; saveSettings(); render();
+  }
+  function autoLine(a) {
+    if (!a || !a.n) return "";
+    var w = Object.keys(a.why || {}).sort(function (x, y) { return a.why[y] - a.why[x]; }).map(function (k) { return k + " — " + a.why[k]; }).join("; ");
+    return "Самопроверка " + new Date(a.at).toLocaleDateString("ru-RU") + ": модель не хуже ваших ответов в " + a.ok + " из " + a.n + " (" + Math.round(a.ok * 100 / a.n) + "%)." + (w ? " Где проиграла: " + w + "." : "");
+  }
+  function autoCard() {
+    var c = el("div", "card"); c.id = "mdlAuto";
+    c.append(el("h2", null, "Самопроверка"));
+    c.append(el("p", "meta", "Программа сама сравнивает ответы модели с вашими опубликованными — по вашим правилам и по судье, обученному на ваших выборах. От 60% на 20 отзывах можно включить модель."));
+    if (auto && auto.running) {
+      var done = auto.items.filter(function (x) { return x.v; }), okN = done.filter(function (x) { return x.v.ok; }).length;
+      c.append(el("p", "mdl-st", "Идёт: " + done.length + " из " + auto.items.length + " · не хуже: " + okN + ". Модель пишет ответ…"));
+      var pr = el("progress", "mdl-pr"); pr.max = auto.items.length; pr.value = done.length; c.append(pr);
+      var stop = el("button", "btn ghost", "Остановить и посчитать"); stop.type = "button";
+      stop.addEventListener("click", function () { finishAuto(); });
+      var a0 = el("div", "actions"); a0.append(stop); c.append(a0);
+      return c;
+    }
+    if (st.auto) {
+      c.append(el("p", "mdl-st", autoLine(st.auto)));
+      (st.auto.lost || []).forEach(function (l) {
+        var d = el("details", "mdl-lost"); d.append(el("summary", null, "Проиграла: " + l.why.join("; ")));
+        d.append(el("p", "meta", "Отзыв: " + l.review), el("div", "mdl-ans", "Модель:\n" + l.model), el("div", "mdl-ans", "Ваш:\n" + l.mine)); c.append(d);
+      });
+    }
+    var a = el("div", "actions"), go = el("button", "btn primary", st.auto ? "Проверить ещё раз · 20 отзывов" : "Запустить · 20 отзывов"); go.type = "button";
+    go.addEventListener("click", function () { startAuto(20); });
+    a.append(go); c.append(a);
+    return c;
+  }
+  window.__otvModelAuto = { verdict: autoVerdict, start: startAuto, state: function () { return { auto: auto, saved: st.auto, passed: passed() }; } };
+
   /* ---------- вкладка «Модель» ---------- */
   var examMsg = "";
   function render() {
@@ -377,8 +448,8 @@
         top.append(tg);
         top.append(el("p", "meta", st.enabled ? "Если модель ошибётся или задумается дольше 12 секунд, вариант возьмётся из шаблонов и базы ответов." : "Сейчас варианты берутся из шаблонов и базы ответов, мгновенно."));
       } else {
-        top.append(el("p", "meta", "Варианты сейчас берутся из шаблонов и базы ответов, мгновенно. Модель подключится к «Ещё вариант», когда проверка вслепую покажет «не хуже» хотя бы в 60% ответов" +
-          (st.exam && st.exam.n ? " (сейчас " + Math.round((st.exam.model + st.exam.tie) * 100 / st.exam.n) + "%)" : "") + "."));
+        top.append(el("p", "meta", "Варианты сейчас берутся из шаблонов и базы ответов, мгновенно. Модель подключится к «Ещё вариант», когда самопроверка или проверка вслепую покажет «не хуже» хотя бы в 60% ответов" +
+          (st.auto && st.auto.n ? " (самопроверка: " + Math.round(st.auto.ok * 100 / st.auto.n) + "%)" : "") + (st.exam && st.exam.n ? " (вслепую: " + Math.round((st.exam.model + st.exam.tie) * 100 / st.exam.n) + "%)" : "") + "."));
       }
       var del = el("button", "btn ghost", "Удалить модель"); del.type = "button";
       del.addEventListener("click", function () {
@@ -387,6 +458,7 @@
       });
       act.append(del);
       top.append(act); box.append(top);
+      box.append(autoCard());
       box.append(examCard());
       return;
     }
