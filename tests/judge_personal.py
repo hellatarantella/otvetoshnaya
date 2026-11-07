@@ -19,10 +19,14 @@ async def main():
           const fam = C.persOf(R1, 'doctor', 'positive').map(x => x.id);
           const a1 = G.answer({ platform: 'ПроДокторов', page: 'Страница врача: Алексеев А.А.', rating: 5, review: R1 }, {});
           const a2 = G.answer({ platform: 'ПроДокторов', page: 'Страница врача: Вишняков Д.В.', rating: 5, review: R2 }, {});
-          return { last: [fg[fg.length - 1], fp[fp.length - 1]], better: J.score(per, req) > J.score(gen, req), n: J.NAMES.length, w: J.weights().length, fam, t1: a1 && a1.text, t2: a2 && a2.text }; }""")
+          const sar = { platform: 'Яндекс', page: 'Карточка больницы', rating: 2, review: 'Приехал в полуобморочном состоянии, сказали здоров. На следующий день скорая увезла в другую больницу. Спасибо 24-й, что не сдох.' };
+          const c1 = G.check('Здравствуйте!\\nСпасибо за отзыв и добрые слова о работе нашей команды. Напишите на gkb24@zdrav.mos.ru.\\n' + S, sar, 'negative');
+          const a3 = G.answer(sar, {});
+          return { sarOk: !c1.ok && !/добрые слова|тёплые слова/.test((a3 && a3.text) || ''), last: [fg[fg.length - 1], fp[fp.length - 1]], better: J.score(per, req) > J.score(gen, req), n: J.NAMES.length, w: J.weights().length, fam, t1: a1 && a1.text, t2: a2 && a2.text }; }""")
         res = [(r['last'] == [0, 1] and r['better'] and r['n'] == r['w'], 'судья: ответ под повод отзыва выше общего', r),
                ('pp_fam' not in r['fam'], '«обнаружена» не считается упоминанием жены', r['fam']),
                (r['t1'] and r['t2'] and r['t1'] != r['t2'], 'два отзыва подряд — разные ответы', [r['t1'], r['t2']]),
+               (r['sarOk'], 'оценка 2 из 5 с сарказмом «спасибо, что не сдох» — без «добрых слов»', r.get('sarOk')),
                (not errs, 'без ошибок страницы', errs[:3])]
         for ok, t, d in res: print(('OK  ' if ok else 'FAIL') + ' ' + t, '' if ok else json.dumps(d, ensure_ascii=False)[:1200])
         await b.close(); print('ALL OK' if all(x[0] for x in res) else 'SOME FAILED')
