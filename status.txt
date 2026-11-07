@@ -1,0 +1,6 @@
+run 42355747074 sha 4ba23f86abdab2e0c8ef3bc31c3b6c506c464fe0
+job success
+llama success build success files success
+Sat Nov  7 08:37:00 UTC 2026
+Filesystem        Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk1s5s1   325Gi    10Gi   127Gi     8%    427k  1.3G    0%   /
