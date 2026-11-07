@@ -58,7 +58,11 @@ jobs:
       - run: npm ci
       - name: Проверки (без них не собираем)
         shell: bash
-        run: NO_BROWSER=1 bash tests/run-all.sh
+        # вывод проверок — в журнал: если упадут, он уйдёт в ветку ci-log-<система> (07.11: Windows падал на проверках без объяснения)
+        run: |
+          mkdir -p ci-log
+          set -o pipefail
+          NO_BROWSER=1 bash tests/run-all.sh 2>&1 | tee ci-log/tests.log
       - name: Сервер модели — из кэша
         id: llama
         uses: actions/cache@v4
