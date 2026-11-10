@@ -507,7 +507,7 @@
       const w = x._w;
       return { id: idOf(x.ConversationId && x.ConversationId.Id || x.ItemId.Id), date: w.date, time: w.time, ts: w.ts, subject: subj.slice(0, 200), type, typeRaw: rawType.slice(0, 40),
         landing: (g('Лендинг|Страница') || (subj.match(/\(Страница: ([^)]*)\)/) || [])[1] || '').slice(0, 300), name: g('Имя|ФИО').slice(0, 120), doctor: g('Врач').slice(0, 160),
-        message: msg, email: em, emailHash: em ? h(em) : '', read: !!msg, api: true, folder: x._folder, verb: verb(x), itemId: x.ItemId.Id, cid: x.ConversationId && x.ConversationId.Id || '' };
+        message: msg, email: em, phone: (g('Телефон|Тел\\.?|Номер телефона|Контактный телефон').match(/\+?\d[\d\s()-]{6,}\d/) || [''])[0].slice(0, 40), emailHash: em ? h(em) : '', read: !!msg, api: true, folder: x._folder, verb: verb(x), itemId: x.ItemId.Id, cid: x.ConversationId && x.ConversationId.Id || '' };
     };
     const letters = [], gone = [];
     for (const x of cands) { const p = parse(x); if (!p) continue; (x._folder === 'deleted' ? gone : letters).push(p); }
@@ -614,7 +614,7 @@
       diag.noReply = out.filter(l => !l.dup && !replies[l.id]).length;
       diag.answered = answered.length;
     } catch (e) { if (/нужен вход/.test(e.message)) throw e; diag.sentErr = String(e.message).slice(0, 80); diag.sent = -1; }
-    out.forEach(l => { delete l.email; delete l.ts; delete l.verb; delete l.itemId; delete l.cid; if (l.folder === 'deleted') l.folder = 'Удаленные'; });
+    out.forEach(l => { /* 10.11: контакты автора выходят из окна почты только у неотвеченных писем — для уведомления о жалобе в MAX; в базу писем не пишутся */ if (!l.replied && !l.dup && (l.email || l.phone)) l.contact = { email: l.email || '', phone: l.phone || '' }; delete l.email; delete l.phone; delete l.ts; delete l.verb; delete l.itemId; delete l.cid; if (l.folder === 'deleted') l.folder = 'Удаленные'; });
     diag.complete = !diag.ffErr && !diag.wkErr && !diag.bodyErr && diag.folders.every(f => !/ошибка$/.test(f));
     diag.since = since; diag.today = todayMsk;
     return { items: out, seen: out.length, diag, answered, replies };
@@ -818,6 +818,7 @@
       else if (t) msg = t.split('\n').map(l => l.trim()).filter(l => l && !/^(От|Кому|Копия|Отправлено|Тема|From|To|Cc|Sent|Subject|Имя|ФИО|Email|E-mail|Телефон|Тип обращения|Врач|Лендинг|Страница)\s*:/i.test(l) && !/^Форма обратной связи/i.test(l)).join('\n');
       it.message = msg.trim().replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, '[email]').replace(/\+?\d[\d\s()-]{8,}\d/g, '[телефон]').slice(0, 3000);
       it.emailHash = email ? h(email) : '';
+      { const ph = (g('Телефон|Тел\\.?|Номер телефона').match(/\+?\d[\d\s()-]{6,}\d/) || [''])[0].slice(0, 40); if (email || ph) it.contact = { email: email, phone: ph }; }
       it.read = !!it.message;
       if (/Вы ответили на это сообщение|Вы ответили|You replied/i.test(t)) it.replied = true;     // ответ уже отправлен из почты
       if (it.read) diag.read++;
@@ -883,7 +884,7 @@
           const d0 = dateIso ? new Date(dateIso + 'T00:00:00Z') : since, ws = words(name);
           return sent.some(x => x.d >= d0 && ((eh && x.mails.indexOf(eh) >= 0) || (ws.length >= 2 && ws.every(w => x.t.indexOf(w) >= 0))));
         };
-        list.forEach(it => { if (it.replied || repliedTo(it.emailHash, it.name, it.date)) { it.replied = true; answered.push(it.id); } });
+        list.forEach(it => { if (it.replied || repliedTo(it.emailHash, it.name, it.date)) { it.replied = true; answered.push(it.id); delete it.contact; } });
         (opts.todo || []).forEach(x => { if (answered.indexOf(x.id) < 0 && repliedTo(x.eh, x.name, x.date)) answered.push(x.id); });
       } else diag.sent = -1;
       if (!(await openFolder('Входящие'))) { location.hash = '#path=/mail/inbox'; for (let k = 0; k < 20; k++) { await sleep(300); if (firstCid() === inboxFirst) break; } }
@@ -1716,6 +1717,7 @@
               if (mu.kind === "complaint" && !a.exists) {
                 if (!isAns) alerts++;
                 jobs.push(["alerts", it.id, { platform: "Сайт", page: page, date: mu.date || s0(cur.date), rating: null, threshold: null, author: mu.name || s0(cur.name), text: nt.slice(0, 1500), link: "",
+                  contactEmail: s0(it.contact && !isAns ? it.contact.email : ""), contactPhone: s0(it.contact && !isAns ? it.contact.phone : ""),
                   answered: isAns, markAnswered: isAns, status: isAns ? "done" : "new", detectedAt: nowIso(), note: isAns ? "Ответ уже отправлен из почты" : "" }, true]);
               } else if (mu.kind && mu.kind !== "complaint" && a.exists && (a.data() || {}).status !== "done") jobs.push(["alerts", it.id, { status: "done", statusAt: nowIso() }]);
               return seqJobs(jobs);
@@ -1741,6 +1743,7 @@
               if (!isAns) alerts++;
               return db.collection("alerts").doc(it.id).set({ platform: "Сайт", page: page, date: it.date, rating: null, threshold: null,
                 author: it.name || "", text: s0(it.message).slice(0, 1500), link: "", answered: isAns, markAnswered: isAns,
+                contactEmail: s0(it.contact && !isAns ? it.contact.email : ""), contactPhone: s0(it.contact && !isAns ? it.contact.phone : ""),   // только для уведомления; после отправки стираются
                 status: isAns ? "done" : "new", detectedAt: nowIso(), note: isAns ? "Ответ уже отправлен из почты" : "" });
             });
           });

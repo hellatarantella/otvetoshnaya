@@ -34,7 +34,7 @@ async def main():
           const yes = [...d.querySelectorAll('button')].find(b => b.textContent === 'Взять'); const txt = yes.closest('.kb-ph').firstChild.textContent.replace(/[«»]/g, ''); yes.click();
           await new Promise(r => setTimeout(r, 500));
           const it = { platform: 'Яндекс', page: 'Карточка больницы', author: 'Олег', rating: 5, review: 'Спасибо всем, отличная больница, внимательные сотрудники, всё понравилось.' };
-          const used = window.__otvCompose.variants(it, { tone: 'positive', type: 'hospital' }, 60).some(v => v.text.includes(txt));
+          let used = false; for (let k = 0; k < 6 && !used; k++) used = window.__otvCompose.variants(it, { tone: 'positive', type: 'hospital' }, 60).some(v => v.text.includes(txt));   /* фразы тасуются: смотрим до 360 вариантов */
           return { n, prop: prop.length, bad, txt, used }; }""")
         res.append((PH['n'] >= 2 and not PH['bad'] and PH['used'], 'новые формулировки модели: неподходящие (с извинением) отброшены, взятая вами — в ответах', PH))
         res.append((not errs, 'без ошибок страницы', errs[:3]))

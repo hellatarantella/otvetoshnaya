@@ -25,13 +25,17 @@
     if (!m) return s(d) || "не указана";
     return m[1].length === 4 ? (+m[3]) + " " + MON[+m[2] - 1] : (+m[1]) + " " + MON[+m[2] - 1];
   }
-  var PF = { "Google": "Google Карты", "Сайт": "Сайт больницы (письмо)" };
-  /* текст уведомления строго по образцу */
+  /* текст уведомления строго по образцам (10.11): площадки — с оценкой и ником; письмо с сайта — имя, email, телефон */
   function format(a) {
     var r = a.rating == null || a.rating === "" ? null : +a.rating;
     var txt = s(a.text).trim(); if (txt.length > 3500) txt = txt.slice(0, 3500) + "…";
+    if (s(a.platform) === "Сайт")
+      return "#нампишут\nПлощадка: Сайт\nДата отзыва: " + dateWords(a.date) + "\n\n" +
+        "Имя: " + (s(a.author).trim() || "не указано") + "\n" +
+        "Email: " + (s(a.contactEmail).trim() || "не указан") + "\n" +
+        "Телефон: " + (s(a.contactPhone).trim() || "не указан") + "\n\n" + txt;
     return "#нампишут\n" +
-      "Площадка: " + (PF[s(a.platform)] || s(a.platform) || "не указана") + "\n" +
+      "Площадка: " + (s(a.platform) || "не указана") + "\n" +
       "Дата отзыва: " + dateWords(a.date) + "\n" +
       "Оценка " + (r != null && !isNaN(r) ? (Math.round(r * 10) / 10 + "").replace(".", ",") + "/5" : "не указана") + "\n" +
       "Ник пользователя: " + (s(a.author).trim() || "не указан") + "\n\n" + txt;
@@ -78,7 +82,7 @@
           var sent = before.concat(r.ok), all = targets().every(function (tg) { return sent.indexOf(tg.key) >= 0; });
           if (r.ok.length) cfg.lastOk = nowIso();
           cfg.lastErr = r.err; if (r.err) jlog("не отправилось: " + r.err);
-          var patch = { sentTo: sent }; if (all) patch.notifiedAt = nowIso();
+          var patch = { sentTo: sent }; if (all) { patch.notifiedAt = nowIso(); patch.contactEmail = ""; patch.contactPhone = ""; }   // контакты автора письма не храним после отправки
           return db.collection("alerts").doc(id).update(patch).then(function () { if (!all) { delete sending[id]; throw new Error(r.err); } });
         });
       });
@@ -92,14 +96,14 @@
     if (!ready() || busyHealth || !window.__otvSrcHealth) return Promise.resolve();
     var list = window.__otvSrcHealth() || [], warned = Object.assign({}, cfg.warned || {}), out = [];
     list.forEach(function (x) {
-      var okAge = x.okAt ? now - Date.parse(x.okAt) : Infinity, bad = !x.ok && okAge > 3 * 3600e3;
+      var okAge = x.okAt ? now - Date.parse(x.okAt) : Infinity, bad = !x.ok && okAge > 12 * 3600e3;
       if (bad && !warned[x.name] && cfg.healthOn !== false) {
         warned[x.name] = now.toISOString();
         out.push("⚠️ Ответошная: " + x.name + " не читается" + (x.needLogin ? " — нужен вход в кабинет" : x.down ? " — сбой на самой площадке" : "") + ". Новые отзывы оттуда сейчас не приходят" + (x.needLogin ? ". Войдите: «Источники» → «Войти: " + x.name + "»." : "."));
-      } else if (x.ok && warned[x.name]) { delete warned[x.name]; if (cfg.healthOn !== false) out.push("✅ Ответошная: " + x.name + " снова читается."); }
+      } else if (x.ok && warned[x.name]) delete warned[x.name];   // заработало — молча (10.11: «минимум уведомлений, только самое важное»)
     });
     var day = now.getFullYear() + "-" + (now.getMonth() + 1) + "-" + now.getDate();
-    if (cfg.dailyOn !== false && now.getHours() >= 20 && cfg.dailyAt !== day) {
+    if (cfg.dailyOn === true && now.getHours() >= 20 && cfg.dailyAt !== day) {
       cfg.dailyAt = day;
       var since = now - 864e5, neg = Object.keys(alerts).filter(function (id) { return Date.parse(s(alerts[id].detectedAt)) >= since; }).length;
       var bad = list.filter(function (x) { return !x.ok; }).map(function (x) { return x.name + (x.needLogin ? " (нужен вход)" : ""); });
@@ -161,8 +165,8 @@
     c.append(el("p", "meta", "Новый негативный отзыв (жалоба или оценка 1–2) и жалоба из писем с сайта приходят в MAX сразу после сбора — вам и коллегам, которых вы добавите, в формате #нампишут. Каждый — один раз. Работает, пока «Ответошная» открыта и компьютер не спит."));
     if (cfg.token && targets().length) {
       var opts = el("div", "actions");
-      [["healthOn", "Предупреждать, если площадка или почта не читаются"], ["dailyOn", "Вечерняя сводка «всё работает» в 20:00"]].forEach(function (o) {
-        var lb = el("label", "ntf-opt"), cb = el("input"); cb.type = "checkbox"; cb.checked = cfg[o[0]] !== false;
+      [["healthOn", "Предупредить один раз, если площадка или почта не читаются больше 12 часов", true], ["dailyOn", "Вечерняя сводка «всё работает» в 20:00", false]].forEach(function (o) {
+        var lb = el("label", "ntf-opt"), cb = el("input"); cb.type = "checkbox"; cb.checked = o[2] ? cfg[o[0]] !== false : cfg[o[0]] === true;
         cb.addEventListener("change", function () { cfg[o[0]] = cb.checked; save(); });
         lb.append(cb, document.createTextNode(" " + o[1])); opts.append(lb);
       });

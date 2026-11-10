@@ -296,6 +296,18 @@ fn parse_https(url: &str) -> Result<tauri::Url, String> {
 }
 
 
+/// 10.11: на время отпуска программа работает на рабочем компьютере с заблокированным экраном.
+/// Заблокированный экран или свёрнутое окно браузерный движок считает «невидимым» и через ~5 минут
+/// замораживает таймеры страницы — сбор и уведомления встали бы. Отключаем это для всех окон программы:
+/// Windows — флагами WebView2 (одинаковыми для всех окон, иначе окно не создастся), Mac 14+ — настройкой WebKit.
+fn keep_running<'a, R: tauri::Runtime, M: tauri::Manager<R>>(b: tauri::WebviewWindowBuilder<'a, R, M>) -> tauri::WebviewWindowBuilder<'a, R, M> {
+    #[cfg(windows)]
+    let b = b.additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows");
+    #[cfg(target_os = "macos")]
+    let b = b.background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
+    b
+}
+
 /// Окна кабинетов ведут себя как обычный браузер: на Mac представляются Safari
 /// (иначе Google и некоторые капчи не пускают во «встроенный браузер»),
 /// разрешают всплывающие окна входа и любые https/http-переходы внутри входа.
@@ -307,6 +319,7 @@ fn source_window<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
     let b = tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::External(url))
         .on_navigation(|u: &url::Url| matches!(u.scheme(), "https" | "http" | "about" | "blob" | "data"))
         .on_new_window(|_, _| tauri::webview::NewWindowResponse::Allow);
+    let b = keep_running(b);
     #[cfg(target_os = "macos")]
     let b = b.user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15");
     b
@@ -862,7 +875,7 @@ pub fn run() {
             app.manage(model::ModelState::new());
             model::start_idle_watch(app.handle().clone());
             // Окно программы не уходит на чужие сайты: внешние ссылки открываются в браузере.
-            let win = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
+            let win = keep_running(tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into())))
                 .title("Ответошная")
                 .inner_size(1000.0, 860.0)
                 .min_inner_size(380.0, 500.0)

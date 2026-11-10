@@ -12,6 +12,8 @@ async def main():
         f = await pg.evaluate("""() => window.__otvNotifyFmt.format({ platform: 'Яндекс', date: '2026-11-07', rating: 1, author: 'Иван П.', text: 'Долго ждали в приёмном, никто не подошёл.' })""")
         ok = f == "#нампишут\nПлощадка: Яндекс\nДата отзыва: 7 ноября\nОценка 1/5\nНик пользователя: Иван П.\n\nДолго ждали в приёмном, никто не подошёл."
         res.append(('формат строго по образцу', ok, f))
+        f2 = await pg.evaluate("""() => window.__otvNotifyFmt.format({ platform: 'Сайт', date: '2026-10-26', author: 'Иванова Анна Петровна', contactEmail: 'a@example.com', contactPhone: '+7 (900) 111-22-33', text: 'Выписку не выдали.' })""")
+        res.append(('письмо с сайта — строго по образцу', f2 == "#нампишут\nПлощадка: Сайт\nДата отзыва: 26 октября\n\nИмя: Иванова Анна Петровна\nEmail: a@example.com\nТелефон: +7 (900) 111-22-33\n\nВыписку не выдали.", f2))
         await pg.evaluate("window.__otvShowTab('sources')"); await pg.wait_for_timeout(300)
         await pg.fill('#alertBox .ntf-tok', 'bad'); await pg.click("#alertBox button:has-text('Сохранить')"); await pg.wait_for_timeout(300)
         t = await pg.inner_text('#alertBox')
@@ -49,20 +51,26 @@ async def main():
         await pg.click("#alertBox button:has-text('Добавить получателей')"); await pg.wait_for_timeout(500)
         t = await pg.inner_text('#alertBox'); n0 = len(await pg.evaluate("window.__maxSent"))
         await pg.evaluate("""async () => { const db = await window.__otvRt.use('db');
-          await db.collection('alerts').doc('site-9').set({ platform: 'Сайт', date: new Date().toISOString().slice(0, 10), rating: null, author: 'Ольга', text: 'Жалоба на регистратуру', detectedAt: new Date().toISOString(), status: 'new' }); }""")
+          await db.collection('alerts').doc('site-9').set({ platform: 'Сайт', date: new Date().toISOString().slice(0, 10), rating: null, author: 'Петрова Ольга Ивановна', contactEmail: 'test@example.com', contactPhone: '+7 (900) 000-00-00', text: 'Жалоба на регистратуру', detectedAt: new Date().toISOString(), status: 'new' }); }""")
         await pg.wait_for_timeout(800)
         sent = await pg.evaluate("window.__maxSent"); last = sent[n0:]
-        res.append(('несколько получателей: коллега и общий чат, письмо с сайта — всем', 'Коллега' in t and 'Отзывы ГКБ' in t and len(last) == 3 and all('Площадка: Сайт больницы (письмо)' in x['text'] for x in last) and sorted(str(x['userId']) for x in last) == ['777', '888', 'None'], (t[-300:], last)))
+        import re as _re
+        want_site = "\n\nИмя: Петрова Ольга Ивановна\nEmail: test@example.com\nТелефон: +7 (900) 000-00-00\n\nЖалоба на регистратуру"
+        res.append(('несколько получателей: коллега и общий чат; письмо с сайта — по образцу с именем, email и телефоном', 'Коллега' in t and 'Отзывы ГКБ' in t and len(last) == 3 and all(_re.match(r'#нампишут\nПлощадка: Сайт\nДата отзыва: \d{1,2} [а-я]+$', x['text'].split('\n\n')[0]) and x['text'].endswith(want_site) for x in last) and sorted(str(x['userId']) for x in last) == ['777', '888', 'None'], (t[-300:], last)))
+        kept = await pg.evaluate("async () => { const db = await window.__otvRt.use('db'); const d = (await db.collection('alerts').doc('site-9').get()).data(); return [d.contactEmail, d.contactPhone, !!d.notifiedAt]; }")
+        res.append(('контакты автора письма стёрты после отправки', kept == ['', '', True], kept))
         n0 = len(await pg.evaluate("window.__maxSent"))
-        await pg.evaluate("""async () => { const old = new Date(Date.now() - 5 * 3600e3).toISOString();
-          window.__otvSrcHealth = () => [{ name: 'Яндекс', ok: false, okAt: old, needLogin: true }, { name: '2ГИС', ok: true, okAt: new Date().toISOString() }];
+        await pg.evaluate("""async () => { const old = new Date(Date.now() - 13 * 3600e3).toISOString(), recent = new Date(Date.now() - 5 * 3600e3).toISOString();
+          window.__otvSrcHealth = () => [{ name: 'Яндекс', ok: false, okAt: old, needLogin: true }, { name: '2ГИС', ok: false, okAt: recent }];
           const d = new Date(); d.setHours(20, 30, 0, 0);
           await window.__otvNotify.health(d); await window.__otvNotify.health(d);
+          window.__dailyBefore = (window.__maxSent || []).filter(x => /сводка/.test(x.text)).length;
           window.__otvSrcHealth = () => [{ name: 'Яндекс', ok: true, okAt: new Date().toISOString() }, { name: '2ГИС', ok: true, okAt: new Date().toISOString() }];
           await window.__otvNotify.health(d); }""")
         h = [x['text'] for x in (await pg.evaluate("window.__maxSent"))[n0:]]
         warn = [x for x in h if 'Яндекс не читается — нужен вход' in x]; back = [x for x in h if 'Яндекс снова читается' in x]; daily = [x for x in h if 'сводка за сутки' in x]
-        res.append(('самоконтроль: одно предупреждение «не читается», одно «снова читается», одна вечерняя сводка — всем получателям', len(warn) == 3 and len(back) == 3 and len(daily) == 3 and 'Не читаются: Яндекс (нужен вход)' in daily[0], h))
+        g2 = [x for x in h if '2ГИС не читается' in x]
+        res.append(('минимум уведомлений: «не читается» только после 12 часов и один раз, без «снова читается» и без вечерней сводки по умолчанию', len(warn) == 3 and not back and not daily and not g2, h))
         sch = await pg.evaluate("""() => { const D = (s) => new Date(s), f = window.__otvAutoDue, L = 0, now = (s) => D(s).getTime();
           return {
             satMorning: !!f(D('2026-11-14T09:05:00'), L, ''),
