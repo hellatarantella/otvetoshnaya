@@ -1,9 +1,8 @@
 /* Дежурство двух компьютеров (10.11).
    Mac и рабочий компьютер подстраховывают друг друга: сам собирает, обновляет отчёт и шлёт уведомления только
    «дежурный». Основной дежурит, пока на связи; не выходил на связь 20 минут — дежурство сам берёт запасной,
-   основной вернулся — отдаёт обратно.
-   Персональные данные компьютеры друг другу НЕ передают и никуда не выносят: каждый хранит отзывы только у себя.
-   Через ваш Google-скрипт идёт одна отметка «компьютер такой-то на связи в такое-то время».
+   основной вернулся — отдаёт обратно. Отметка «кто на связи» идёт через ваш Google-скрипт (без данных).
+   Данные у обоих одни и те же — их переносит sync.js зашифрованными файлами (прочитать может только программа).
    Публикация — только по вашему нажатию на том компьютере, где вы нажали; повтор того же отзыва в отчёт
    скрипт не вносит, уведомление, уже присланное в чат MAX, второй компьютер не повторяет. */
 (function () {
@@ -64,7 +63,8 @@
     var g = window.__otvReports && window.__otvReports.cfg && window.__otvReports.cfg();
     var n = (window.__otvGet && window.__otvGet("settings", "notify")) || {};
     if (!g || !g.url || !g.token) return null;
-    return "OTV1." + b64e({ g: { url: g.url, token: g.token }, m: n.token ? { token: n.token, bot: n.bot || "", targets: n.targets || [], since: n.since || "" } : null });
+    var S = window.__otvSync; if (!S) return null;
+    return "OTV1." + b64e({ k: S.key(), g: { url: g.url, token: g.token }, m: n.token ? { token: n.token, bot: n.bot || "", targets: n.targets || [], since: n.since || "" } : null });
   }
   function applyCode(code) {
     var m = /^OTV1\.(.+)$/.exec(s(code).trim()); if (!m) throw new Error("это не код подключения «Ответошной»");
@@ -72,6 +72,7 @@
     var jobs = [db.collection("settings").doc("google").set({ url: o.g.url, token: o.g.token, paired: true })];
     if (o.m && o.m.token) jobs.push(db.collection("settings").doc("notify").set({ token: o.m.token, bot: o.m.bot, targets: o.m.targets || [], since: new Date().toISOString(), enabled: true }));
     cfg.role = "backup"; jobs.push(save());
+    if (o.k && window.__otvSync) jobs.push(window.__otvSync.enable(o.k));
     return Promise.all(jobs);
   }
 
@@ -79,8 +80,8 @@
     var box = document.getElementById("dutyBox"); if (!box) return;
     box.textContent = "";
     var c = el("div", "card ntf");
-    c.append(el("h2", null, "Два компьютера: дежурство"));
-    c.append(el("p", "meta", "Сам собирает, обновляет отчёт и присылает уведомления только дежурный компьютер. Основной дежурит, пока на связи; не выходил на связь 20 минут — дежурство берёт запасной. Отзывы и персональные данные каждый компьютер хранит только у себя и никуда не передаёт."));
+    c.append(el("h2", null, "Два компьютера: дежурство и синхронизация"));
+    c.append(el("p", "meta", "Сам собирает, обновляет отчёт и присылает уведомления только дежурный компьютер. Основной дежурит, пока на связи; не выходил на связь 20 минут — дежурство берёт запасной. Данные у обоих одни и те же: обмен идёт зашифрованными файлами, прочитать которые может только «Ответошная»."));
     var R = window.__otvReports, g = R && R.ready && R.ready();
     var line = el("p", "mdl-st");
     if (!g) line.textContent = "Сначала подключите Google на вкладке «Отчёты» — через него компьютеры узнают, кто на связи.";
@@ -91,6 +92,14 @@
       line.textContent = (multi() ? (isDuty() ? "Дежурит этот компьютер." : "Дежурит: " + s((last.map[h] || {}).name || "другой компьютер") + ". Этот ждёт и подхватит, если тот пропадёт.") : "Пока один компьютер — он и дежурит.") + " " + names.join("; ") + ".";
     }
     c.append(line);
+    var S = window.__otvSync, ss = S && S.state();
+    if (ss) {
+      var sl = el("p", "mdl-st");
+      sl.textContent = !ss.enabled ? "Синхронизация данных выключена: включится, когда вы создадите код для второго компьютера."
+        : "Синхронизация: " + (ss.err ? "не удалась — " + ss.err : ss.at ? "последний обмен " + new Date(ss.at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) + (ss.peers.length ? "" : " · второй компьютер ещё не подключён") : "готовлю первый обмен…") +
+          (ss.pending ? " · ждут отправки: " + ss.pending : "") + ". Данные зашифрованы: прочитать их можно только в «Ответошной».";
+      c.append(sl);
+    }
     var row = el("div", "actions ntf-role");
     var nm = el("input", "ntf-tok"); nm.value = s(cfg.name); nm.placeholder = "Название этого компьютера"; nm.maxLength = 40;
     nm.addEventListener("change", function () { cfg.name = nm.value.trim(); save().then(tick); });
@@ -105,9 +114,11 @@
     if (g) {
       var cb = el("button", "btn", "Код для второго компьютера"); cb.type = "button";
       cb.addEventListener("click", function () {
-        var code = makeCode(); if (!code) { msg = "Сначала подключите Google."; msgErr = true; render(); return; }
+        var S = window.__otvSync;
+        (S && !S.enabled() ? S.enable() : Promise.resolve()).then(function () { var code = makeCode(); if (!code) { msg = "Сначала подключите Google."; msgErr = true; render(); return; }
         var done = function () { msg = "Код скопирован. Вставьте его на втором компьютере: «Источники» → «Ввести код». Код — как пароль: после ввода удалите его из переписки."; msgErr = false; render(); };
         try { navigator.clipboard.writeText(code).then(done, done); } catch (e) { done(); }
+        });
       });
       act.append(cb);
     }
@@ -123,10 +134,12 @@
       w.append(f, ok); c.append(w);
     }
     act.append(ib);
+    if (S && S.enabled()) { var sb = el("button", "btn", "Синхронизировать сейчас"); sb.type = "button"; sb.addEventListener("click", function () { sb.disabled = true; S.run().then(render); }); act.append(sb); }
     c.append(act);
     if (msg) c.append(el("p", "ctl-st" + (msgErr ? " err" : " ok"), msg));
     box.append(c);
   }
+  window.__otvDutyRender = render;
   window.addEventListener("otv-tab", render);
   document.addEventListener("DOMContentLoaded", render);
 })();

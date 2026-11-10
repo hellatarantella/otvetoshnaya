@@ -64,10 +64,17 @@
   function guard() { if (loadError) throw { code: "storage_locked", message: loadError }; }
 
   var vers = {}, epoch = 0, pendingNotify = {};   // счётчик изменений коллекции: проверить «изменилось ли» без копирования всей коллекции
+  /* синхронизация двух компьютеров (sync.js): о каждой настоящей правке узнаёт обмен; правки, пришедшие с другого
+     компьютера, пишутся мимо него (иначе вернулись бы обратно) */
+  var syncHook = null, applying = false;
+  window.__otvSetSyncHook = function (f) { syncHook = f; };
+  window.__otvApplyRemote = function (name, id, doc) { applying = true; try { write(name, id, doc); } finally { applying = false; } };
   function write(name, id, doc) {
     guard();
+    var watch = syncHook && !applying && name.indexOf("sync_") !== 0, prevJ = watch ? JSON.stringify(bucket(name)[id] === undefined ? null : bucket(name)[id]) : null;
     vers[name] = (vers[name] || 0) + 1;
     if (doc === null) delete bucket(name)[id]; else bucket(name)[id] = clone(doc);
+    if (watch) { var nextJ = doc === null ? "null" : JSON.stringify(bucket(name)[id]); if (nextJ !== prevJ) { try { syncHook(name, id, doc === null ? null : JSON.parse(nextJ)); } catch (e) { console.error(e); } } }
     scheduleSave();
     // много записей подряд (сбор, импорт) — одно уведомление подписчикам, а не по одному на каждую запись
     if (!pendingNotify[name]) { pendingNotify[name] = 1; setTimeout(function () { pendingNotify[name] = 0; notify(name); }, 0); }

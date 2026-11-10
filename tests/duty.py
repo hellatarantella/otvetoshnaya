@@ -29,7 +29,7 @@ async def main():
         res.append(('дежурство: запасной ждёт, подхватывает через 20 минут, без связи не вмешивается; один компьютер дежурит всегда', D == {'dev': True, 'backupWaits': True, 'takesOver': True, 'offlineBackupQuiet': True, 'singleIsDuty': True}, D))
         await pg.evaluate("window.__otvShowTab('sources')"); await pg.wait_for_timeout(300)
         txt = await pg.inner_text('#dutyBox')
-        res.append(('карточка дежурства на месте и говорит, что данные не передаются', 'Два компьютера: дежурство' in txt and 'никуда не передаёт' in txt, txt[:200]))
+        res.append(('карточка дежурства на месте и говорит, что данные читает только программа', 'Два компьютера: дежурство' in txt and 'только «Ответошная»' in txt, txt[:200]))
         code = 'OTV1.' + base64.b64encode(json.dumps({'g': {'url': 'https://script.google.com/macros/s/TEST/exec', 'token': 'a' * 64}, 'm': {'token': 'bot', 'bot': 'Тест', 'targets': [{'key': 'u1', 'user': 1, 'name': 'Я'}]}}).encode()).decode().rstrip('=')
         res.append(('в коде подключения нет отзывов и данных пациентов — только связь с Google и бот', set(json.loads(base64.b64decode(code[5:] + '==')).keys()) == {'g', 'm'}, ''))
         await pg.evaluate("window.__noReload = true; location.reload = () => {}")

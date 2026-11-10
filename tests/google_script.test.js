@@ -108,4 +108,15 @@ try { vm.runInContext('addNegative([{id:"o1",platform:"Яндекс",date:"17 о
   const r5=vm.runInContext('ACTIONS.duty({dev:"pc<script>02",name:"Рабочий",role:"main"})',c5);
   const keys=Object.keys(r5.duty).sort().join(',');
   chk(keys==='mac01,pcscript02' && r5.duty.mac01.role==='backup' && r5.duty.pcscript02.role==='main' && Object.keys(r5.duty.mac01).sort().join(',')==='at,name,role','дежурство: в Google только имя, роль и время отметки: '+keys); }
+// 10.11: обмен двух компьютеров — файлы только с безопасными именами, в своей папке
+{ const files={}; const mkF=(n,c)=>({ getName:()=>n, setContent(x){ files[n].c=x; }, getBlob:()=>({ getDataAsString:()=>files[n].c }), getSize:()=>files[n].c.length, getLastUpdated:()=>new Date(0), setTrashed(){ delete files[n]; } });
+  const it=a=>{ let i=0; return { hasNext:()=>i<a.length, next:()=>a[i++] }; };
+  const folder={ getFilesByName:n=>it(files[n]?[mkF(n)]:[]), getFiles:()=>it(Object.keys(files).map(n=>mkF(n))), createFile:(n,c)=>{ files[n]={c}; return mkF(n); } };
+  const c6={ DriveApp:{ getFoldersByName:()=>it([folder]), createFolder:()=>folder }, MimeType:{PLAIN_TEXT:'text/plain'}, Logger:{log(){}} };
+  vm.createContext(c6); vm.runInContext(code,c6);
+  vm.runInContext('ACTIONS.sput({name:"log-abc-00000001.bin",data:"AAA"}); ACTIONS.sput({name:"log-abc-00000001.bin",data:"BBB"})',c6);
+  const g=vm.runInContext('ACTIONS.sget({names:["log-abc-00000001.bin","нет"]})',c6).files;
+  let bad=false; try { vm.runInContext('ACTIONS.sput({name:"../x",data:"1"})',c6); } catch(e){ bad=true; }
+  const l=vm.runInContext('ACTIONS.slist({prefix:"log-"})',c6).files.length; vm.runInContext('ACTIONS.sdel({names:["log-abc-00000001.bin"]})',c6);
+  chk(g['log-abc-00000001.bin']==='BBB' && Object.keys(g).length===1 && bad && l===1 && !files['log-abc-00000001.bin'],'обмен: запись, перезапись, чтение, список, удаление; чужое имя файла отклоняется'); }
 console.log(ok?'ALL OK':'SOME FAILED');

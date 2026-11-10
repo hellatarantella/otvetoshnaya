@@ -77,8 +77,19 @@ var ACTIONS = {
     if (req.forget) delete m[String(req.forget).replace(/[^a-z0-9]/gi, '').slice(0, 24)];
     p.setProperty('OTV_DUTY', JSON.stringify(m));
     return { duty: m, now: now };
-  }
+  },
+  // 10.11: обмен данными двух компьютеров. Сюда приходят только зашифрованные программой файлы:
+  // ключ есть лишь у двух копий программы, ни скрипт, ни Google прочитать их не могут
+  sput: function (req) { var f = xfile_(req.name, true); var d = String(req.data || ''); if (d.length > 9000000) throw new Error('файл обмена слишком большой'); if (f) f.setContent(d); else xfolder_().createFile(xname_(req.name), d, MimeType.PLAIN_TEXT); return { put: xname_(req.name) }; },
+  sget: function (req) { var out = {}; (req.names || []).slice(0, 8).forEach(function (n) { if (!xok_(n)) return; var f = xfile_(n); if (f) out[n] = f.getBlob().getDataAsString(); }); return { files: out }; },
+  slist: function (req) { var it = xfolder_().getFiles(), out = [], pre = String(req.prefix || ''); while (it.hasNext()) { var f = it.next(), n = f.getName(); if (!pre || n.indexOf(pre) === 0) out.push({ name: n, size: f.getSize(), at: f.getLastUpdated().getTime() }); } return { files: out }; },
+  sdel: function (req) { var n = 0; (req.names || []).slice(0, 200).forEach(function (x) { if (!xok_(x)) return; var f = xfile_(x); if (f) { f.setTrashed(true); n++; } }); return { deleted: n }; }
 };
+var XFOLDER_ = 'Ответошная — обмен двух компьютеров (зашифровано)';
+function xok_(n) { return /^[a-z0-9][a-z0-9._-]{0,79}$/.test(String(n || '')); }
+function xname_(n) { n = String(n || ''); if (!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(n)) throw new Error('неверное имя файла обмена'); return n; }
+function xfolder_() { var it = DriveApp.getFoldersByName(XFOLDER_); return it.hasNext() ? it.next() : DriveApp.createFolder(XFOLDER_); }
+function xfile_(n) { var it = xfolder_().getFilesByName(xname_(n)); return it.hasNext() ? it.next() : null; }
 
 /* ---------------- даты и период ---------------- */
 function pad(n) { return (n < 10 ? '0' : '') + n; }

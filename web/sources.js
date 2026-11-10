@@ -1399,7 +1399,8 @@
     if (pubBusy) { pubAgain = true; return; }
     var all = window.__otvAll("answers") || {};
     var todo = Object.keys(all).map(function (id) { return Object.assign({ id: id }, all[id]); })
-      .filter(function (r) { return r.status === "approved" && r.kind !== "appeal" && s0(r.publishRequested) && PUBF[s0(r.platform)] && s0(r.answer).trim(); });
+      .filter(function (r) { return r.status === "approved" && r.kind !== "appeal" && s0(r.publishRequested) && PUBF[s0(r.platform)] && s0(r.answer).trim(); })
+      .filter(function (r) { return !(window.__otvSync && window.__otvSync.remoteOwned("answers", r.id)); });   // «Опубликовать» нажали на другом компьютере — публикует он
     if (!todo.length) return;
     pubBusy = true;
     var okN = 0, bad = [];
