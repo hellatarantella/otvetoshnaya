@@ -24,6 +24,9 @@ fn main() {
         "log_append",
         "log_read",
         "main_alive",
+        "max_send",
+        "max_updates",
+        "max_me",
     ])))
     .expect("ошибка сборки");
 }

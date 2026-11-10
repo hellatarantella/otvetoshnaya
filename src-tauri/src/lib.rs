@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Manager, State};
 
 mod gs;
+mod notify;
 mod model;
 
 const MAGIC: &[u8; 4] = b"OTV1";
@@ -314,6 +315,13 @@ fn source_window<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
 
 /// Ошибки страницы с самого начала загрузки (для «что видит программа» в окне входа).
 const DIAG_INIT: &str = r#"(function(){ if (window.top !== window) return; window.__otvErrs = [];
+  // 10.11: после входа Google возвращает на обычную выдачу «гкб 24» без окна отзывов (адрес теряет #mpd=…).
+  // Окно входа само переходит к отзывам — не чаще раза в минуту, чтобы не зациклиться, если Google снова уведёт.
+  try { if (location.host === 'www.google.com' && location.pathname === '/search' && !/mpd=/.test(location.hash)) {
+    var q = decodeURIComponent((location.search.match(/[?&]q=([^&]*)/) || [])[1] || '').replace(/\+/g, ' ').toLowerCase();
+    var last = +(sessionStorage.getItem('otvGoRev') || 0);
+    if (/гкб/.test(q) && /24/.test(q) && Date.now() - last > 60000) { sessionStorage.setItem('otvGoRev', String(Date.now()));
+      location.replace('https://www.google.com/search?q=%D0%B3%D0%BA%D0%B1+24&hl=ru#mpd=~18183541514866455142/customers/reviews'); return; } } } catch (e) {}
   window.addEventListener('error', function (e) { try { window.__otvErrs.push(String(e.message || (e.target && (e.target.src || e.target.href)) || e.type).slice(0, 160)); } catch (x) {} }, true);
   window.addEventListener('unhandledrejection', function (e) { try { window.__otvErrs.push('promise: ' + String(e.reason).slice(0, 160)); } catch (x) {} });
   // 05.11: кабинет ДокТу грузит свой сценарий 6 МБ до 2 минут — окно стояло пустым («чёрный экран»).
@@ -889,7 +897,10 @@ pub fn run() {
             model::model_download,
             model::model_delete,
             model::model_generate,
-            gs::gs_call
+            gs::gs_call,
+            notify::max_send,
+            notify::max_updates,
+            notify::max_me
         ])
         .build(tauri::generate_context!())
         .expect("ошибка запуска «Ответошной»")

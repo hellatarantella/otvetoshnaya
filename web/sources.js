@@ -896,6 +896,8 @@
 
   // сразу окно отзывов профиля больницы (ссылка от сотрудницы, 13.10.2026)
   var NP_CABINET = "https://profile.napopravku.ru/reviews?paging[per_page]=20&per_page=20&answer=all";
+  var PWD_RE = /expiredpassword|changepassword|passwordexpired|password[-_]?change/i;
+  var PWD_MSG = "истёк срок пароля: смените пароль (в окне «Войти» откроется форма смены, или через ИТ), после этого вход сохранится и почта будет читаться сама";
   var GOOGLE_URL = "https://www.google.com/search?q=%D0%B3%D0%BA%D0%B1+24&hl=ru#mpd=~18183541514866455142/customers/reviews";
   var SOURCES = [
     { id: "pd", name: "ПроДокторов", cls: "pf-pd", url: "https://prodoctorov.ru/cabinet/lpu-rates/?lpu=21011", prefix: "https://prodoctorov.ru/cabinet/", wait: 2500, fn: PD },
@@ -914,6 +916,10 @@
   var pending = {}, diag = {};
   listen("source-diag", function (ev) {
     var d = ev.payload || {}; try { diag[d.id] = JSON.parse(d.diag); } catch (e) { return; }
+    if (PWD_RE.test(String(diag[d.id].url || "")) && !(srcState[d.id] || {}).pwd) {
+      var st = srcState[d.id] = srcState[d.id] || {}; st.pwd = true; st.needLogin = true; st.ok = false; st.error = PWD_MSG; st.at = st.at || nowIso();
+      jlog("окно входа " + d.id + ": страница смены пароля (" + String(diag[d.id].url).split("?")[0] + ")");
+    }
     render();
   });
   var learning = {};
@@ -1168,7 +1174,7 @@
         var label = pageLabel(it), d = pickDraft(it, label);
         made++;
         fresh.push({ id: it.id, draft: d.text, req: { kind: "answer", platform: it.platform, page: label, author: s0(it.author), review: s0(it.text), rating: it.rating, tone: d.tone } });
-        if (d.tone === "negative") {
+        if (d.tone === "negative" || (it.rating != null && +it.rating > 0 && +it.rating <= 2)) {
           getDoc("alerts", it.id).then(function (a) {
             if (a.exists) return;
             return db.collection("alerts").doc(it.id).set({ platform: it.platform, page: it.page || "", date: it.date, rating: it.rating == null ? null : it.rating,
@@ -1804,14 +1810,33 @@
     });
   }
   var recheck = [];
-  var autoRun = false, autoTimer = null;
+  var autoRun = false, autoTimer = null, lastAuto = 0;
+  /* расписание сбора: в будни с 8 до 20 — каждые 30 минут; каждый день, включая выходные, — ещё утром в 9:00 и вечером в 20:00.
+     Если компьютер спал или программа была закрыта, утренний/вечерний сбор догоняет в течение 3 часов */
+  var SLOTS = [9, 20];
+  function slotKey(d) {
+    var hr = d.getHours(), day = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+    for (var i = SLOTS.length - 1; i >= 0; i--) if (hr >= SLOTS[i] && hr < SLOTS[i] + 3) return day + "@" + SLOTS[i];
+    return "";
+  }
+  function slotDone(k, set) { try { if (set) localStorage.setItem("otv-auto-slot", k); return localStorage.getItem("otv-auto-slot") === k; } catch (e) { return set ? (window.__otvSlot = k, true) : window.__otvSlot === k; } }
+  function autoDue(d, last, doneKey) {
+    var wd = d.getDay(), hr = d.getHours(), k = slotKey(d);
+    if (k && doneKey !== k) return { why: "сбор по расписанию (" + k.split("@")[1] + ":00)", slot: k };
+    if (wd >= 1 && wd <= 5 && hr >= 8 && hr < 20 && d.getTime() - last >= 29 * 60000) return { why: "сбор по расписанию", slot: k };
+    return null;
+  }
+  window.__otvAutoDue = autoDue;   // для проверок
   function scheduleAuto() {
     clearTimeout(autoTimer);
     autoTimer = setTimeout(function () {
-      var d = new Date(), wd = d.getDay(), hr = d.getHours();
-      if (wd >= 1 && wd <= 5 && hr >= 8 && hr < 20 && !running && db) { jlog("сбор по расписанию"); collect(SOURCES, { auto: true }); }
+      var d = new Date(), k = slotKey(d), due = autoDue(d, lastAuto, slotDone(k) ? k : "");
+      if (due && !running && db) {
+        lastAuto = d.getTime(); if (due.slot) slotDone(due.slot, true);
+        jlog(due.why); collect(SOURCES, { auto: true });
+      }
       scheduleAuto();
-    }, (autoTimer ? 30 : 1) * 60 * 1000);
+    }, (autoTimer ? 5 : 1) * 60 * 1000);
   }   // сбор по расписанию: без всплывающих вопросов, только строка «Не прочитано» под кнопкой
   var collectSeq = 0, COLLECT_MAX_MS = 6 * 60000;   // сбор целиком: все площадки читаются параллельно (каждая до 1–2 мин) + запись
   window.__otvSetCollectMax = function (ms) { COLLECT_MAX_MS = ms; };   // для проверок
@@ -1839,8 +1864,10 @@
         return collectOne(s).then(function (p) {
           if (p.stopped) { jlog("сбор " + s.name + ": остановлен до конца чтения"); srcState[s.id] = Object.assign({}, srcState[s.id], { busy: false }); render(); return { s: s, items: [], mail: [], stopped: true }; }
           var st = { at: nowIso(), busy: false, okAt: (srcState[s.id] || {}).okAt || "" };
-          if (p.ok && Array.isArray(p.items)) { st.ok = true; st.okAt = st.at; st.count = p.items.length; st.seen = p.seen == null ? null : p.seen; st.error = ""; st.needLogin = false; }
-          else { st.ok = false; st.count = 0; st.down = /сбой у площадки/.test(String(p.error || "")); st.needLogin = !st.down && (!!p.needLogin || /нужен вход/.test(String(p.error || ""))); st.error = st.needLogin ? "нужен вход" : (p.error || "не удалось прочитать"); }
+          if (p.ok && Array.isArray(p.items)) { st.ok = true; st.okAt = st.at; st.count = p.items.length; st.seen = p.seen == null ? null : p.seen; st.error = ""; st.needLogin = false; st.pwd = false; }
+          else { st.ok = false; st.count = 0; st.down = /сбой у площадки/.test(String(p.error || "")); st.needLogin = !st.down && (!!p.needLogin || /нужен вход/.test(String(p.error || ""))); st.error = st.needLogin ? "нужен вход" : (p.error || "не удалось прочитать");
+            // 10.11: почта уводила на owa/auth/expiredpassword.aspx — истёк срок пароля, войти «как обычно» невозможно
+            st.pwd = st.needLogin && PWD_RE.test(String(p.url || "")); if (st.pwd) st.error = PWD_MSG; }
           srcState[s.id] = st; render();
           jlog("сбор " + s.name + ": " + (st.ok ? "ок, " + st.count + (p.diag ? " · " + JSON.stringify(p.diag) : "") : (st.needLogin ? "нужен вход" : "не вышло: " + st.error) + (p.url ? " · " + String(p.url).split(/[?#]/)[0] : "")));
           if (!st.ok && !st.down && !stopping && !autoRun) ask(s, st.needLogin);
@@ -1884,6 +1911,7 @@
       clearTimeout(dog);
       if (hung) { jlog("сбор, который считался зависшим, всё же закончился за " + Math.round((Date.now() - t0) / 1000) + " с"); if (collectSeq !== runId) return; }
       running = false; stopping = false; render();
+      if (window.__otvNotify) window.__otvNotify.flush();
       if (recheck.length) { var again = recheck; recheck = []; return collect(again); }
     });
   }
@@ -1906,7 +1934,7 @@
     var badS = SOURCES.filter(function (s) { var st = srcState[s.id]; return st && !st.busy && st.at && !st.ok; });
     if (!badS.length) { w.hidden = true; return; }
     w.hidden = false;
-    w.append(el("span", "src-warn-t", "Не прочитано: " + badS.map(function (s) { var st = srcState[s.id]; return s.name + (st.needLogin ? " (нужен вход)" : st.down ? " (сбой у самой площадки, прочитаю, когда заработает)" : ""); }).join(", ")));
+    w.append(el("span", "src-warn-t", "Не прочитано: " + badS.map(function (s) { var st = srcState[s.id]; return s.name + (st.pwd ? " (истёк срок пароля — смените пароль)" : st.needLogin ? " (нужен вход)" : st.down ? " (сбой у самой площадки, прочитаю, когда заработает)" : ""); }).join(", ")));
     badS.forEach(function (s) {
       if (srcState[s.id].down) return;
       var b = el("button", "btn", "Войти: " + s.name); b.type = "button";
@@ -1945,14 +1973,14 @@
       if (line) head.append(el("span", "meta", line));
       var bad = !st.busy && !st.ok && (st.needLogin || st.error);
       var stt = el("span", "status " + (st.busy ? "st-pending" : st.ok ? "st-approved" : bad ? "st-fix" : "st-pending"),
-                   st.busy ? "Читаю…" : st.ok ? "Работает" : st.needLogin ? "Нужен вход" : st.down ? "Сбой у площадки" : st.error ? "Не вышло" : "Не проверен");
+                   st.busy ? "Читаю…" : st.ok ? "Работает" : st.pwd ? "Смените пароль" : st.needLogin ? "Нужен вход" : st.down ? "Сбой у площадки" : st.error ? "Не вышло" : "Не проверен");
       var dg = diag[s.id];
       var tip = [st.error && !st.needLogin ? st.error : "", dg ? "Окно входа: " + String(dg.url || "").slice(0, 90) + (dg.text != null && dg.text < 20 ? " (пустая страница)" : "") + (dg.errs && dg.errs.length ? " · " + dg.errs.join("; ").slice(0, 200) : "") : ""].filter(Boolean).join("\n");
       if (tip) stt.title = tip;
       head.append(stt);
       card.append(head);
       // причина видна сразу, а не только во всплывающей подсказке (05.11: «Не вышло» без объяснения)
-      if (bad && !st.busy) card.append(el("p", "meta src-why", st.needLogin ? "Нужен вход: нажмите «Войти», войдите и нажмите «Проверить»." + (s.slow ? " " + s.slow : "") : String(st.error || "").slice(0, 220)));
+      if (bad && !st.busy) card.append(el("p", "meta src-why", st.pwd ? "Почта не пускает: " + PWD_MSG + "." : st.needLogin ? "Нужен вход: нажмите «Войти», войдите и нажмите «Проверить»." + (s.slow ? " " + s.slow : "") : String(st.error || "").slice(0, 220)));
       var a = el("div", "actions");
       var login = el("button", "btn", s.open ? "Открыть" : "Войти"); login.type = "button";
       login.addEventListener("click", function () { if (s.slow) window.__otvBar.show(s.slow); invoke("source_open", { id: s.id, url: s.login || s.url, title: "Вход: " + s.name }).catch(function (e) { window.__otvBar.show("Не открылось: " + e, "err"); }); });

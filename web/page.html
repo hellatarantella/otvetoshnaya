@@ -535,7 +535,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     <div class="lib" data-lib="m"></div>
   </section>
   <section class="tab-panel" id="tab-analytics" hidden aria-label="Аналитика"></section>
-  <section class="tab-panel" id="tab-sources" hidden aria-label="Источники отзывов"><div id="srcBox"></div></section>
+  <section class="tab-panel" id="tab-sources" hidden aria-label="Источники отзывов"><div id="srcBox"></div><div id="alertBox"></div></section>
   <section class="tab-panel" id="tab-kb" hidden aria-label="База ответов"><div id="kbBox"></div></section>
   <section class="tab-panel" id="tab-model" hidden aria-label="Встроенная модель"><div id="modelBox"></div></section>
   <footer class="foot"><a href="https://claude.ai/artifact/2m37W9vmzjiDZ1y2FFx8G5" target="_blank" rel="noopener noreferrer">Инструкция</a></footer>
@@ -2673,7 +2673,8 @@ gkb24@zdrav.mos.ru
         localRound = again ? localRound + 1 : 0;
         var res = window.__otvLocalGen[id](st.values || {}, localRound);
         if (!res || !(s(res.text).trim() || (res.variants || []).some(function(x){ return s(x).trim(); }))) { showStatus("Не получилось собрать текст по шаблонам: проверьте, что текст вставлен целиком.", true); return; }
-        st.last = res; st.turns = null; showStatus(""); renderResult(res); saveHistory(res);
+        st.last = res; st.turns = null; renderResult(res); saveHistory(res);
+        showStatus(localRound ? "Вариант " + (localRound + 1) + ": формулировки другие." : "");
       } catch (e) { showStatus("Не получилось: " + (e && e.message || e), true); if (window.__otvLog) window.__otvLog("окно " + id + ": " + (e && e.stack || e)); }
     }
     function run(turns, fresh){

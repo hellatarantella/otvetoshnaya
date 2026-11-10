@@ -28,6 +28,9 @@
     "allow-gs-call",
     "allow-log-append",
     "allow-log-read",
-    "allow-main-alive"
+    "allow-main-alive",
+    "allow-max-send",
+    "allow-max-updates",
+    "allow-max-me"
   ]
 }

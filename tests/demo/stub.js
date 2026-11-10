@@ -59,6 +59,7 @@
   if (location.search.indexOf("exam=pass") >= 0) data.settings = { model: { enabled: false, exam: { at: iso(now), n: 20, model: 8, mine: 6, tie: 6, bad: 0 } } };
   var mem = JSON.stringify(data), handlers = {};
   function emit(name, payload) { (handlers[name] || []).forEach(function (f) { try { f({ payload: payload }); } catch (e) { console.error(e); } }); }
+  window.__demoEmit = emit;   // для проверок: события окон кабинетов
   var FAKE = {
     pd: function () { return { ok: true, items: [{ id: "pd-9100", platform: "ПроДокторов", published: true, page: "Страница больницы", date: day(0), time: "08:15", rating: 5, threshold: 4.5, low: false, author: "", text: "Отличное отделение, спасибо всем!", answered: false, link: "https://example.org" }], seen: 12 }; },
     ya: function () { return { ok: false, needLogin: true }; },
@@ -139,6 +140,10 @@
                            "Hello world"][MDL.n % 3];
           return new Promise(function (r) { setTimeout(function () { r(txt); }, 700); });
         }
+        // бот MAX: для проверок запоминаем отправленное; токен «плохой» — ошибка как у MAX
+        if (cmd === "max_me") return a.token === "bad" ? Promise.reject("MAX не принял токен бота") : Promise.resolve(JSON.stringify({ name: "Тестовый бот" }));
+        if (cmd === "max_updates") return Promise.resolve(JSON.stringify(window.__maxUpdates || { updates: [] }));
+        if (cmd === "max_send") { if (window.__maxDown) return Promise.reject("нет связи с MAX"); (window.__maxSent = window.__maxSent || []).push({ userId: a.userId, text: a.text }); return Promise.resolve("{}"); }
         if (cmd === "source_stop") { clearTimeout(timers[a.id]); return Promise.resolve(null); }
         if (cmd === "source_open") { if (window.__otvBar) window.__otvBar.show("В тестовой версии окна кабинетов и почты не открываются.", "", [["Закрыть", window.__otvBar.hide]]); return Promise.resolve(null); }
         return Promise.resolve(null);

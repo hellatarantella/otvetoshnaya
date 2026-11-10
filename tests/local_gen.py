@@ -24,6 +24,14 @@ async def main():
                and "Нарушение законов РФ" in a['note'] and "Нецензурная лексика, оскорбления" in a['note']
                and not re.search(r"сожалеем|извините|в целом|нарушает правила площадки|и удалить", full))
         print(('OK  ' if ok1 else 'FAIL') + ' обжалование по утверждённой схеме, основания для формы, короткое до 450 знаков', a if not ok1 else '')
+        seen = {full}
+        for _ in range(3):
+            await pg.click("#tab-appeal button:has-text('Ещё вариант')"); await pg.wait_for_timeout(300)
+            seen.add(await pg.evaluate("() => (document.querySelector('#tab-appeal .res-ta') || {}).value || ''"))
+        st = await pg.evaluate("() => (document.querySelector('#tab-appeal .gen-status') || {}).textContent || ''")
+        ok1b = len(seen) == 4 and "Вариант 4" in st
+        print(('OK  ' if ok1b else 'FAIL') + ' обжалование: «Ещё вариант» каждый раз даёт другой текст', (len(seen), st) if not ok1b else '')
+        ok1 = ok1 and ok1b
         ad = await gen(pg, "appeal", [("[data-k=review]", AD)])
         ok2 = ad['texts'] and "реклама сторонних услуг" in ad['texts'][0] and "Спам, реклама" in ad['note']
         print(('OK  ' if ok2 else 'FAIL') + ' реклама: обжалование как спам, без личного опыта', ad if not ok2 else '')
