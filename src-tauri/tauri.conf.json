@@ -54,7 +54,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYwOTJFRDk4RThGNTE2QzYKUldUR0Z2WG9tTzJTWUlVR01RaFpMRXkxY0VCQ2RBeHRNR3MvZTUvSGZ4dFc3OTRpZnVEcTdaYU0K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI3NTkyODgxQTE2MkY2QkYKUldTLzltS2hnU2haSjF0ZU9ka0pLQ2xDUGRIQlRNcFVudEg1eTZlMVp6TitDYlNnanl6TWd1KzMK",
       "endpoints": [
         "https://raw.githubusercontent.com/hellatarantella/otvetoshnaya-releases/main/latest.json"
       ],
