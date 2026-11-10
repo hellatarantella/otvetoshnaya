@@ -17,7 +17,7 @@
   var SHARED = { registry: 1, registry_meta: 1, alerts: 1, mail: 1, answers: 1, phrases: 1, facts: 1, deckPicks: 1, kb: 1, weeks: 1 };
   var SHARED_SETTINGS = { refs: 1, report: 1, judge: 1, learn: 1, trainRules: 1, custom_sources: 1, deckFonts: 1, stats: 1, pilot: 1 };
   function shared(c, i) { return !!SHARED[c] || (c === "settings" && !!SHARED_SETTINGS[i]); }
-  var PART = 1500000, BATCH = 4, TICK = 60e3, SNAP_EVERY = 300;
+  var PART = 1500000, BATCH = 4, TICK = 120e3, SNAP_EVERY = 300;   // обмен раз в 2 минуты и через 15 секунд после правки
 
   var db = null, cfg = null, tsm = {}, out = {}, busy = false, again = false, st = { at: 0, sent: 0, got: 0, err: "" };
   var burst = {};   // защита от «пинг-понга»: одна запись не уходит чаще 6 раз за 10 минут
