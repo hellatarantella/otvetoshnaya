@@ -25,7 +25,7 @@
     if (!m) return s(d) || "не указана";
     return m[1].length === 4 ? (+m[3]) + " " + MON[+m[2] - 1] : (+m[1]) + " " + MON[+m[2] - 1];
   }
-  var PF = { "Google": "Google Карты" };
+  var PF = { "Google": "Google Карты", "Сайт": "Сайт больницы (письмо)" };
   /* текст уведомления строго по образцу */
   function format(a) {
     var r = a.rating == null || a.rating === "" ? null : +a.rating;
@@ -47,8 +47,21 @@
 
   var db = null, cfg = {}, alerts = {}, sending = {}, msg = "", msgErr = false;
   function save() { cfg.updatedAt = nowIso(); return db ? db.collection("settings").doc("notify").set(cfg) : Promise.resolve(); }
-  function ready() { return !!(cfg.enabled && cfg.token && (cfg.userId || cfg.chatId)); }
-  function send(text) { return invoke("max_send", { token: cfg.token, userId: cfg.userId || null, chatId: cfg.userId ? null : cfg.chatId || null, text: text }); }
+  /* получатели: люди, написавшие боту, и общие чаты MAX, куда добавлен бот. key: u<id> или c<id> */
+  function targets() {
+    var l = Array.isArray(cfg.targets) ? cfg.targets.slice() : [];
+    if (!l.length && cfg.userId) l.push({ key: "u" + cfg.userId, user: cfg.userId, name: s(cfg.who) || "вы" });   // настройки до 10.11
+    return l;
+  }
+  function ready() { return !!(cfg.enabled && cfg.token && targets().length); }
+  function sendTo(tg, text) { return invoke("max_send", { token: cfg.token, userId: tg.user || null, chatId: tg.user ? null : tg.chat || null, text: text }); }
+  // всем получателям; кому уже ушло (skip) — не повторяем. Ответ: список ключей, кому дошло, и ошибка, если кому-то нет
+  function sendAll(text, skip) {
+    var ok = [], err = "";
+    return targets().filter(function (tg) { return !skip || skip.indexOf(tg.key) < 0; }).reduce(function (p, tg) {
+      return p.then(function () { return sendTo(tg, text).then(function () { ok.push(tg.key); }, function (e) { err = (tg.name ? tg.name + ": " : "") + s(e && e.message || e); }); });
+    }, Promise.resolve()).then(function () { return { ok: ok, err: err }; });
+  }
 
   var busyFlush = false;
   function flush() {
@@ -60,18 +73,47 @@
     return list.reduce(function (p, id) {
       return p.then(function () {
         sending[id] = 1;
-        return send(format(alerts[id])).then(function () {
-          cfg.lastOk = nowIso(); cfg.lastErr = "";
-          return db.collection("alerts").doc(id).update({ notifiedAt: nowIso() });
-        }, function (e) {
-          delete sending[id];
-          cfg.lastErr = s(e && e.message || e); jlog("не отправилось: " + cfg.lastErr);
-          throw e;
+        var before = Array.isArray(alerts[id].sentTo) ? alerts[id].sentTo : [];
+        return sendAll(format(alerts[id]), before).then(function (r) {
+          var sent = before.concat(r.ok), all = targets().every(function (tg) { return sent.indexOf(tg.key) >= 0; });
+          if (r.ok.length) cfg.lastOk = nowIso();
+          cfg.lastErr = r.err; if (r.err) jlog("не отправилось: " + r.err);
+          var patch = { sentTo: sent }; if (all) patch.notifiedAt = nowIso();
+          return db.collection("alerts").doc(id).update(patch).then(function () { if (!all) { delete sending[id]; throw new Error(r.err); } });
         });
       });
     }, Promise.resolve()).catch(function () {}).then(function () { busyFlush = false; save().catch(function () {}); render(); });
   }
-  window.__otvNotify = { flush: flush, ready: ready };
+  /* самоконтроль для дежурного: площадка перестала читаться — одно предупреждение; заработала — одно «снова читается».
+     Каждый вечер (первый сбор после 20:00) — короткая сводка, чтобы тишина в чате значила «всё спокойно», а не «программа встала» */
+  var busyHealth = false;
+  function health(now) {
+    now = now || new Date();
+    if (!ready() || busyHealth || !window.__otvSrcHealth) return Promise.resolve();
+    var list = window.__otvSrcHealth() || [], warned = Object.assign({}, cfg.warned || {}), out = [];
+    list.forEach(function (x) {
+      var okAge = x.okAt ? now - Date.parse(x.okAt) : Infinity, bad = !x.ok && okAge > 3 * 3600e3;
+      if (bad && !warned[x.name] && cfg.healthOn !== false) {
+        warned[x.name] = now.toISOString();
+        out.push("⚠️ Ответошная: " + x.name + " не читается" + (x.needLogin ? " — нужен вход в кабинет" : x.down ? " — сбой на самой площадке" : "") + ". Новые отзывы оттуда сейчас не приходят" + (x.needLogin ? ". Войдите: «Источники» → «Войти: " + x.name + "»." : "."));
+      } else if (x.ok && warned[x.name]) { delete warned[x.name]; if (cfg.healthOn !== false) out.push("✅ Ответошная: " + x.name + " снова читается."); }
+    });
+    var day = now.getFullYear() + "-" + (now.getMonth() + 1) + "-" + now.getDate();
+    if (cfg.dailyOn !== false && now.getHours() >= 20 && cfg.dailyAt !== day) {
+      cfg.dailyAt = day;
+      var since = now - 864e5, neg = Object.keys(alerts).filter(function (id) { return Date.parse(s(alerts[id].detectedAt)) >= since; }).length;
+      var bad = list.filter(function (x) { return !x.ok; }).map(function (x) { return x.name + (x.needLogin ? " (нужен вход)" : ""); });
+      out.push("Ответошная работает · сводка за сутки\nНегатив: " + neg + (neg ? " (все отзывы присланы сюда выше)" : " — нового негатива нет") + "\n" +
+        (bad.length ? "Не читаются: " + bad.join(", ") : "Все площадки и почта читаются") + "\nСледующие проверки: каждый день в 9:00 и 20:00, в будни ещё каждые 30 минут с 8 до 20.");
+    }
+    var changed = JSON.stringify(warned) !== JSON.stringify(cfg.warned || {});
+    cfg.warned = warned;
+    if (!out.length && !changed) return Promise.resolve();
+    busyHealth = true;
+    return out.reduce(function (p, m) { return p.then(function () { return sendAll(m); }); }, Promise.resolve())
+      .catch(function () {}).then(function () { busyHealth = false; return save().catch(function () {}); });
+  }
+  window.__otvNotify = { flush: function () { return flush().then(function () { return health(); }); }, ready: ready, health: health };
 
   window.claude.use("db").then(function (d) {
     db = d;
@@ -89,20 +131,24 @@
     msg = "Ищу ваше сообщение боту…"; msgErr = false; render();
     return invoke("max_updates", { token: cfg.token }).then(function (raw) {
       var j = {}; try { j = JSON.parse(raw || "{}"); } catch (e) {}
-      var ups = (j.updates || []).slice().reverse(), who = null;
-      for (var i = 0; i < ups.length && !who; i++) {
-        var u = ups[i] || {};
-        if (u.message && u.message.sender && u.message.sender.user_id && !u.message.sender.is_bot)
-          who = { userId: u.message.sender.user_id, name: s(u.message.sender.name || u.message.sender.first_name), chatId: u.message.recipient && u.message.recipient.chat_id || null };
-        else if (u.user && u.user.user_id && /bot_started|user_added/.test(s(u.update_type)))
-          who = { userId: u.user.user_id, name: s(u.user.name || u.user.first_name), chatId: u.chat_id || null };
-      }
-      if (!who) { msg = "Бот пока не видит ваших сообщений. Откройте бота в MAX, нажмите «Начать» или напишите «привет», и снова «Привязать»."; msgErr = true; render(); return; }
-      cfg.userId = who.userId; cfg.chatId = who.chatId; cfg.who = who.name;
+      var found = [];
+      function add(tg) { if (tg && !found.some(function (x) { return x.key === tg.key; })) found.push(tg); }
+      (j.updates || []).forEach(function (u) {
+        u = u || {}; var m = u.message || {}, snd = m.sender || {}, rc = m.recipient || {};
+        if (/bot_removed|user_removed|chat_title|bot_stopped/.test(s(u.update_type))) return;
+        if (m.sender && !snd.is_bot && rc.chat_type && rc.chat_type !== "dialog" && rc.chat_id) add({ key: "c" + rc.chat_id, chat: rc.chat_id, name: "чат «" + s(rc.title || rc.chat_title || rc.chat_id) + "»" });
+        else if (m.sender && snd.user_id && !snd.is_bot) add({ key: "u" + snd.user_id, user: snd.user_id, name: s(snd.name || [snd.first_name, snd.last_name].filter(Boolean).join(" ")) || "пользователь " + snd.user_id });
+        else if (/bot_added/.test(s(u.update_type)) && u.chat_id) add({ key: "c" + u.chat_id, chat: u.chat_id, name: "чат «" + s(u.chat_title || u.chat_id) + "»" });
+        else if (/bot_started/.test(s(u.update_type)) && u.user && u.user.user_id) add({ key: "u" + u.user.user_id, user: u.user.user_id, name: s(u.user.name || u.user.first_name) || "пользователь " + u.user.user_id });
+      });
+      var cur = targets(), fresh = found.filter(function (tg) { return !cur.some(function (x) { return x.key === tg.key; }); });
+      if (!fresh.length) { msg = cur.length ? "Новых получателей нет. Пусть коллега напишет боту «привет» (или добавьте бота в общий чат MAX и напишите там) — и снова «Добавить получателей»." : "Бот пока не видит ваших сообщений. Откройте бота в MAX, нажмите «Начать» или напишите «привет», и снова «Привязать»."; msgErr = !cur.length; render(); return; }
+      cfg.targets = cur.concat(fresh); delete cfg.userId; delete cfg.chatId;
       if (!cfg.since) cfg.since = nowIso();
       cfg.enabled = true;
-      return save().then(function () { return send("Ответошная подключена. Сюда будут приходить новые негативные отзывы — каждый один раз."); })
-        .then(function () { msg = "Готово: проверьте MAX, там сообщение от бота."; msgErr = false; render(); });
+      return save().then(function () {
+        return fresh.reduce(function (p, tg) { return p.then(function () { return sendTo(tg, "Ответошная подключена. Сюда будут приходить новые негативные отзывы и жалобы из писем с сайта — каждый один раз.").catch(function () {}); }); }, Promise.resolve());
+      }).then(function () { msg = "Добавлено: " + fresh.map(function (x) { return x.name; }).join(", ") + ". Проверьте MAX — там сообщение от бота."; msgErr = false; render(); });
     }).catch(function (e) { msg = s(e && e.message || e); msgErr = true; render(); });
   }
 
@@ -112,7 +158,16 @@
     box.textContent = "";
     var c = el("div", "card ntf");
     c.append(el("h2", null, "Уведомления о негативе в MAX"));
-    c.append(el("p", "meta", "Новый негативный отзыв (жалоба или оценка 1–2) приходит вам в MAX сразу после сбора, в формате #нампишут. Каждый — один раз. Работает, пока «Ответошная» открыта и компьютер не спит."));
+    c.append(el("p", "meta", "Новый негативный отзыв (жалоба или оценка 1–2) и жалоба из писем с сайта приходят в MAX сразу после сбора — вам и коллегам, которых вы добавите, в формате #нампишут. Каждый — один раз. Работает, пока «Ответошная» открыта и компьютер не спит."));
+    if (cfg.token && targets().length) {
+      var opts = el("div", "actions");
+      [["healthOn", "Предупреждать, если площадка или почта не читаются"], ["dailyOn", "Вечерняя сводка «всё работает» в 20:00"]].forEach(function (o) {
+        var lb = el("label", "ntf-opt"), cb = el("input"); cb.type = "checkbox"; cb.checked = cfg[o[0]] !== false;
+        cb.addEventListener("change", function () { cfg[o[0]] = cb.checked; save(); });
+        lb.append(cb, document.createTextNode(" " + o[1])); opts.append(lb);
+      });
+      c.append(opts);
+    }
     c.append(el("p", "meta", "Сбор по расписанию: каждый день в 9:00 и 20:00 (если компьютер спал — сразу, как проснётся, в течение 3 часов), а в будни с 8 до 20 — каждые 30 минут."));
     var act = el("div", "actions");
     if (!cfg.token) {
@@ -135,19 +190,30 @@
       });
       act.append(inp, b);
     } else {
-      var line = el("p", "mdl-st");
-      line.textContent = !(cfg.userId || cfg.chatId) ? "Бот: " + s(cfg.bot) + ". Осталось привязать: напишите ему в MAX «привет» и нажмите «Привязать»."
-        : (cfg.enabled ? "Включено · " : "Выключено · ") + "бот «" + s(cfg.bot) + "» пишет " + (s(cfg.who) || "вам") +
+      var line = el("p", "mdl-st"), tl = targets();
+      line.textContent = !tl.length ? "Бот: " + s(cfg.bot) + ". Осталось привязать: напишите ему в MAX «привет» и нажмите «Привязать»."
+        : (cfg.enabled ? "Включено · " : "Выключено · ") + "бот «" + s(cfg.bot) + "»" +
           (cfg.lastOk ? " · последнее уведомление " + new Date(cfg.lastOk).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
       c.append(line);
+      if (tl.length) {
+        var ul = el("ul", "ntf-who");
+        tl.forEach(function (tg) {
+          var li = el("li", null, tg.name + " ");
+          var rm = el("button", "link", "убрать"); rm.type = "button";
+          rm.addEventListener("click", function () { cfg.targets = targets().filter(function (x) { return x.key !== tg.key; }); delete cfg.userId; save().then(render); });
+          li.append(rm); ul.append(li);
+        });
+        c.append(el("p", "meta", "Получают уведомления:"), ul);
+        c.append(el("p", "meta", "Чтобы добавить коллегу: дайте ему ссылку на бота, пусть напишет «привет». Или добавьте бота в общий чат MAX и напишите там. Потом нажмите «Добавить получателей»."));
+      }
       if (cfg.lastErr && ready()) c.append(el("p", "note", "Не отправилось: " + cfg.lastErr + ". Повторю при следующем сборе."));
-      var bb = el("button", "btn" + (cfg.userId ? "" : " primary"), cfg.userId ? "Привязать заново" : "Привязать"); bb.type = "button"; bb.addEventListener("click", bind); act.append(bb);
-      if (cfg.userId || cfg.chatId) {
+      var bb = el("button", "btn" + (tl.length ? "" : " primary"), tl.length ? "Добавить получателей" : "Привязать"); bb.type = "button"; bb.addEventListener("click", bind); act.append(bb);
+      if (tl.length) {
         var tb = el("button", "btn", "Отправить пробное"); tb.type = "button";
         tb.addEventListener("click", function () {
           tb.disabled = true;
-          send(format({ platform: "Яндекс", date: new Date().toISOString().slice(0, 10), rating: 1, author: "Пробный пользователь", text: "Это пробное уведомление от «Ответошной». Настоящие негативные отзывы будут приходить в таком же виде." }))
-            .then(function () { msg = "Отправлено: проверьте MAX."; msgErr = false; }, function (e) { msg = s(e && e.message || e); msgErr = true; }).then(render);
+          sendAll(format({ platform: "Яндекс", date: new Date().toISOString().slice(0, 10), rating: 1, author: "Пробный пользователь", text: "Это пробное уведомление от «Ответошной». Настоящие негативные отзывы будут приходить в таком же виде." }))
+            .then(function (r) { msg = r.err ? "Не всем дошло: " + r.err : "Отправлено всем получателям: проверьте MAX."; msgErr = !!r.err; }).then(render);
         });
         var en = el("button", "btn", cfg.enabled ? "Выключить" : "Включить"); en.type = "button";
         en.addEventListener("click", function () { cfg.enabled = !cfg.enabled; if (cfg.enabled && !cfg.since) cfg.since = nowIso(); save().then(render); });

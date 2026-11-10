@@ -45,6 +45,24 @@ async def main():
         await pg.evaluate("window.__maxDown = false; window.__otvNotify.flush()"); await pg.wait_for_timeout(600)
         sent = await pg.evaluate("window.__maxSent")
         res.append(('нет сети — предупреждение и повтор', 'Не отправилось' in t and len(sent) == 3 and 'Оценка не указана' in sent[2]['text'] and 'Ник пользователя: не указан' in sent[2]['text'], (t[-160:], sent[-1:])))
+        await pg.evaluate("window.__maxUpdates = { updates: [ { update_type: 'message_created', message: { sender: { user_id: 777, name: 'Анастасия' }, recipient: { chat_id: 55, chat_type: 'dialog' } } }, { update_type: 'message_created', message: { sender: { user_id: 888, name: 'Коллега' }, recipient: { chat_id: 56, chat_type: 'dialog' } } }, { update_type: 'bot_added', chat_id: -100, chat_title: 'Отзывы ГКБ', user: { user_id: 777 } } ] }")
+        await pg.click("#alertBox button:has-text('Добавить получателей')"); await pg.wait_for_timeout(500)
+        t = await pg.inner_text('#alertBox'); n0 = len(await pg.evaluate("window.__maxSent"))
+        await pg.evaluate("""async () => { const db = await window.__otvRt.use('db');
+          await db.collection('alerts').doc('site-9').set({ platform: 'Сайт', date: new Date().toISOString().slice(0, 10), rating: null, author: 'Ольга', text: 'Жалоба на регистратуру', detectedAt: new Date().toISOString(), status: 'new' }); }""")
+        await pg.wait_for_timeout(800)
+        sent = await pg.evaluate("window.__maxSent"); last = sent[n0:]
+        res.append(('несколько получателей: коллега и общий чат, письмо с сайта — всем', 'Коллега' in t and 'Отзывы ГКБ' in t and len(last) == 3 and all('Площадка: Сайт больницы (письмо)' in x['text'] for x in last) and sorted(str(x['userId']) for x in last) == ['777', '888', 'None'], (t[-300:], last)))
+        n0 = len(await pg.evaluate("window.__maxSent"))
+        await pg.evaluate("""async () => { const old = new Date(Date.now() - 5 * 3600e3).toISOString();
+          window.__otvSrcHealth = () => [{ name: 'Яндекс', ok: false, okAt: old, needLogin: true }, { name: '2ГИС', ok: true, okAt: new Date().toISOString() }];
+          const d = new Date(); d.setHours(20, 30, 0, 0);
+          await window.__otvNotify.health(d); await window.__otvNotify.health(d);
+          window.__otvSrcHealth = () => [{ name: 'Яндекс', ok: true, okAt: new Date().toISOString() }, { name: '2ГИС', ok: true, okAt: new Date().toISOString() }];
+          await window.__otvNotify.health(d); }""")
+        h = [x['text'] for x in (await pg.evaluate("window.__maxSent"))[n0:]]
+        warn = [x for x in h if 'Яндекс не читается — нужен вход' in x]; back = [x for x in h if 'Яндекс снова читается' in x]; daily = [x for x in h if 'сводка за сутки' in x]
+        res.append(('самоконтроль: одно предупреждение «не читается», одно «снова читается», одна вечерняя сводка — всем получателям', len(warn) == 3 and len(back) == 3 and len(daily) == 3 and 'Не читаются: Яндекс (нужен вход)' in daily[0], h))
         sch = await pg.evaluate("""() => { const D = (s) => new Date(s), f = window.__otvAutoDue, L = 0, now = (s) => D(s).getTime();
           return {
             satMorning: !!f(D('2026-11-14T09:05:00'), L, ''),
