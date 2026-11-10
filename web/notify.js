@@ -25,15 +25,34 @@
     if (!m) return s(d) || "не указана";
     return m[1].length === 4 ? (+m[3]) + " " + MON[+m[2] - 1] : (+m[1]) + " " + MON[+m[2] - 1];
   }
-  /* текст уведомления строго по образцам (10.11): площадки — с оценкой и ником; письмо с сайта — имя, email, телефон */
+  /* 10.11: персональные данные не уходят из программы. В MAX — без контактов авторов писем, а в тексте скрыты
+     почта, телефоны и ФИО (кроме сотрудников больницы из справочника — дежурному важно, о ком отзыв) */
+  function staffKeys() {
+    var r = (window.__otvGet && window.__otvGet("settings", "refs")) || {}, k = {};
+    (r.staff || []).forEach(function (x) { var p = s(x && x[0]).toLowerCase().replace(/ё/g, "е").split(/\s+/); if (p[0]) k["s:" + p[0].slice(0, 5)] = 1; if (p[1] && p[2]) k["n:" + p[1].slice(0, 4) + " " + p[2].slice(0, 5)] = 1; });
+    return k;
+  }
+  function isStaff(m, k) {
+    var w = m.toLowerCase().replace(/ё/g, "е").replace(/[.]/g, " ").split(/\s+/).filter(Boolean);
+    for (var i = 0; i < w.length; i++) { if (w[i].length > 2 && k["s:" + w[i].slice(0, 5)]) return true; if (w[i + 1] && k["n:" + w[i].slice(0, 4) + " " + w[i + 1].slice(0, 5)]) return true; }
+    return false;
+  }
+  function mask(text) {
+    var k = staffKeys(), F = "[ФИО скрыто]";
+    var x = s(text).replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[почта скрыта]").replace(/\+?\d[\d\s()-]{8,}\d/g, "[телефон скрыт]");
+    var P = "[А-ЯЁ][а-яё]*(?:вич|вн|ичн)[а-яё]{0,3}(?![а-яё])";
+    [new RegExp("[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]+ " + P, "g"), new RegExp("[А-ЯЁ][а-яё]+ " + P, "g"),
+     /[А-ЯЁ][а-яё]{2,} [А-ЯЁ]\.\s?[А-ЯЁ]\./g, /[А-ЯЁ]\.\s?[А-ЯЁ]\.\s?[А-ЯЁ][а-яё]{2,}/g].forEach(function (re) {
+      x = x.replace(re, function (m) { return isStaff(m, k) ? m : F; });
+    });
+    return x;
+  }
+  /* текст уведомления строго по образцам (10.11): площадки — с оценкой и ником; письмо с сайта — без контактов автора */
   function format(a) {
     var r = a.rating == null || a.rating === "" ? null : +a.rating;
-    var txt = s(a.text).trim(); if (txt.length > 3500) txt = txt.slice(0, 3500) + "…";
+    var txt = mask(s(a.text).trim()); if (txt.length > 3500) txt = txt.slice(0, 3500) + "…";
     if (s(a.platform) === "Сайт")
-      return "#нампишут\nПлощадка: Сайт\nДата отзыва: " + dateWords(a.date) + "\n\n" +
-        "Имя: " + (s(a.author).trim() || "не указано") + "\n" +
-        "Email: " + (s(a.contactEmail).trim() || "не указан") + "\n" +
-        "Телефон: " + (s(a.contactPhone).trim() || "не указан") + "\n\n" + txt;
+      return "#нампишут\nПлощадка: Сайт\nДата отзыва: " + dateWords(a.date) + "\n\n" + txt + "\n\nКонтакты автора — в программе.";
     return "#нампишут\n" +
       "Площадка: " + (s(a.platform) || "не указана") + "\n" +
       "Дата отзыва: " + dateWords(a.date) + "\n" +
@@ -47,7 +66,7 @@
     var t = Date.parse(s(a.date)); if (!isNaN(t) && (now || Date.now()) - t > 14 * 864e5) return false;
     return !!s(a.text).trim() || a.rating != null;
   }
-  window.__otvNotifyFmt = { format: format, due: due };
+  window.__otvNotifyFmt = { format: format, due: due, mask: mask };
 
   var db = null, cfg = {}, alerts = {}, sending = {}, msg = "", msgErr = false;
   function save() { cfg.updatedAt = nowIso(); return db ? db.collection("settings").doc("notify").set(cfg) : Promise.resolve(); }
@@ -72,7 +91,8 @@
      (основной выключен, спит или не видит площадку). Перед каждой отправкой оба смотрят последние сообщения чата:
      уже есть такое же — не шлют, а просто отмечают у себя как отправленное. Общая «память» — сам чат MAX. */
   var BACKUP_WAIT = 45 * 60e3, BACKUP_FORCE = 6 * 3600e3;
-  function role() { return cfg.role === "backup" ? "backup" : "main"; }
+  // роль по дежурству (два компьютера): дежурный шлёт сразу, второй — только если через 45 минут в чате ничего нет
+  function role() { var D = window.__otvDuty; if (D && D.multi()) return D.isDuty() ? "main" : "backup"; return cfg.role === "backup" ? "backup" : "main"; }
   function norm(x) { return s(x).replace(/\s+/g, " ").trim(); }
   function chatOf(tg) { return tg.chat || tg.dchat || null; }
   // тексты последних сообщений чата получателя: null — прочитать не удалось
@@ -115,7 +135,7 @@
           });
         }, Promise.resolve()).then(function () {
           var all = targets().every(function (tg) { return sent.indexOf(tg.key) >= 0; });
-          var patch = { sentTo: sent }; if (all) { patch.notifiedAt = nowIso(); patch.contactEmail = ""; patch.contactPhone = ""; }   // контакты автора письма не храним после отправки
+          var patch = { sentTo: sent }; if (all) patch.notifiedAt = nowIso();
           return db.collection("alerts").doc(id).update(patch).then(function () { if (!all) delete sending[id]; });
         });
       });
@@ -203,15 +223,6 @@
     c.append(el("h2", null, "Уведомления о негативе в MAX"));
     c.append(el("p", "meta", "Новый негативный отзыв (жалоба или оценка 1–2) и жалоба из писем с сайта приходят в MAX сразу после сбора — вам и коллегам, которых вы добавите, в формате #нампишут. Каждый — один раз. Работает, пока «Ответошная» открыта и компьютер не спит."));
     if (cfg.token && targets().length) {
-      var rl = el("div", "actions ntf-role");
-      rl.append(el("span", "meta", "Этот компьютер:"));
-      [["main", "основной — присылает сразу"], ["backup", "подстраховка — присылает, только если основной не прислал за 45 минут"]].forEach(function (o) {
-        var lb = el("label", "ntf-opt"), rb = el("input"); rb.type = "radio"; rb.name = "ntfRole"; rb.checked = role() === o[0];
-        rb.addEventListener("change", function () { if (rb.checked) { cfg.role = o[0]; save().then(render); } });
-        lb.append(rb, document.createTextNode(" " + o[1])); rl.append(lb);
-      });
-      c.append(rl);
-      c.append(el("p", "meta", "Два компьютера с одним ботом не дублируют друг друга: перед отправкой каждый смотрит в чат MAX и не шлёт то, что уже прислал другой. Один компьютер — «основной», второй — «подстраховка»."));
       var opts = el("div", "actions");
       [["healthOn", "Предупредить один раз, если площадка или почта не читаются больше 12 часов", true], ["dailyOn", "Вечерняя сводка «всё работает» в 20:00", false]].forEach(function (o) {
         var lb = el("label", "ntf-opt"), cb = el("input"); cb.type = "checkbox"; cb.checked = o[2] ? cfg[o[0]] !== false : cfg[o[0]] === true;

@@ -12,8 +12,11 @@ async def main():
         f = await pg.evaluate("""() => window.__otvNotifyFmt.format({ platform: 'Яндекс', date: '2026-11-07', rating: 1, author: 'Иван П.', text: 'Долго ждали в приёмном, никто не подошёл.' })""")
         ok = f == "#нампишут\nПлощадка: Яндекс\nДата отзыва: 7 ноября\nОценка 1/5\nНик пользователя: Иван П.\n\nДолго ждали в приёмном, никто не подошёл."
         res.append(('формат строго по образцу', ok, f))
-        f2 = await pg.evaluate("""() => window.__otvNotifyFmt.format({ platform: 'Сайт', date: '2026-10-26', author: 'Иванова Анна Петровна', contactEmail: 'a@example.com', contactPhone: '+7 (900) 111-22-33', text: 'Выписку не выдали.' })""")
-        res.append(('письмо с сайта — строго по образцу', f2 == "#нампишут\nПлощадка: Сайт\nДата отзыва: 26 октября\n\nИмя: Иванова Анна Петровна\nEmail: a@example.com\nТелефон: +7 (900) 111-22-33\n\nВыписку не выдали.", f2))
+        f2 = await pg.evaluate("""() => window.__otvNotifyFmt.format({ platform: 'Сайт', date: '2026-10-26', author: 'Иванова Анна Петровна', text: 'Здравствуйте, Петрову Марию Ивановну выписали 20.10, выписку не дали. Звоните +7 (900) 111-22-33 или пишите a@example.com' })""")
+        res.append(('письмо с сайта — без контактов автора, ФИО, телефон и почта в тексте скрыты', f2 == "#нампишут\nПлощадка: Сайт\nДата отзыва: 26 октября\n\nЗдравствуйте, [ФИО скрыто] выписали 20.10, выписку не дали. Звоните [телефон скрыт] или пишите [почта скрыта]\n\nКонтакты автора — в программе." and 'Иванова' not in f2, f2))
+        f3 = await pg.evaluate("""async () => { const db = await window.__otvRt.use('db'); await db.collection('settings').doc('refs').set({ staff: [['Смирнов Олег Петрович', 'врач-хирург', 'Хирургия 1']] });
+          return window.__otvNotifyFmt.mask('Спасибо врачу Смирнову О.П. и Олегу Петровичу! А медсестра грубила моей маме Кузнецовой Анне Сергеевне.'); }""")
+        res.append(('сотрудники из справочника не скрываются, пациенты — скрываются', f3 == 'Спасибо врачу Смирнову О.П. и Олегу Петровичу! А медсестра грубила моей маме [ФИО скрыто].', f3))
         await pg.evaluate("window.__otvShowTab('sources')"); await pg.wait_for_timeout(300)
         await pg.fill('#alertBox .ntf-tok', 'bad'); await pg.click("#alertBox button:has-text('Сохранить')"); await pg.wait_for_timeout(300)
         t = await pg.inner_text('#alertBox')
@@ -51,14 +54,14 @@ async def main():
         await pg.click("#alertBox button:has-text('Добавить получателей')"); await pg.wait_for_timeout(500)
         t = await pg.inner_text('#alertBox'); n0 = len(await pg.evaluate("window.__maxSent"))
         await pg.evaluate("""async () => { const db = await window.__otvRt.use('db');
-          await db.collection('alerts').doc('site-9').set({ platform: 'Сайт', date: new Date().toISOString().slice(0, 10), rating: null, author: 'Петрова Ольга Ивановна', contactEmail: 'test@example.com', contactPhone: '+7 (900) 000-00-00', text: 'Жалоба на регистратуру', detectedAt: new Date().toISOString(), status: 'new' }); }""")
+          await db.collection('alerts').doc('site-9').set({ platform: 'Сайт', date: new Date().toISOString().slice(0, 10), rating: null, author: 'Петрова Ольга Ивановна', text: 'Жалоба на регистратуру', detectedAt: new Date().toISOString(), status: 'new' }); }""")
         await pg.wait_for_timeout(800)
         sent = await pg.evaluate("window.__maxSent"); last = sent[n0:]
         import re as _re
-        want_site = "\n\nИмя: Петрова Ольга Ивановна\nEmail: test@example.com\nТелефон: +7 (900) 000-00-00\n\nЖалоба на регистратуру"
-        res.append(('несколько получателей: коллега и общий чат; письмо с сайта — по образцу с именем, email и телефоном', 'Коллега' in t and 'Отзывы ГКБ' in t and len(last) == 3 and all(_re.match(r'#нампишут\nПлощадка: Сайт\nДата отзыва: \d{1,2} [а-я]+$', x['text'].split('\n\n')[0]) and x['text'].endswith(want_site) for x in last) and sorted(str(x['userId']) for x in last) == ['777', '888', 'None'], (t[-300:], last)))
-        kept = await pg.evaluate("async () => { const db = await window.__otvRt.use('db'); const d = (await db.collection('alerts').doc('site-9').get()).data(); return [d.contactEmail, d.contactPhone, !!d.notifiedAt]; }")
-        res.append(('контакты автора письма стёрты после отправки', kept == ['', '', True], kept))
+        want_site = "\n\nЖалоба на регистратуру\n\nКонтакты автора — в программе."
+        res.append(('несколько получателей: коллега и общий чат; письмо с сайта — без контактов автора', 'Коллега' in t and 'Отзывы ГКБ' in t and len(last) == 3 and all(_re.match(r'#нампишут\nПлощадка: Сайт\nДата отзыва: \d{1,2} [а-я]+$', x['text'].split('\n\n')[0]) and x['text'].endswith(want_site) for x in last) and sorted(str(x['userId']) for x in last) == ['777', '888', 'None'], (t[-300:], last)))
+        kept = await pg.evaluate("window.__maxSent.map(x => x.text).join(' ')")
+        res.append(('имя автора письма не ушло в MAX', 'Петрова' not in kept, ''))
         n0 = len(await pg.evaluate("window.__maxSent"))
         await pg.evaluate("""async () => { const old = new Date(Date.now() - 13 * 3600e3).toISOString(), recent = new Date(Date.now() - 5 * 3600e3).toISOString();
           window.__otvSrcHealth = () => [{ name: 'Яндекс', ok: false, okAt: old, needLogin: true }, { name: '2ГИС', ok: false, okAt: recent }];

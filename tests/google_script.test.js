@@ -95,4 +95,17 @@ chk(i2.answer==='Мой ответ'&&/Дочитан/.test(i2.text),'чужой 
   const nb=vm.runInContext('readNegative(negTable(DocumentApp.openById("x")))',c4);
   chk(nb.map(b=>b.text).join('|')==='Ранний отзыв|Средний отзыв|Позднее письмо'&&nb[0].link==='https://y/1'&&nb[0].answer==='Ответ 1','«Негатив»: блоки по дате, ответ и ссылка едут вместе с отзывом');
   const before=JSON.stringify(grid); vm.runInContext('tidy()',c4); chk(JSON.stringify(grid)===before,'повторный порядок ничего не меняет'); }
+// 10.11: два компьютера — повторно тот же негатив в отчёт не вносится, ссылка на уже внесённый блок возвращается
+try { vm.runInContext('addNegative([{id:"o1",platform:"Яндекс",date:"17 октября 2026",text:"Замена хирурга без консультации.",answer:"",link:"https://y/2"}],{})',ctx);
+  const n0=vm.runInContext('readNegative(negTable(DocumentApp.openById("x"))).filter(b=>!b.empty).length',ctx);
+  const r2=vm.runInContext('add([], [{id:"dup1",platform:"Яндекс",date:"16 октября 2026",text:"Замена хирурга без консультации.",answer:"",link:"https://y/2"}])',ctx);
+  const n1=vm.runInContext('readNegative(negTable(DocumentApp.openById("x"))).filter(b=>!b.empty).length',ctx);
+  chk(n1===n0 && r2.skipped===1 && /^Негатив · блок \d+$/.test(r2.refs.dup1||''),'повтор того же отзыва (со второго компьютера) не вносится: '+JSON.stringify(r2)); } catch(e){ chk(false,'повтор: '+e.message); }
+// 10.11: отметки дежурства — только «кто на связи», без данных; чужой мусор в номере компьютера отбрасывается
+{ const store={}; const c5={ PropertiesService:{ getScriptProperties:()=>({ getProperty:k=>store[k]||null, setProperty:(k,v)=>{store[k]=v;} }) }, Logger:{log(){}} };
+  vm.createContext(c5); vm.runInContext(code,c5);
+  vm.runInContext('ACTIONS.duty({dev:"mac01",name:"Mac",role:"backup"})',c5);
+  const r5=vm.runInContext('ACTIONS.duty({dev:"pc<script>02",name:"Рабочий",role:"main"})',c5);
+  const keys=Object.keys(r5.duty).sort().join(',');
+  chk(keys==='mac01,pcscript02' && r5.duty.mac01.role==='backup' && r5.duty.pcscript02.role==='main' && Object.keys(r5.duty.mac01).sort().join(',')==='at,name,role','дежурство: в Google только имя, роль и время отметки: '+keys); }
 console.log(ok?'ALL OK':'SOME FAILED');

@@ -12,7 +12,7 @@
  * Скрипт работает от вашего имени и правит только эти файлы. Программа связывается с ним
  * по секретному ключу, который знает только она (первое подключение запоминает ключ).
  */
-var VERSION = 8;
+var VERSION = 9;
 var POS_ID = '1PnkJU3cjl6LlZxe1E9fHfmW7-E5kLi8Nkyr2G4dkw1A';   // «Позитив»
 var NEG_ID = '1Sp8sJv90_bUDYoo-4jPVQrHqLQU-E33s2MLJx0lrlpg';   // «Негатив»
 var REF_ID = '1s-0vfTvZeqVOrrreu9YY5fM3BycOfBtChuIu2wO8pdI';   // «[ГКБ24] Сбор отзывов — справочник»
@@ -65,7 +65,19 @@ var ACTIONS = {
   answers: function (req) { return { updated: negAnswers(req.items || []) }; },
   export: function () { return { files: exportBoth() }; },
   newweek: function (req) { return newWeek(req); },
-  patch: function (req) { var n = patch(req.items || []); tidy(); return { patched: n, state: state() }; }
+  patch: function (req) { var n = patch(req.items || []); tidy(); return { patched: n, state: state() }; },
+  // 10.11: дежурство двух компьютеров. Здесь только «компьютер такой-то на связи в такое-то время» — без отзывов и персональных данных
+  duty: function (req) {
+    var p = PropertiesService.getScriptProperties(), m = {};
+    try { m = JSON.parse(p.getProperty('OTV_DUTY') || '{}') || {}; } catch (e) { m = {}; }
+    var now = Date.now();
+    Object.keys(m).forEach(function (k) { if (!m[k] || now - (+m[k].at || 0) > 30 * 864e5) delete m[k]; });
+    var dev = String(req.dev || '').replace(/[^a-z0-9]/gi, '').slice(0, 24);
+    if (dev) m[dev] = { name: String(req.name || '').slice(0, 40), role: req.role === 'backup' ? 'backup' : 'main', at: now };
+    if (req.forget) delete m[String(req.forget).replace(/[^a-z0-9]/gi, '').slice(0, 24)];
+    p.setProperty('OTV_DUTY', JSON.stringify(m));
+    return { duty: m, now: now };
+  }
 };
 
 /* ---------------- даты и период ---------------- */
@@ -211,10 +223,19 @@ function refs() {
 
 /* ---------------- внести в отчёты ---------------- */
 function add(pos, neg) {
-  var refsOut = {};
+  var refsOut = {}, skipped = 0;
+  // 10.11: два компьютера с программой не должны внести один отзыв дважды — то, что уже есть в отчёте (тот же текст), не вносим
+  if (pos.length) {
+    var have = {}; readPositive(detailSheet(SpreadsheetApp.openById(POS_ID))).forEach(function (r, i) { if (r.filled && head(r.text)) have[normPlat(r.platform) + '|' + head(r.text)] = 'Позитив · ' + r.platform + ' №' + (r.num || ''); });
+    pos = pos.filter(function (it) { var k = normPlat(it.platform) + '|' + head(it.text); if (head(it.text) && have[k]) { if (it.id) refsOut[it.id] = have[k]; skipped++; return false; } return true; });
+  }
+  if (neg.length) {
+    var haveN = {}; readNegative(negTable(DocumentApp.openById(NEG_ID))).forEach(function (b) { if (!b.empty && head(b.text)) haveN[head(b.text)] = 'Негатив · блок ' + b.n; });
+    neg = neg.filter(function (it) { var k = head(it.text); if (k && haveN[k]) { if (it.id) refsOut[it.id] = haveN[k]; skipped++; return false; } return true; });
+  }
   if (pos.length) addPositive(pos, refsOut);
   if (neg.length) addNegative(neg, refsOut);
-  return { refs: refsOut };
+  return { refs: refsOut, skipped: skipped };
 }
 
 function addPositive(items, refsOut) {
