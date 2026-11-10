@@ -913,7 +913,8 @@ pub fn run() {
             gs::gs_call,
             notify::max_send,
             notify::max_updates,
-            notify::max_me
+            notify::max_me,
+            notify::max_messages
         ])
         .build(tauri::generate_context!())
         .expect("ошибка запуска «Ответошной»")

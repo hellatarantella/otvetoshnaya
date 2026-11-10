@@ -67,33 +67,72 @@
     }, Promise.resolve()).then(function () { return { ok: ok, err: err }; });
   }
 
+  /* Два компьютера — подстраховка друг друга без повторов (10.11). Оба с одним ботом; у каждого роль:
+     «основной» шлёт сразу, «подстраховка» — только если через 45 минут такого сообщения в чате MAX всё ещё нет
+     (основной выключен, спит или не видит площадку). Перед каждой отправкой оба смотрят последние сообщения чата:
+     уже есть такое же — не шлют, а просто отмечают у себя как отправленное. Общая «память» — сам чат MAX. */
+  var BACKUP_WAIT = 45 * 60e3, BACKUP_FORCE = 6 * 3600e3;
+  function role() { return cfg.role === "backup" ? "backup" : "main"; }
+  function norm(x) { return s(x).replace(/\s+/g, " ").trim(); }
+  function chatOf(tg) { return tg.chat || tg.dchat || null; }
+  // тексты последних сообщений чата получателя: null — прочитать не удалось
+  function history(tg, cache) {
+    var c = chatOf(tg); if (!c) return Promise.resolve(null);
+    if (cache[c] !== undefined) return Promise.resolve(cache[c]);
+    return invoke("max_messages", { token: cfg.token, chatId: c }).then(function (raw) {
+      var j = {}; try { j = JSON.parse(raw || "{}"); } catch (e) {}
+      var set = {}; (j.messages || []).forEach(function (m) { var tx = m && m.body && m.body.text; if (tx) set[norm(tx)] = 1; });
+      return (cache[c] = set);
+    }, function () { return (cache[c] = null); });
+  }
+  function rememberChat(tg, raw) {   // ответ MAX на отправку: в нём номер чата-диалога, по нему потом проверяем повторы
+    if (tg.chat || tg.dchat) return;
+    try { var j = JSON.parse(raw || "{}"), c = j.message && j.message.recipient && j.message.recipient.chat_id; if (c) { tg.dchat = c; cfg.targets = targets().map(function (x) { return x.key === tg.key ? tg : x; }); } } catch (e) {}
+  }
   var busyFlush = false;
-  function flush() {
+  function flush(now) {
+    now = now || Date.now();
     if (!db || !ready() || busyFlush) return Promise.resolve();
     var list = Object.keys(alerts).filter(function (id) { return !sending[id] && due(alerts[id], cfg); })
       .sort(function (a, b) { return s(alerts[a].detectedAt).localeCompare(s(alerts[b].detectedAt)); });
     if (!list.length) return Promise.resolve();
     busyFlush = true;
+    var cache = {}, errs = [], okAny = false;
     return list.reduce(function (p, id) {
       return p.then(function () {
         sending[id] = 1;
-        var before = Array.isArray(alerts[id].sentTo) ? alerts[id].sentTo : [];
-        return sendAll(format(alerts[id]), before).then(function (r) {
-          var sent = before.concat(r.ok), all = targets().every(function (tg) { return sent.indexOf(tg.key) >= 0; });
-          if (r.ok.length) cfg.lastOk = nowIso();
-          cfg.lastErr = r.err; if (r.err) jlog("не отправилось: " + r.err);
+        var a = alerts[id], text = format(a), key = norm(text), age = now - (Date.parse(s(a.detectedAt)) || now);
+        var sent = Array.isArray(a.sentTo) ? a.sentTo.slice() : [], waiting = false;
+        return targets().filter(function (tg) { return sent.indexOf(tg.key) < 0; }).reduce(function (q, tg) {
+          return q.then(function () {
+            if (role() === "backup" && age < BACKUP_WAIT) { waiting = true; return; }
+            return history(tg, cache).then(function (h) {
+              if (h && h[key]) { sent.push(tg.key); return; }                  // уже прислал другой компьютер
+              if (!h && role() === "backup" && age < BACKUP_FORCE) { waiting = true; return; }   // чат не прочитался — подстраховка не рискует повтором
+              return sendTo(tg, text).then(function (raw) { sent.push(tg.key); okAny = true; rememberChat(tg, raw); if (h) h[key] = 1; },
+                function (e) { errs.push((tg.name ? tg.name + ": " : "") + s(e && e.message || e)); });
+            });
+          });
+        }, Promise.resolve()).then(function () {
+          var all = targets().every(function (tg) { return sent.indexOf(tg.key) >= 0; });
           var patch = { sentTo: sent }; if (all) { patch.notifiedAt = nowIso(); patch.contactEmail = ""; patch.contactPhone = ""; }   // контакты автора письма не храним после отправки
-          return db.collection("alerts").doc(id).update(patch).then(function () { if (!all) { delete sending[id]; throw new Error(r.err); } });
+          return db.collection("alerts").doc(id).update(patch).then(function () { if (!all) delete sending[id]; });
         });
       });
-    }, Promise.resolve()).catch(function () {}).then(function () { busyFlush = false; save().catch(function () {}); render(); });
+    }, Promise.resolve()).catch(function () {}).then(function () {
+      if (okAny) cfg.lastOk = nowIso();
+      cfg.lastErr = errs.join("; "); if (errs.length) jlog("не отправилось: " + cfg.lastErr);
+      busyFlush = false; save().catch(function () {}); render();
+    });
   }
+  // подстраховка проверяет отложенное сама, даже без нового сбора
+  setInterval(function () { if (role() === "backup") flush(); }, 5 * 60e3);
   /* самоконтроль для дежурного: площадка перестала читаться — одно предупреждение; заработала — одно «снова читается».
      Каждый вечер (первый сбор после 20:00) — короткая сводка, чтобы тишина в чате значила «всё спокойно», а не «программа встала» */
   var busyHealth = false;
   function health(now) {
     now = now || new Date();
-    if (!ready() || busyHealth || !window.__otvSrcHealth) return Promise.resolve();
+    if (!ready() || busyHealth || !window.__otvSrcHealth || role() === "backup") return Promise.resolve();   // предупреждения шлёт только основной — без повторов
     var list = window.__otvSrcHealth() || [], warned = Object.assign({}, cfg.warned || {}), out = [];
     list.forEach(function (x) {
       var okAge = x.okAt ? now - Date.parse(x.okAt) : Infinity, bad = !x.ok && okAge > 12 * 3600e3;
@@ -117,7 +156,7 @@
     return out.reduce(function (p, m) { return p.then(function () { return sendAll(m); }); }, Promise.resolve())
       .catch(function () {}).then(function () { busyHealth = false; return save().catch(function () {}); });
   }
-  window.__otvNotify = { flush: function () { return flush().then(function () { return health(); }); }, ready: ready, health: health };
+  window.__otvNotify = { flush: function () { return flush().then(function () { return health(); }); }, ready: ready, health: health, flushAt: flush };
 
   window.claude.use("db").then(function (d) {
     db = d;
@@ -141,9 +180,9 @@
         u = u || {}; var m = u.message || {}, snd = m.sender || {}, rc = m.recipient || {};
         if (/bot_removed|user_removed|chat_title|bot_stopped/.test(s(u.update_type))) return;
         if (m.sender && !snd.is_bot && rc.chat_type && rc.chat_type !== "dialog" && rc.chat_id) add({ key: "c" + rc.chat_id, chat: rc.chat_id, name: "чат «" + s(rc.title || rc.chat_title || rc.chat_id) + "»" });
-        else if (m.sender && snd.user_id && !snd.is_bot) add({ key: "u" + snd.user_id, user: snd.user_id, name: s(snd.name || [snd.first_name, snd.last_name].filter(Boolean).join(" ")) || "пользователь " + snd.user_id });
+        else if (m.sender && snd.user_id && !snd.is_bot) add({ key: "u" + snd.user_id, user: snd.user_id, dchat: rc.chat_id || null, name: s(snd.name || [snd.first_name, snd.last_name].filter(Boolean).join(" ")) || "пользователь " + snd.user_id });
         else if (/bot_added/.test(s(u.update_type)) && u.chat_id) add({ key: "c" + u.chat_id, chat: u.chat_id, name: "чат «" + s(u.chat_title || u.chat_id) + "»" });
-        else if (/bot_started/.test(s(u.update_type)) && u.user && u.user.user_id) add({ key: "u" + u.user.user_id, user: u.user.user_id, name: s(u.user.name || u.user.first_name) || "пользователь " + u.user.user_id });
+        else if (/bot_started/.test(s(u.update_type)) && u.user && u.user.user_id) add({ key: "u" + u.user.user_id, user: u.user.user_id, dchat: u.chat_id || null, name: s(u.user.name || u.user.first_name) || "пользователь " + u.user.user_id });
       });
       var cur = targets(), fresh = found.filter(function (tg) { return !cur.some(function (x) { return x.key === tg.key; }); });
       if (!fresh.length) { msg = cur.length ? "Новых получателей нет. Пусть коллега напишет боту «привет» (или добавьте бота в общий чат MAX и напишите там) — и снова «Добавить получателей»." : "Бот пока не видит ваших сообщений. Откройте бота в MAX, нажмите «Начать» или напишите «привет», и снова «Привязать»."; msgErr = !cur.length; render(); return; }
@@ -164,6 +203,15 @@
     c.append(el("h2", null, "Уведомления о негативе в MAX"));
     c.append(el("p", "meta", "Новый негативный отзыв (жалоба или оценка 1–2) и жалоба из писем с сайта приходят в MAX сразу после сбора — вам и коллегам, которых вы добавите, в формате #нампишут. Каждый — один раз. Работает, пока «Ответошная» открыта и компьютер не спит."));
     if (cfg.token && targets().length) {
+      var rl = el("div", "actions ntf-role");
+      rl.append(el("span", "meta", "Этот компьютер:"));
+      [["main", "основной — присылает сразу"], ["backup", "подстраховка — присылает, только если основной не прислал за 45 минут"]].forEach(function (o) {
+        var lb = el("label", "ntf-opt"), rb = el("input"); rb.type = "radio"; rb.name = "ntfRole"; rb.checked = role() === o[0];
+        rb.addEventListener("change", function () { if (rb.checked) { cfg.role = o[0]; save().then(render); } });
+        lb.append(rb, document.createTextNode(" " + o[1])); rl.append(lb);
+      });
+      c.append(rl);
+      c.append(el("p", "meta", "Два компьютера с одним ботом не дублируют друг друга: перед отправкой каждый смотрит в чат MAX и не шлёт то, что уже прислал другой. Один компьютер — «основной», второй — «подстраховка»."));
       var opts = el("div", "actions");
       [["healthOn", "Предупредить один раз, если площадка или почта не читаются больше 12 часов", true], ["dailyOn", "Вечерняя сводка «всё работает» в 20:00", false]].forEach(function (o) {
         var lb = el("label", "ntf-opt"), cb = el("input"); cb.type = "checkbox"; cb.checked = o[2] ? cfg[o[0]] !== false : cfg[o[0]] === true;

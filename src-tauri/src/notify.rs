@@ -97,3 +97,19 @@ pub async fn max_me(token: String) -> Result<String, String> {
     let t = resp.text().await.unwrap_or_default();
     if (200..300).contains(&code) { Ok(t) } else { Err(reason(code, &t)) }
 }
+
+/// Последние сообщения чата (в том числе отправленные самим ботом) — чтобы два компьютера
+/// с одним ботом не прислали одно и то же: перед отправкой каждый смотрит, нет ли уже такого сообщения.
+#[tauri::command]
+pub async fn max_messages(token: String, chat_id: i64) -> Result<String, String> {
+    let tok = token_ok(&token)?;
+    let resp = client()?
+        .get(format!("{BASE}/messages?chat_id={chat_id}&count=100"))
+        .header("Authorization", tok.as_str())
+        .send()
+        .await
+        .map_err(|e| format!("нет связи с MAX: {e}"))?;
+    let code = resp.status().as_u16();
+    let t = resp.text().await.unwrap_or_default();
+    if (200..300).contains(&code) { Ok(t) } else { Err(reason(code, &t)) }
+}

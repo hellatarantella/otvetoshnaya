@@ -27,6 +27,7 @@ fn main() {
         "max_send",
         "max_updates",
         "max_me",
+        "max_messages",
     ])))
     .expect("ошибка сборки");
 }

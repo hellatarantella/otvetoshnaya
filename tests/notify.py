@@ -71,6 +71,31 @@ async def main():
         warn = [x for x in h if 'Яндекс не читается — нужен вход' in x]; back = [x for x in h if 'Яндекс снова читается' in x]; daily = [x for x in h if 'сводка за сутки' in x]
         g2 = [x for x in h if '2ГИС не читается' in x]
         res.append(('минимум уведомлений: «не читается» только после 12 часов и один раз, без «снова читается» и без вечерней сводки по умолчанию', len(warn) == 3 and not back and not daily and not g2, h))
+        # два компьютера: другой уже прислал это в чат — этот не повторяет; подстраховка ждёт 45 минут
+        R = await pg.evaluate("""async () => { const db = await window.__otvRt.use('db'); const N = window.__otvNotifyFmt;
+          const mk = (id, txt) => ({ platform: 'Яндекс', date: new Date().toISOString().slice(0, 10), rating: 1, author: 'Тест ' + id, text: txt, detectedAt: new Date().toISOString(), status: 'new' });
+          const a1 = mk('d1', 'Уже прислано другим компьютером');
+          // «другой компьютер» положил это сообщение во все чаты получателей
+          const chats = window.__maxChats = window.__maxChats || {}; ['55', 'd888', '-100', '56'].forEach(c => (chats[c] = chats[c] || []).push({ body: { text: N.format(a1) } }));
+          const n0 = window.__maxSent.length;
+          await db.collection('alerts').doc('dup-1').set(a1); await new Promise(r => setTimeout(r, 800));
+          const d1 = (await db.collection('alerts').doc('dup-1').get()).data();
+          const r1 = { sentNew: window.__maxSent.length - n0, notified: !!d1.notifiedAt };
+          // подстраховка: свежий негатив не шлёт сразу, через 46 минут — шлёт (в чатах его нет)
+          const cfg = (await db.collection('settings').doc('notify').get()).data(); await db.collection('settings').doc('notify').set(Object.assign({}, cfg, { role: 'backup' }));
+          await new Promise(r => setTimeout(r, 300));
+          const n1 = window.__maxSent.length;
+          await db.collection('alerts').doc('bk-1').set(mk('b1', 'Основной выключен')); await new Promise(r => setTimeout(r, 800));
+          await window.__otvNotify.flushAt(Date.now());
+          const r2 = window.__maxSent.length - n1;
+          await window.__otvNotify.flushAt(Date.now() + 46 * 60e3);
+          const r3 = window.__maxSent.length - n1;
+          // подстраховка не шлёт «не читается»
+          window.__otvSrcHealth = () => [{ name: 'Яндекс', ok: false, okAt: '2020-01-01T00:00:00Z', needLogin: true }];
+          const n2 = window.__maxSent.length; await window.__otvNotify.health(new Date()); const r4 = window.__maxSent.length - n2;
+          await db.collection('settings').doc('notify').set(Object.assign({}, cfg, { role: 'main' }));
+          return { r1, r2, r3, r4 }; }""")
+        res.append(('два компьютера: уже присланное другим не повторяется; подстраховка ждёт 45 минут, потом шлёт; предупреждения — только от основного', R['r1'] == {'sentNew': 0, 'notified': True} and R['r2'] == 0 and R['r3'] == 3 and R['r4'] == 0, R))
         sch = await pg.evaluate("""() => { const D = (s) => new Date(s), f = window.__otvAutoDue, L = 0, now = (s) => D(s).getTime();
           return {
             satMorning: !!f(D('2026-11-14T09:05:00'), L, ''),

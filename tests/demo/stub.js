@@ -143,7 +143,10 @@
         // бот MAX: для проверок запоминаем отправленное; токен «плохой» — ошибка как у MAX
         if (cmd === "max_me") return a.token === "bad" ? Promise.reject("MAX не принял токен бота") : Promise.resolve(JSON.stringify({ name: "Тестовый бот" }));
         if (cmd === "max_updates") return Promise.resolve(JSON.stringify(window.__maxUpdates || { updates: [] }));
-        if (cmd === "max_send") { if (window.__maxDown) return Promise.reject("нет связи с MAX"); (window.__maxSent = window.__maxSent || []).push({ userId: a.userId, text: a.text }); return Promise.resolve("{}"); }
+        if (cmd === "max_send") { if (window.__maxDown) return Promise.reject("нет связи с MAX"); (window.__maxSent = window.__maxSent || []).push({ userId: a.userId, text: a.text });
+          var ch = a.chatId || (window.__maxDialog || {})[a.userId] || ("d" + a.userId); var chats = window.__maxChats = window.__maxChats || {}; (chats[ch] = chats[ch] || []).push({ body: { text: a.text } });
+          return Promise.resolve(JSON.stringify({ message: { recipient: { chat_id: ch } } })); }
+        if (cmd === "max_messages") { if (window.__maxHistDown) return Promise.reject("нет связи с MAX"); return Promise.resolve(JSON.stringify({ messages: ((window.__maxChats || {})[a.chatId] || []).slice(-100) })); }
         if (cmd === "source_stop") { clearTimeout(timers[a.id]); return Promise.resolve(null); }
         if (cmd === "source_open") { if (window.__otvBar) window.__otvBar.show("В тестовой версии окна кабинетов и почты не открываются.", "", [["Закрыть", window.__otvBar.hide]]); return Promise.resolve(null); }
         return Promise.resolve(null);
