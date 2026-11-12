@@ -1583,8 +1583,11 @@
   function mailSince() {
     var st = window.__otvReports && window.__otvReports.state && window.__otvReports.state();
     // неделя по поступлению: читаем почту и за прошлую неделю, чтобы письмо, не попавшее в её отчёт, не потерялось
-    if (st && /^\d{4}-\d{2}-\d{2}$/.test(s0(st.start))) return new Date(Date.parse(st.start + "T12:00:00+03:00") - 7 * 864e5).toISOString().slice(0, 10);
-    var d = new Date(Date.now() - 7 * 864e5); return d.toISOString().slice(0, 10);
+    var base = st && /^\d{4}-\d{2}-\d{2}$/.test(s0(st.start)) ? new Date(Date.parse(st.start + "T12:00:00+03:00") - 7 * 864e5).toISOString().slice(0, 10) : new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+    // 12.11: почта долго не читалась (вход, пароль) — читаем с дня последнего удачного чтения, чтобы письма не потерялись (не дальше 60 дней)
+    var ms = srcState.mail, okAt = ms && Date.parse(ms.okAt || (ms.ok ? ms.at : ""));
+    if (okAt) { var from = new Date(Math.max(okAt - 864e5, Date.now() - 60 * 864e5)).toISOString().slice(0, 10); if (from < base) return from; }
+    return base;
   }
   function mailOpts() {
     var since = mailSince(), m = window.__otvAll("mail") || {}, todo = [];
