@@ -101,6 +101,12 @@ try { vm.runInContext('addNegative([{id:"o1",platform:"Яндекс",date:"17 о
   const r2=vm.runInContext('add([], [{id:"dup1",platform:"Яндекс",date:"16 октября 2026",text:"Замена хирурга без консультации.",answer:"",link:"https://y/2"}])',ctx);
   const n1=vm.runInContext('readNegative(negTable(DocumentApp.openById("x"))).filter(b=>!b.empty).length',ctx);
   chk(n1===n0 && r2.skipped===1 && /^Негатив · блок \d+$/.test(r2.refs.dup1||''),'повтор того же отзыва (со второго компьютера) не вносится: '+JSON.stringify(r2)); } catch(e){ chk(false,'повтор: '+e.message); }
+// 12.11: убрать из «Негатива» блок по тексту (реклама, перенос в свою неделю); остальные блоки на месте
+try { vm.runInContext('addNegative([{id:"rm1",platform:"2ГИС",date:"4 ноября 2026",text:"Помогаем бизнесу усиливать репутацию, 50 отзывов: 3 700 ₽",answer:"—",link:"—"}],{})',ctx);
+  const nb=vm.runInContext('readNegative(negTable(DocumentApp.openById("x"))).filter(b=>!b.empty).length',ctx);
+  const n=vm.runInContext('removeRows_([{kind:"neg",platform:"2ГИС",text:"Помогаем бизнесу усиливать репутацию, 50 отзывов: 3 700 ₽"}])',ctx);
+  const left=vm.runInContext('readNegative(negTable(DocumentApp.openById("x"))).filter(b=>!b.empty)',ctx);
+  chk(n===1 && left.length===nb-1 && !left.some(b=>/Помогаем/.test(b.text)),'убрать блок «Негатива» по тексту: убран один, остальные на месте'); } catch(e){ chk(false,'убрать блок: '+e.message); }
 // 10.11: отметки дежурства — только «кто на связи», без данных; чужой мусор в номере компьютера отбрасывается
 { const store={}; const c5={ PropertiesService:{ getScriptProperties:()=>({ getProperty:k=>store[k]||null, setProperty:(k,v)=>{store[k]=v;} }) }, Logger:{log(){}} };
   vm.createContext(c5); vm.runInContext(code,c5);
