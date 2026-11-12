@@ -30,7 +30,12 @@
       if (r.version) ver = +r.version;
       runner = +(r.runner || 0);
       if (!r.ok) throw new Error(r.error || "ошибка скрипта");
-      if (r.state) st = r.state;
+      if (r.state) {
+        st = r.state;
+        // отчёт изменился (строки, отделения, врачи) — сообщаем презентациям: они пересоберутся сами
+        var sig = JSON.stringify([st.start, (st.positive || []).map(function (x) { return [x.platform, x.date, x.dept, x.doctor, x.text]; }), (st.negative || []).map(function (x) { return [x.platform, x.date, x.text]; })]);
+        if (sig !== call.sig) { call.sig = sig; setTimeout(function () { try { window.dispatchEvent(new CustomEvent("otv-report-changed")); } catch (e) {} }, 0); }
+      }
       return r;
     });
   }

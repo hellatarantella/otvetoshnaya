@@ -501,6 +501,8 @@
     // при открытии вкладки — свежие данные отчёта из Google (строки, удалённые или поправленные вручную, сразу учитываются)
     function fresh() { var r = window.__otvReports; return (r && r.refresh ? r.refresh() : Promise.resolve()).catch(function (e) { log("отчёт не перечитан: " + (e && e.message || e)); }).then(rebuild); }
     window.addEventListener("otv-tab", function (e) { if (e.detail === K.tab && db) fresh(); });
+    // 12.11: данные отчёта изменились — презентация пересобирается сама, даже если её вкладка закрыта
+    window.addEventListener("otv-report-changed", function () { if (root) { clearTimeout(rbTimer); rbTimer = setTimeout(rebuild, 400); } });
   }
   function photoKey2(v) { return v.kind + "|" + v.key; }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount();
