@@ -1082,7 +1082,7 @@
   function toneOf(it) {
     var r = Number(it.rating);
     if (it.rating != null && it.rating !== "" && !isNaN(r)) return r < (TH[it.platform] || 4.5) || strongNeg(it.text) ? "negative" : "positive";
-    return NEG_RE.test(normT(it.text)) || strongNeg(it.text) ? "negative" : "positive";
+    return NEG_RE.test(normT((window.__otvUnneg || String)(it.text))) || strongNeg(it.text) ? "negative" : "positive";
   }
   function shortName(full) {
     var p = s0(full).trim().split(/\s+/);
@@ -1503,6 +1503,16 @@
         if (d2 && d2.text && d2.tone === "negative") { up.answer = d2.text; up.draft = d2.text; up.tone = "negative"; }
         if (!(window.__otvAll("alerts") || {})[id]) alertsNew.push([id, a]);
       }
+      // 12.11: обратное — похвалу («никогда не игнорирует», «не было грубости») раньше приняли за жалобу: ответ как на
+      // благодарность (вашу правку не трогаем), ложная тревога снимается, уведомление по ней не уйдёт
+      var al0 = (window.__otvAll("alerts") || {})[id], rt0 = a.rating == null || a.rating === "" ? null : Number(a.rating);
+      if (a.status === "pending" && a.kind !== "question" && a.kind !== "complaint" && (s0(a.tone) === "negative" || (al0 && !al0.notNeg && al0.status !== "done")) &&
+          (rt0 == null || isNaN(rt0) || rt0 >= (TH[a.platform] || 4.5)) && !strongNeg(a.review) && toneOf({ platform: a.platform, text: a.review, rating: a.rating }) === "positive") {
+        up.tone = "positive";
+        if (!a.edited) { var d3 = pickDraft({ platform: a.platform, author: a.author, text: a.review, rating: a.rating, tone: "positive" }, s0(a.page)); if (d3 && d3.text && d3.tone !== "negative") { up.answer = d3.text; up.draft = d3.text; } }
+        if (al0 && !al0.notNeg && !al0.notifiedAt) jobs.push(["alerts", id, { notNeg: true, status: "done", note: "не жалоба: похвала с «не» («никогда не игнорирует»)" }]);
+        if (window.__otvLog) window.__otvLog("ответы: отзыв " + id + " — благодарность, а не жалоба; ответ " + (a.edited ? "(ваша правка) оставлен" : "переписан как на благодарность"));
+      }
       if (Object.keys(up).length) jobs.push(["answers", id, up]);
     });
     alertsNew.forEach(function (x) {
@@ -1605,7 +1615,7 @@
   }
   /* что это за письмо, по смыслу текста; выбор пациента в форме (тип обращения) учитываем, но не верим вслепую */
   function letterKind(type, text) {
-    var ty = s0(type).toLowerCase(), t = " " + s0(text).toLowerCase().replace(/ё/g, "е") + " ";
+    var ty = s0(type).toLowerCase(), t = " " + (window.__otvUnneg || String)(s0(text)).toLowerCase().replace(/ё/g, "е") + " ";
     var cnt = function (re) { var m = t.match(re); return m ? m.length : 0; };
     var thx = cnt(/благодар|спасибо|признател|низкий поклон|золот\S* рук|профессионал|внимательн|чутк|заботлив|отзывчив|молодц|умниц|доброжелательн|компетентн|от всей души|рекоменду|на высоте|спасли|вылечил|выходил[аи]?\b|поставил[аи]? на ноги/g);
     var neg = cnt(/жалоб|возмущ|безобраз|(^|[^а-я])(хам|нахам)|груб\S*|хамств|ужасн|отвратит|кошмар|не помогл|не помогают|халатн|(^|[^е])равнодуш|безразлич|игнорир|бардак|грязн|не дозвон|не могу дозвон|не отвечают|никто не (подош|объясн|отвеча|приш|помог)|отказал|отказыва|не принял|не приняли|не принимают|недовол|разберитесь|требую|прошу разобраться|прошу принять меры|вымога|потеряли|не лечат|не оказал|бросили|оставили без|кричал|унижа|наплева|позор|некомпетент|не обезбол|издевал|обман/g);

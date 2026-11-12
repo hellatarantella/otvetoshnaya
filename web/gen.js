@@ -36,7 +36,7 @@
     if (it.rating != null && it.rating !== "" && !isNaN(r)) return r < (TH[s(it.platform)] || 4.5) || strong ? "negative" : "positive";
     if (s(it.tone) === "negative" || s(it.tone) === "mixed") return "negative";
     if (s(it.tone) === "positive") return "positive";
-    return NEG_RE.test(norm(it.review)) ? "negative" : "positive";
+    return NEG_RE.test(norm((window.__otvUnneg || String)(it.review))) ? "negative" : "positive";
   }
   function typeOf(it) {
     if (it.kind === "question") return "question";
@@ -559,24 +559,34 @@
     return { platform: req.platform, page: req.page, author: req.author, review: req.review, rating: req.rating,
       tone: req.tone, kind: req.kind === "question" ? "question" : req.kind === "appeal" ? "appeal" : "" };
   }
-  function fromModel(req, hint) {
-    if (!window.__otvModel || !window.__otvModel.ready || !window.__otvModel.ready()) return Promise.resolve(null);
-    var late = new Promise(function (res) { setTimeout(function () { res(null); }, 12000); });   // не ждём модель дольше 12 с
-    return Promise.race([Promise.resolve(window.__otvModel.write(req, hint)).catch(function () { return null; }), late]);
+  /* 12.11: «очень долго пишет варианты». Вариант из шаблонов с персонализацией по отзыву показываем сразу (доли секунды).
+     Встроенная модель, если включена, пишет свой вариант в фоне — он появится по следующему нажатию, если готов и прошёл
+     проверку (тон, чужие имена, правила справочника); ждать её никто не будет. */
+  var modelReady = {}, modelBusy = {};
+  function prefetch(req, rk, it, hint) {
+    if (modelBusy[rk] || (modelReady[rk] || []).length || !window.__otvModel || !window.__otvModel.ready || !window.__otvModel.ready()) return;
+    modelBusy[rk] = true;
+    var late = new Promise(function (res) { setTimeout(function () { res(null); }, 60000); });
+    Promise.race([Promise.resolve(window.__otvModel.write(req, hint)).catch(function () { return null; }), late]).then(function (txt) {
+      modelBusy[rk] = false; if (!txt) return;
+      var tone = req.kind === "appeal" ? "negative" : toneOf(it);
+      if (req.kind !== "appeal" && !check(txt, it, tone).ok) return;   // не в тему или не тот тон — не показываем
+      (modelReady[rk] = modelReady[rk] || []).push(txt);
+    });
   }
   window.__otvVariant = function (req) {
     req = Object.assign({ kind: "answer" }, req || {});
     var it = itemOf(req), rk = req.kind + "|" + norm(req.review).slice(0, 80);
     var seen = shownFor[rk] || (shownFor[rk] = []);
     if (seen.length) noteSkip(seen[seen.length - 1]);           // пролистали — этот вариант не подошёл
+    var ready = modelReady[rk] || [];
+    if (ready.length && seen.length % 3 === 2) { var mt = ready.shift(); keyOfText[bodyKey(mt)] = "model"; seen.push("model:" + seen.length); prefetch(req, rk, it, ""); return Promise.resolve(mt); }
     var v = req.kind === "appeal" ? appeal(it, { exclude: seen }) : answer(it, { exclude: seen, current: req.current });
     if (!v) { seen.length = 0; v = req.kind === "appeal" ? appeal(it, {}) : answer(it, { current: req.current }); }
-    return fromModel(req, v && v.text).then(function (txt) {
-      if (txt) { keyOfText[bodyKey(txt)] = "model"; return txt; }
-      if (!v) throw new Error("Других вариантов пока нет");
-      seen.push(v.key); keyOfText[bodyKey(v.text)] = v.key;
-      return v.text;
-    });
+    if (!v) return Promise.reject(new Error("Других вариантов пока нет"));
+    seen.push(v.key); keyOfText[bodyKey(v.text)] = v.key;
+    prefetch(req, rk, it, v.text);
+    return Promise.resolve(v.text);
   };
   // вы согласовали или опубликовали ответ — его вариант получает плюс (самообучение)
   window.addEventListener("otv-write", function (ev) {

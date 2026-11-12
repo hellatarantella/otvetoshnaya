@@ -640,7 +640,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
   var TH = {"ПроДокторов": 4, "Яндекс": 4, "ДокТу": 4};
   function thOf(pf){ return TH[s(pf)] || 4.5; }
   function ratingOf(x){ var v = Number(x && x.rating); return (x && x.rating != null && x.rating !== "" && !isNaN(v)) ? v : null; }
-  function alIsNeg(a){ var v = ratingOf(a); return v == null || v < thOf(a.platform); }
+  function alIsNeg(a){ if (a && a.notNeg) return false; var v = ratingOf(a); return v == null || v < thOf(a.platform); }
   function isNegRow(r){
     if (!r) return false;
     if (r.kind === "appeal" || r.kind === "complaint") return true;

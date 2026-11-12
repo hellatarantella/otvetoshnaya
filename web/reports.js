@@ -259,10 +259,10 @@
       else { res.tone = "positive"; res.status = "check"; res.why.push("письмо с сайта: не ясно, отзыв это или нет"); }
       if (mail.deleted && res.status === "ok") { res.status = "check"; res.why.push("письмо удалено в почте: вносим в отчёт?"); }
     } else {
-      var rt = r.rating == null || r.rating === "" ? null : Number(r.rating), neg = NEGM.test(text), pos = POSM.test(text);
+      var tU = (window.__otvUnneg || String)(text), rt = r.rating == null || r.rating === "" ? null : Number(r.rating), neg = NEGM.test(tU), pos = POSM.test(text);
       if (rt != null && !isNaN(rt)) {
         if (rt <= 3) { res.tone = "negative"; if (pos && !neg) { res.status = "check"; res.why.push("оценка " + rt + ", а текст благодарный"); } }
-        else if (NEG_STRONG.test(text)) { res.tone = "negative"; res.status = "check"; res.why.push("высокая оценка, но есть недовольство (благодарность с жалобой идёт в негатив)"); }
+        else if (NEG_STRONG.test(tU)) { res.tone = "negative"; res.status = "check"; res.why.push("высокая оценка, но есть недовольство (благодарность с жалобой идёт в негатив)"); }
         else res.tone = "positive";
       } else if (neg && !pos) res.tone = "negative";
       else if (pos && !neg) res.tone = "positive";
@@ -1316,7 +1316,7 @@
   }
   window.__otvReports = { call: function (a, x) { return ready() ? call(a, x) : Promise.reject(new Error("Google не подключён")); }, cfg: function () { return cfg ? { url: cfg.url, token: cfg.token, paired: cfg.paired } : null; }, lastTodo: function () { return last && last.todo ? last.todo.slice() : []; }, _selfCheck: selfCheckOf, _pilot: function () { return { pilot: pilot, waiting: pilotWaiting }; }, confirmPilot: confirmPilot, _short: function (m) { render(); setRun(m.cls || "warn", m.text, m); }, refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, staffStatus: staffStatus, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
     // для ответов: кто упомянут и из какого отделения (без запросов в Google)
-    strongNeg: function (t) { return NEG_STRONG.test(String(t || "")); },
+    strongNeg: function (t) { return NEG_STRONG.test((window.__otvUnneg || String)(String(t || ""))); },
     people: function (text, page) { return idx ? findPeople(text, page) : []; }, catOf: function (p) { return idx ? catOf(p) : {}; }, textDepts: function (t) { return textDepts(t); } };
 
   document.addEventListener("DOMContentLoaded", function () {
