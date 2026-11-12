@@ -79,8 +79,14 @@
     var p2 = function (n) { return ("0" + n).slice(-2); }, isoD = function (x) { return x.getFullYear() + "-" + p2(x.getMonth() + 1) + "-" + p2(x.getDate()); };
     return { period: p2(st.getDate()) + "." + p2(st.getMonth() + 1) + "–" + p2(en.getDate()) + "." + p2(en.getMonth() + 1) + "." + en.getFullYear(), start: isoD(st), end: isoD(en), posTitle: "Позитив 2026_92_тест", negTitle: "Негатив 2026_87_тест", positive: [], negative: [] }; })();
   function GS(q) {
+    if (window.__gsExtraPos) { GSD.positive = GSD.positive.concat(window.__gsExtraPos); window.__gsExtraPos = null; }   // для проверок: строка, вписанная в таблицу «руками»
     if (q.action === "pair" || q.action === "state") return { ok: true, version: window.__gsVer || 2, state: GSD };
     if (q.action === "refs") return { ok: true, refs: { departments: [["Кардиологическое отделение", "Кардиология"]], exceptions: [], staff: [["Соколова Анна Викторовна", "Врач-кардиолог", "Кардиологическое отделение"]], categories: window.__gsCats || ["ГКБ 24", "Кардиология", "Хирургия", "Приёмное отделение"] } };
+    if (q.action === "remove") { var n0 = GSD.positive.length + GSD.negative.length;
+      (q.items || []).forEach(function (it) { var h = String(it.text || "").slice(0, 120); if (it.kind === "neg") GSD.negative = GSD.negative.filter(function (b) { return b.text !== h; }); else GSD.positive = GSD.positive.filter(function (r) { return !(r.platform === it.platform && r.text === h); }); });
+      window.__gsRemoved = (window.__gsRemoved || []).concat(q.items || []); return { ok: true, removed: n0 - GSD.positive.length - GSD.negative.length, state: GSD }; }
+    if (q.action === "archrebuild") { window.__gsRebuilt = (window.__gsRebuilt || []).concat([q]); return { ok: true, pos: "P-" + q.posTitle, neg: "N-" + q.negTitle, rebuilt: true }; }
+    if (q.action === "archexport") return { ok: true, files: (q.ids || []).map(function (id) { return { name: id.slice(2) + (id[0] === "P" ? ".xlsx" : ".docx"), data: btoa("demo") }; }) };
     if (q.action === "add") { var refs = {};
       (q.positive || []).forEach(function (x) { GSD.positive.push({ platform: x.platform, num: GSD.positive.length + 1, date: x.date, dept: x.dept, text: x.text.slice(0, 120) }); refs[x.id] = "Позитив · " + x.platform + " №" + GSD.positive.length; });
       (q.negative || []).forEach(function (x) { GSD.negative.push({ n: GSD.negative.length + 1, platform: x.platform, date: x.date, text: x.text.slice(0, 120) }); refs[x.id] = "Негатив · блок " + GSD.negative.length; });

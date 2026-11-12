@@ -3166,7 +3166,7 @@ gkb24@zdrav.mos.ru
     coll = db.collection("registry");
     coll.onSnapshot(function(snap){
       rows = snap.docs.map(function(d){ var o = Object.assign({}, d.data() || {}); o.id = d.id; return o; })
-        .filter(function(o){ return s(o.fullText || o.text).trim() || o.reportRef || o.source === "manual"; });   // без текста (на модерации) не показываем
+        .filter(function(o){ return s(o.fullText || o.text).trim() || o.reportRef || o.source === "manual" || (o.platform === "Google" && o.rating != null && o.rating !== ""); });   // без текста (на модерации) не показываем; Google только с оценкой — показываем
       loaded = true; failed = false; render();
     }, function(){ failed = true; render(); });
     try {

@@ -238,6 +238,7 @@
       res.text = "—"; res.tone = Number(r.rating) <= 3 ? "negative" : "positive"; res.dept = "ГКБ 24"; return res;
     }
     if (!text) { res.status = "wait"; res.why.push("текста ещё нет"); return res; }
+    if (window.__otvIsAd && window.__otvIsAd(text)) { res.status = "excluded"; res.why.push("Реклама, не отзыв"); return res; }
     // ПРАВИЛО: в отчёт идёт только полный текст. Обрезанный площадкой текст или одна тема письма — на проверку, а не в отчёт
     if (/(^|\s)(Ещё|Читать (далее|полностью)|Посмотреть весь отзыв)\s*$/i.test(text) || (plat === "Google" && /(\.{3,}|…)\s*$/.test(text))) {
       res.status = "check"; res.why.push("текст отзыва обрезан площадкой: откройте отзыв и вставьте полный текст"); return res;
@@ -340,8 +341,8 @@
   }
   function reportRows() {
     var out = [];
-    (st.positive || []).forEach(function (x) { out.push({ pl: s(x.platform).replace(/^Сайт больницы$/, "Сайт"), date: dkey(x.date), text: s(x.text), ref: "Позитив · " + x.platform + " №" + x.num }); });
-    (st.negative || []).forEach(function (x) { out.push({ pl: s(x.platform).replace(/^Сайт больницы$/, "Сайт"), date: dkey(x.date), text: s(x.text), ref: "Негатив · блок " + x.n }); });
+    (st.positive || []).forEach(function (x) { out.push({ pl: s(x.platform).replace(/^Сайт больницы$/, "Сайт"), date: dkey(x.date), text: s(x.text), full: s(x.full || x.text), dept: s(x.dept), doctor: s(x.doctor), tone: "positive", ref: "Позитив · " + x.platform + " №" + x.num }); });
+    (st.negative || []).forEach(function (x) { out.push({ pl: s(x.platform).replace(/^Сайт больницы$/, "Сайт"), date: dkey(x.date), text: s(x.text), full: s(x.full || x.text), tone: "negative", link: s(x.link), ref: "Негатив · блок " + x.n }); });
     return out;
   }
   /* одна строка таблицы принадлежит одному отзыву: занятые строки (claimed) второй раз не отдаём.
@@ -444,13 +445,44 @@
     var save = db ? db.collection("settings").doc("pilot").set(pilot).catch(function () {}) : Promise.resolve();
     return save.then(function () { return updateReport({ confirmPilot: true }); });
   }
+  /* 12.11: «в отчёте есть, в программе нет» — строки, вписанные в таблицу вручную или потерянные сбором (например, письма
+     с почты). По кнопке они становятся записями программы: отчёт, реестр, презентации и аналитика сходятся. Ничего не удаляется */
+  function importOrphans(list) {
+    var p2 = function (n) { return ("0" + n).slice(-2); }, n = 0;
+    return list.reduce(function (p, x) {
+      var m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s(x.date)); if (!m) return p;
+      var h = 0, k = x.pl + "|" + x.date + "|" + norm(x.full).slice(0, 80); for (var i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) | 0;
+      var id = "rep-" + (h >>> 0).toString(36);
+      return p.then(function () {
+        n++;
+        return db.collection("registry").doc(id).set({ platform: x.pl, date: m[3] + "-" + m[2] + "-" + m[1], time: "", author: "", rating: null, page: "", text: x.full.slice(0, 300), fullText: x.full, link: x.link || "",
+          answered: true, report: x.tone, reportRef: x.ref, reportWeek: st.start, tone: x.tone, dept: x.dept || "", doctor: x.doctor || "", reason: "", source: "manual", fromReport: true, arrivedAt: nowIso(), updatedAt: nowIso() });
+      });
+    }, Promise.resolve()).then(function () {
+      if (window.__otvLog) window.__otvLog("сверка: добавлено в программу из отчёта: " + n);
+      setRun("ok", "Добавлено в программу из отчёта: " + n + ". Отчёт и программа сходятся.");
+      return updateReport({ auto: true });
+    }, function (e) { setRun("err", "Не добавилось: " + (e && e.message || e)); });
+  }
   function updateReport(opts) {
     opts = opts || {};
     if (!ready()) { if (!opts.auto) setRun("err", "Сначала подключите Google. Кнопка «Подключить Google» выше."); return Promise.resolve(); }
     if (busy) return Promise.resolve();
     busy = true; setRun("", "Читаю отчёты…");
-    var orphanRows = [], W = null, frozen = false, warnSrc = false, added = { pos: 0, neg: 0 }, checks = 0, later = 0, excl = 0, waiting = 0, removedRows = 0, dupList = [], extraRows = [], manualAdded = 0, site = null;
+    var orphanRows = [], orphanData = [], W = null, frozen = false, warnSrc = false, added = { pos: 0, neg: 0 }, checks = 0, later = 0, excl = 0, waiting = 0, removedRows = 0, dupList = [], extraRows = [], manualAdded = 0, site = null;
+    var adsRemoved = [];
     return loadRefs().then(function () { return call("state"); }).then(function () {
+      // 12.11: реклама в таблице (не отзыв) — убираем строку сразу, до сверки
+      var isAd = window.__otvIsAd || function () { return false; };
+      var adItems = (st.positive || []).filter(function (x) { return isAd(x.text); }).map(function (x) { return { kind: "pos", platform: x.platform, text: x.text, label: x.platform + " " + s(x.date) }; })
+        .concat((st.negative || []).filter(function (b) { return !b.empty && isAd(b.text); }).map(function (b) { return { kind: "neg", platform: b.platform, text: b.text, label: b.platform + " " + s(b.date) }; }));
+      if (!adItems.length) return;   // реклама — не отзыв: убираем и в закрытые часы недели
+      setRun("", "Убираю из отчёта рекламу…");
+      return call("remove", { items: adItems.map(function (x) { return { kind: x.kind, platform: x.platform, text: x.text }; }) }).then(function (r) {
+        adsRemoved = adItems.map(function (x) { return x.label; });
+        if (window.__otvLog) window.__otvLog("сверка: убрано из отчёта рекламы " + (r && r.removed) + ": " + adsRemoved.join(", "));
+      });
+    }).then(function () {
       setRun("", "Сверяю отзывы с таблицами…");
       var reg = window.__otvAll("registry") || {}, mail = window.__otvAll("mail") || {}, have = inReport(), rows = reportRows();
       var pos = [], neg = [], decisions = {}, regWrites = [];
@@ -490,8 +522,8 @@
       byLen.forEach(function (r) { if (refOf[r.id]) return; var f = findRef(rows, r, claimed); if (f) { claimed[f] = r.id; refOf[r.id] = f; } });
       // строки таблицы, за которыми нет ни одного отзыва этой недели (вписаны руками, остались от прошлой недели, отзыв удалён с площадки):
       // называем их, чтобы итог «в таблице = в программе» сходился и было видно, что проверить
-      orphanRows = rows.filter(function (x) { return !claimed[x.ref] && s(x.text).trim(); })
-        .map(function (x) { return x.ref.replace(/^Позитив · /, "«Позитив» ").replace(/^Негатив · /, "«Негатив» ") + (x.date ? " (" + x.date + ")" : ""); });
+      orphanData = rows.filter(function (x) { return !claimed[x.ref] && s(x.text).trim(); });
+      orphanRows = orphanData.map(function (x) { return x.ref.replace(/^Позитив · /, "«Позитив» ").replace(/^Негатив · /, "«Негатив» ") + (x.date ? " (" + x.date + ")" : ""); });
       // 2. понятные повторы: тот же отзыв дважды (тот же человек и тот же текст, или почти слово в слово)
       var parent = {};
       var root = function (id) { while (parent[id] && parent[id] !== id) id = parent[id]; return id; };
@@ -653,6 +685,7 @@
         parts.push("собрано за неделю " + site.total + ", в отчёте " + site.inRep + (rest.length ? " (" + rest.join(", ") + ")" : "") + ". По площадкам, в отчёте/собрано: " + byp);
       }
       var msg = "Отчёт " + s(st.period) + ": " + parts.join(" · ");
+      if (adsRemoved.length) msg += ". Убрала из отчёта рекламу (это не отзывы): " + adsRemoved.join(", ");
       if (extraRows.length) msg += ". ⚠ В таблице один и тот же отзыв стоит дважды, удалите лишние строки: " + extraRows.join("; ");
       if (orphanRows.length) msg += ". ⚠ В таблице есть строки без отзыва этой недели в программе (" + orphanRows.length + "): " + orphanRows.slice(0, 6).join("; ") + ". Проверьте: отзыв другой недели, вписан вручную или удалён с площадки";
       if (removedRows) msg += ". Из таблицы удалены строки отзывов: " + removedRows + ". Решите в «Нужна проверка», вернуть их или нет";
@@ -673,10 +706,14 @@
       if (checks || (site && site.check)) todo.push("Ждут решения в «Нужна проверка»: " + (checks || site.check));
       if (site && site.adding > 0) todo.push("Не записались в Google: " + site.adding + " — нажмите «Обновить отчёт» ещё раз");
       if (extraRows.length) todo.push("Один отзыв стоит в таблице дважды: " + extraRows.slice(0, 3).join("; "));
-      if (orphanRows.length) todo.push("Строки без отзыва этой недели (" + orphanRows.length + "): " + orphanRows.slice(0, 3).join("; "));
+      if (orphanRows.length) {
+        todo.push("В отчёте есть, в программе нет (" + orphanRows.length + "): " + orphanRows.slice(0, 3).join("; ") + " — можно добавить их в программу одной кнопкой");
+        if (window.__otvLog) window.__otvLog("сверка: строки отчёта без записи в программе: " + orphanRows.join("; "));
+      }
       if (removedRows) todo.push("Из таблицы удалены строки: " + removedRows + " — решите в «Нужна проверка»");
       if (frozen) todo.push("Неделя закрыта в четверг в 15:00");
-      setRun(warn ? "warn" : "ok", msg, { head: head, todo: todo });
+      var acts = orphanData.length ? [["Добавить в программу: " + orphanData.length, function () { importOrphans(orphanData.slice()); }]] : null;
+      setRun(warn ? "warn" : "ok", msg, { head: head, todo: todo, actions: acts });
       saveLast(msg, head, todo);
       // всё, что требует вашего действия, видно на любой вкладке
       if (window.__otvBar && (warn || !opts.auto)) window.__otvBar.show((todo.length ? "⚠ " + todo[0] : head).slice(0, 300), warn ? "warn" : "ok", [["Закрыть", window.__otvBar.hide]]);
@@ -804,8 +841,8 @@
       var reg = window.__otvAll("registry") || {}, old = st.start, marks = [];
       Object.keys(reg).forEach(function (id) { var r = reg[id]; if (r && (r.report === "positive" || r.report === "negative") && s(r.reportRef) && !r.reportWeek) marks.push(id); });
       // снимок закрываемой недели: из него строится презентация недели и динамика года (после смены отчёта таблица уже пустая)
-      var snap = { start: st.start, end: st.end, period: st.period, positive: (st.positive || []).map(function (r) { return { platform: r.platform, num: r.num, date: r.date, dept: r.dept, doctor: r.doctor, text: r.text, full: r.full }; }),
-        negative: (st.negative || []).filter(function (b) { return !b.empty; }).map(function (b) { return { platform: b.platform, date: b.date, text: b.text, full: b.full }; }), savedAt: nowIso() };
+      var snap = { start: st.start, end: st.end, period: st.period, posTitle: s(st.posTitle), negTitle: s(st.negTitle), positive: (st.positive || []).map(function (r) { return { platform: r.platform, num: r.num, date: r.date, dept: r.dept, doctor: r.doctor, text: r.text, full: r.full }; }),
+        negative: (st.negative || []).filter(function (b) { return !b.empty; }).map(function (b) { return { platform: b.platform, date: b.date, text: b.text, full: b.full, answer: s(b.fullAnswer || b.answer), link: s(b.link) }; }), savedAt: nowIso() };
       var saveSnap = db ? db.collection("weeks").doc(st.start).set(snap).catch(function () {}) : Promise.resolve();
       return saveSnap.then(function () { return marks.reduce(function (p, id) { return p.then(function () { return regUpdate(id, { reportWeek: old }); }); }, Promise.resolve()); }).then(saveFiles);
     }).then(function (names) {
@@ -893,6 +930,7 @@
       var acts = ctl.querySelector(".actions"); if (acts) acts.after(runEl, dlEl); else ctl.append(runEl, dlEl);
     }
     line.textContent = "";
+    renderPast();
     if (st && st.period) $("ckPeriod").textContent = "Текущий отчёт: " + st.period;
     if (ready()) {
       var p = el("p", "gs-ok");
@@ -1028,6 +1066,92 @@
     sync();
     return c;
   }
+
+  /* ---------- прошлые недели (12.11): выгрузить отчёт любой закрытой недели ----------
+     Закрываемая неделя копируется в архив на Диске («Ответошная — архив отчётов»). Недели, закрытые до этого,
+     и недели, исправленные после закрытия (например, убрана реклама), собираются заново из снимка недели,
+     в том же виде, что и обычный отчёт. Снимок недели — то же, из чего строятся презентации: файл и презентация не расходятся */
+  var snaps = {}, pastMsg = null, pastBusy = "";
+  function pad2(n) { return ("0" + n).slice(-2); }
+  function isoAdd(iso, days) { var d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + days); return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
+  function dm(iso) { return iso.slice(8, 10) + "." + iso.slice(5, 7); }
+  function dmy(iso) { return dm(iso) + "." + iso.slice(0, 4); }
+  // названия файлов недели: из снимка, а для старых снимков — от текущих названий назад по неделям
+  function titlesOf(w) {
+    if (w.posTitle && w.negTitle) return { pos: w.posTitle, neg: w.negTitle };
+    var mp = /^Позитив (\d{4})_(\d+)_/.exec(s(st && st.posTitle)), mn = /^Негатив (\d{4})_(\d+)_/.exec(s(st && st.negTitle));
+    if (!mp || !mn || !st.start) return null;
+    var weeks = Math.round((new Date(st.start) - new Date(w.start)) / (7 * 864e5)), negN = +mn[2];
+    for (var k = 1; k <= weeks; k++) { var o = snaps[isoAdd(st.start, -7 * k)]; if (!o || (o.negative || []).length) negN--; }
+    var tail = "_" + dm(w.start).replace(".", ".") + "_" + dm(w.end);
+    return { pos: "Позитив " + w.start.slice(0, 4) + "_" + (+mp[2] - weeks) + tail, neg: "Негатив " + w.start.slice(0, 4) + "_" + negN + tail };
+  }
+  // строки отчёта из снимка; ответ и ссылку «Негатива» для старых снимков берём из записей программы
+  function rowsOf(w) {
+    var reg = window.__otvAll("registry") || {}, byHead = {};
+    Object.keys(reg).forEach(function (id) { var r = reg[id]; if (r && r.report === "negative" && r.reportWeek === w.start) byHead[norm(s(r.fullText || r.text)).slice(0, 60)] = r; });
+    var isAd = window.__otvIsAd || function () { return false; };
+    return {
+      positive: (w.positive || []).filter(function (x) { return !isAd(x.full || x.text); }).map(function (x) { return { platform: x.platform, date: x.date, dept: x.dept, doctor: x.doctor || "—", text: s(x.full || x.text) }; }),
+      negative: (w.negative || []).filter(function (x) { return !isAd(x.full || x.text); }).map(function (x) {
+        var r = byHead[norm(s(x.full || x.text)).slice(0, 60)] || {};
+        return { platform: x.platform, date: x.date, text: s(x.full || x.text), answer: s(x.answer) || s(r.negWritten) || "—", link: s(x.link) || s(r.link) || "—" };
+      })
+    };
+  }
+  // реклама и прочее, что не должно было попасть в отчёт, убирается и из снимков закрытых недель — презентации пересоберутся сами
+  function cleanSnaps() {
+    if (!db) return Promise.resolve();
+    var isAd = window.__otvIsAd; if (!isAd) return Promise.resolve();
+    return Object.keys(snaps).reduce(function (p, k) {
+      var w = snaps[k], pos = (w.positive || []).filter(function (x) { return !isAd(x.full || x.text); }), neg = (w.negative || []).filter(function (x) { return !isAd(x.full || x.text); });
+      if (pos.length === (w.positive || []).length && neg.length === (w.negative || []).length) return p;
+      return p.then(function () {
+        if (window.__otvLog) window.__otvLog("снимок недели " + w.period + ": убрана реклама (" + ((w.positive || []).length - pos.length + (w.negative || []).length - neg.length) + ")");
+        return db.collection("weeks").doc(k).set(Object.assign({}, w, { positive: pos, negative: neg, dirty: true, cleanedAt: nowIso() }));
+      });
+    }, Promise.resolve());
+  }
+  function downloadWeek(w) {
+    var tl = titlesOf(w); if (!tl) { pastMsg = { cls: "err", text: "Не вышло: сначала обновите текущий отчёт" }; renderPast(); return; }
+    pastBusy = w.start; pastMsg = { cls: "", text: "Готовлю отчёты за " + w.period + "…" }; renderPast();
+    var data = rowsOf(w);
+    call("archrebuild", { posTitle: tl.pos, negTitle: tl.neg, from: dmy(w.start), to: dmy(w.end), positive: data.positive, negative: data.negative, force: !!w.dirty }).then(function (r) {
+      return call("archexport", { ids: [r.pos, r.neg] });
+    }).then(function (r) {
+      return window.claude.use("downloads").then(function (dl) {
+        return (r.files || []).reduce(function (p, f) { return p.then(function (names) { return dl.save({ filename: f.name, data: b64Blob(f.data) }).then(function () { return names.concat([f.name]); }); }); }, Promise.resolve([]));
+      });
+    }).then(function (names) {
+      if (w.dirty && db) db.collection("weeks").doc(w.start).update({ dirty: false }).catch(function () {});
+      pastBusy = ""; pastMsg = { cls: "ok", text: "Сохранено в «Загрузки»: " + names.join(", ") }; renderPast();
+    }, function (e) { pastBusy = ""; pastMsg = { cls: "err", text: "Не вышло: " + (e && e.message || e) }; renderPast(); });
+  }
+  function renderPast() {
+    var ctl = $("ckCtl"); if (!ctl) return;
+    var box = $("ckPast");
+    if (!box) { box = el("details", "ck-past"); box.id = "ckPast"; ctl.append(box); }
+    var keys = Object.keys(snaps).filter(function (k) { return !st || k < st.start; }).sort().reverse();
+    box.hidden = !ready() || !keys.length;
+    var open = box.open; box.textContent = ""; box.open = open;
+    box.append(el("summary", null, "Отчёты прошлых недель · " + keys.length));
+    var ul = el("ul", "ck-past-list");
+    keys.slice(0, 30).forEach(function (k) {
+      var w = snaps[k], li = el("li");
+      li.append(el("span", null, w.period + " · позитив " + (w.positive || []).length + ", негатив " + (w.negative || []).length + (w.dirty ? " · исправлен" : "")));
+      var b = el("button", "link", pastBusy === k ? "Готовлю…" : "Скачать"); b.type = "button"; b.disabled = !!pastBusy;
+      b.addEventListener("click", function () { downloadWeek(w); });
+      li.append(" ", b); ul.append(li);
+    });
+    box.append(ul);
+    if (pastMsg) box.append(el("p", "ctl-st " + pastMsg.cls, pastMsg.text));
+  }
+  window.claude.use("db").then(function (d) {
+    d.collection("weeks").onSnapshot(function (sn) { snaps = {}; sn.docs.forEach(function (x) { var v = x.data() || {}; if (v.start) snaps[v.start] = v; }); renderPast(); cleanSoon(); }, function () {});
+  }).catch(function () {});
+  var cleanT = null;
+  function cleanSoon() { clearTimeout(cleanT); cleanT = setTimeout(function () { cleanSnaps().catch(function () {}); }, 3000); }
+  window.__otvPastWeeks = { titles: titlesOf, rows: rowsOf, clean: cleanSnaps, download: downloadWeek };
 
   /* ---------- кнопки вкладки «Отчёты» в программе ведёт этот модуль ---------- */
   window.addEventListener("click", function (e) {

@@ -12,7 +12,7 @@
  * Скрипт работает от вашего имени и правит только эти файлы. Программа связывается с ним
  * по секретному ключу, который знает только она (первое подключение запоминает ключ).
  */
-var VERSION = 9;
+var VERSION = 10;
 var POS_ID = '1PnkJU3cjl6LlZxe1E9fHfmW7-E5kLi8Nkyr2G4dkw1A';   // «Позитив»
 var NEG_ID = '1Sp8sJv90_bUDYoo-4jPVQrHqLQU-E33s2MLJx0lrlpg';   // «Негатив»
 var REF_ID = '1s-0vfTvZeqVOrrreu9YY5fM3BycOfBtChuIu2wO8pdI';   // «[ГКБ24] Сбор отзывов — справочник»
@@ -66,6 +66,12 @@ var ACTIONS = {
   export: function () { return { files: exportBoth() }; },
   newweek: function (req) { return newWeek(req); },
   patch: function (req) { var n = patch(req.items || []); tidy(); return { patched: n, state: state() }; },
+  // 12.11: убрать из отчёта строки, которые туда попасть не должны были (реклама и т.п.) — по площадке и началу текста
+  remove: function (req) { var n = removeRows_(req.items || []); tidy(); numbers('color'); return { removed: n, state: state() }; },
+  // 12.11: прошлые недели — архив копий отчётов на Диске; недостающую неделю программа собирает заново из своего снимка
+  archlist: function () { var it = afolder_().getFiles(), out = []; while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) out.push({ id: f.getId(), name: f.getName() }); } return { files: out }; },
+  archexport: function (req) { return { files: (req.ids || []).slice(0, 2).map(function (id) { return exportOne_(id); }) }; },
+  archrebuild: function (req) { return rebuildWeek_(req); },
   // 10.11: дежурство двух компьютеров. Здесь только «компьютер такой-то на связи в такое-то время» — без отзывов и персональных данных
   duty: function (req) {
     var p = PropertiesService.getScriptProperties(), m = {};
@@ -467,6 +473,80 @@ function numbers(mode) {
 }
 
 /* ---------------- сохранить и начать новую неделю ---------------- */
+function exportOne_(id) {
+  var f = DriveApp.getFileById(id), sheet = f.getMimeType() === MimeType.GOOGLE_SHEETS;
+  if (!sheet && f.getMimeType() !== MimeType.GOOGLE_DOCS) throw new Error('это не файл отчёта');
+  var folder = afolder_(), inArch = false, ps = f.getParents(); while (ps.hasNext()) if (ps.next().getId() === folder.getId()) inArch = true;
+  if (!inArch && id !== POS_ID && id !== NEG_ID) throw new Error('файл не из отчётов');
+  var token = ScriptApp.getOAuthToken(), mime = sheet ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  var r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id + '/export?mimeType=' + encodeURIComponent(mime), { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) throw new Error('Google не отдал файл «' + f.getName() + '»: ' + r.getResponseCode());
+  return { name: f.getName() + (sheet ? '.xlsx' : '.docx'), data: Utilities.base64Encode(r.getBlob().getBytes()) };
+}
+var AFOLDER_ = 'Ответошная — архив отчётов';
+function afolder_() { var it = DriveApp.getFoldersByName(AFOLDER_); return it.hasNext() ? it.next() : DriveApp.createFolder(AFOLDER_); }
+function removeRows_(items) {
+  var n = 0, pos = items.filter(function (x) { return x.kind !== 'neg'; }), negs = items.filter(function (x) { return x.kind === 'neg'; });
+  if (pos.length) {
+    var sh = detailSheet(SpreadsheetApp.openById(POS_ID));
+    pos.forEach(function (it) {
+      var k = head(it.text), p = normPlat(it.platform); if (!k) return;
+      var r = readPositive(sh).filter(function (x) { return x.filled && normPlat(x.platform) === p && head(x.text) === k; })[0];
+      if (r) { sh.getRange(r.row, 2).clearContent(); sh.getRange(r.row, 4, 1, 2).clearContent(); sh.getRange(r.row, 7).clearContent(); n++; }
+    });
+    SpreadsheetApp.flush();
+  }
+  if (negs.length) {
+    var doc = DocumentApp.openById(NEG_ID), t = negTable(doc);
+    negs.forEach(function (it) {
+      var k = head(it.text); if (!k) return;
+      var blocks = readNegative(t), b = blocks.filter(function (x) { return !x.empty && head(x.text) === k; })[0]; if (!b) return;
+      if (blocks.length > 1 && b.end != null) { for (var r = b.end; r >= b.start; r--) t.removeRow(r); }
+      else for (var j = 0; j < 5; j++) setCell(t.getRow(b.start + j).getCell(1), '', null);
+      n++;
+    });
+    doc.saveAndClose();
+  }
+  return n;
+}
+// пустая неделя a–b в файлах POS_ID/NEG_ID: шапка, лист, очищенные строки и блоки (так же, как при «Начать новый отчёт»)
+function clearWeek_(a, b) {
+  var ss = SpreadsheetApp.openById(POS_ID), sh = detailSheet(ss);
+  sh.setName(tabName(a, b));
+  sh.getRange('A1').setValue('ПОЗИТИВНЫЕ ОТЗЫВЫ_' + ddmm(a) + '–' + ddmm(b) + ' ' + b.getFullYear() + ' г.');
+  readPositive(sh).forEach(function (r) { sh.getRange(r.row, 2).clearContent(); sh.getRange(r.row, 4, 1, 2).clearContent(); sh.getRange(r.row, 7).clearContent(); });
+  SpreadsheetApp.flush();
+  numbers('white');
+  var negDoc = DocumentApp.openById(NEG_ID), body = negDoc.getBody();
+  var found = body.findText('\\d{2}\\.\\d{2}\\s*-\\s*\\d{2}\\.\\d{2}\\.\\d{4}');
+  if (found) { var el = found.getElement().asText(); el.deleteText(found.getStartOffset(), found.getEndOffsetInclusive()); el.insertText(found.getStartOffset(), ddmm(a) + '-' + ddmm(b) + '.' + b.getFullYear()); }
+  var t = negTable(negDoc), blocks = readNegative(t);
+  if (blocks.length) {
+    for (var k = blocks.length - 1; k >= 1; k--) for (var r = blocks[k].end; r >= blocks[k].start; r--) t.removeRow(r);
+    for (var j = 0; j < 5; j++) setCell(t.getRow(blocks[0].start + j).getCell(1), '', null);
+  }
+  negDoc.saveAndClose();
+}
+function rebuildWeek_(req) {
+  var nm = /^[^\/\\]{5,80}$/; if (!nm.test(String(req.posTitle || '')) || !nm.test(String(req.negTitle || ''))) throw new Error('нет названий отчётов недели');
+  var a = parseDmy(req.from), b = parseDmy(req.to); if (!a || !b) throw new Error('нет дат недели');
+  var folder = afolder_(), have = {}, it = folder.getFiles();
+  while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) have[f.getName()] = f; }
+  if (have[req.posTitle] && have[req.negTitle] && !req.force) return { pos: have[req.posTitle].getId(), neg: have[req.negTitle].getId(), rebuilt: false };
+  var pc = DriveApp.getFileById(POS_ID).makeCopy(req.posTitle, folder), nc = DriveApp.getFileById(NEG_ID).makeCopy(req.negTitle, folder);
+  if (have[req.posTitle]) have[req.posTitle].setTrashed(true);
+  if (have[req.negTitle]) have[req.negTitle].setTrashed(true);
+  var P0 = POS_ID, N0 = NEG_ID;
+  try {
+    POS_ID = pc.getId(); NEG_ID = nc.getId();
+    clearWeek_(a, b);
+    var refs = {};
+    if ((req.positive || []).length) addPositive(req.positive, refs);
+    if ((req.negative || []).length) addNegative(req.negative, refs);
+    tidy(); numbers('color');
+  } finally { POS_ID = P0; NEG_ID = N0; }
+  return { pos: pc.getId(), neg: nc.getId(), rebuilt: true };
+}
 function exportBoth() {
   var token = ScriptApp.getOAuthToken();
   function ex(id, mime, ext) {
@@ -490,6 +570,8 @@ function newWeek(req) {
   // у «Негатива» свой счётчик: неделя без негатива номер не тратит (документ просто переходит на новую неделю с тем же номером)
   var negEmpty = !readNegative(negTable(negDoc)).some(function (b) { return !b.empty; });
   var mN = /(\d{4})_(\d+)_/.exec(negTitle), negNum = mN ? +mN[2] + (negEmpty ? 0 : 1) : per.num + 1;
+  // 12.11: закрываемую неделю сначала копируем в архив на Диске — прошлые недели всегда можно выгрузить
+  try { var af = afolder_(); DriveApp.getFileById(POS_ID).makeCopy(posTitle, af); DriveApp.getFileById(NEG_ID).makeCopy(negTitle, af); } catch (e) { Logger.log('архив: ' + e); }
   var newPos = 'Позитив ' + a.getFullYear() + '_' + (per.num + 1) + '_' + ddmm(a) + '_' + ddmm(b);
   var newNeg = 'Негатив ' + a.getFullYear() + '_' + negNum + '_' + ddmm(a) + '_' + ddmm(b);
 

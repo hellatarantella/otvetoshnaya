@@ -998,7 +998,8 @@
         if (!it || !it.id || !/^[A-Za-z0-9_.:@+-]{1,200}$/.test(it.id)) return;
         // договорённость: отзыв без текста (на модерации, «текст появится после публикации») нигде не фиксируем —
         // ни в реестре, ни в ответах, ни в тревогах. Появится текст — запишется при следующем сборе как новый
-        if (!String(it.text || "").trim()) return;
+        if (noText(it)) return;
+        if (isAd(it.text)) { jlog("сбор: " + it.id + " — реклама, а не отзыв, не записываю"); return; }
         return getDoc("registry", it.id).then(function (snap) {
           var base = {
             platform: it.platform, date: it.date, time: it.time || "", author: it.author || "", rating: it.rating == null ? null : it.rating,
@@ -1030,7 +1031,7 @@
           }));
           }
         }).then(function () {
-          if (!(it.low || strongNeg(it.text)) || it.published === false || !String(it.text || "").trim()) return;
+          if (!(it.low || strongNeg(it.text)) || it.published === false || noText(it) || isAd(it.text)) return;
           return getDoc("alerts", it.id).then(function (a) {
             if (a.exists) {
               // состояние «ответ дан» берём с площадки при каждом сборе, в обе стороны: изменилось на площадке — меняется и отметка
@@ -1064,6 +1065,19 @@
   var NEG_RE = /хамств|хамил|грубил|грубо |ужасн|отвратит|безобраз|не рекоменд|не совету|разочаров|кошмар|равнодуш|не помогл|обманул|грязн|не дозвон|нагруб|бардак|халатн|возмутит|позор/;
   var TH = { "ПроДокторов": 4, "Яндекс": 4, "ДокТу": 4 };
   // жалоба при высокой оценке («врачи хорошие, но персонал грубит») — тоже негатив
+  /* 12.11: «текст появится после публикации» — отзыв без текста на модерации. Исключение — Google: отзыв только с оценкой
+     опубликован и по правилу идёт в отчёт с «—» */
+  function noText(it) { return !s0(it && (it.fullText || it.text)).trim() && !(s0(it && it.platform) === "Google" && it.rating != null && it.rating !== "" && !isNaN(Number(it.rating))); }
+  /* 12.11: реклама вместо отзыва («Помогаем бизнесу усиливать репутацию… 50 отзывов: 3 700 ₽… Ответить») — не отзыв:
+     нигде не фиксируем, из отчёта и снимков недель убираем. Нужно хотя бы два признака, чтобы не задеть пациента, назвавшего цену */
+  function isAd(text) {
+    var x = s0(text).toLowerCase().replace(/ё/g, "е"), n = 0;
+    [/(помога|помож)\w*\s+(бизнес|компани|клиник|организаци)/, /репутаци/, /(продвижен|раскрут|накрут|продвига)/, /\d+\s*отзыв\w*\s*[:—–-]\s*\d/, /\d[\d\s]*(₽|руб\.?)(?!\w)/,
+     /(t\.me\/|telegram|телеграм|whatsapp|ватсап|вотсап)/, /(закаж|заказ\w*)\s+(отзыв|продвижен|услуг)/, /отзыв\w*\s+(под ключ|на (яндекс|2гис|картах|авито))/, /(яндекс|2гис|авито)\w*\s+(и|,)\s+(2гис|яндекс|авито)/, /\bответить\s*$/, /(скидк|акци[яи]|бесплатн\w+ консультац)/, /(https?:\/\/|www\.)/]
+      .forEach(function (re) { if (re.test(x)) n++; });
+    return n >= 2;
+  }
+  window.__otvIsAd = isAd;
   function strongNeg(text) { return !!(window.__otvReports && window.__otvReports.strongNeg && window.__otvReports.strongNeg(s0(text))); }
   function toneOf(it) {
     var r = Number(it.rating);
@@ -1148,15 +1162,19 @@
   // уже записанные раньше отзывы без текста убираем (в отчёт они не попали, ответа на них нет)
   function purgeTextless() {
     var reg = window.__otvAll("registry") || {}, ans = window.__otvAll("answers") || {}, n = 0;
-    var ids = Object.keys(reg).filter(function (id) { var r = reg[id]; return r && !s0(r.fullText || r.text).trim() && !r.reportRef && r.source !== "manual" && (r.report === "pending" || r.report === "unpublished" || !r.report); });
+    var ids = Object.keys(reg).filter(function (id) { var r = reg[id]; return r && noText(r) && !r.reportRef && r.source !== "manual" && (r.report === "pending" || r.report === "unpublished" || !r.report); });
+    // реклама: не в отчёте — убираем совсем; уже попала в отчёт — помечаем «не вносить», строку уберёт сверка отчёта
+    var ads = Object.keys(reg).filter(function (id) { var r = reg[id]; return r && r.source !== "manual" && isAd(r.fullText || r.text) && r.reason !== "Реклама, не отзыв"; });
+    ads.forEach(function (id) { if (reg[id].reportRef) db.collection("registry").doc(id).update({ report: "excluded", reason: "Реклама, не отзыв", adInReport: s0(reg[id].reportRef), adWeek: s0(reg[id].reportWeek) }); else if (ids.indexOf(id) < 0) ids.push(id); });
     return ids.reduce(function (p, id) {
       return p.then(function () {
         var a = ans[id], jobs = [db.collection("registry").doc(id).delete()];
-        if (a && a.status !== "published" && !s0(a.review).trim()) jobs.push(db.collection("answers").doc(id).delete());
-        if ((window.__otvAll("alerts") || {})[id] && !s0((window.__otvAll("alerts") || {})[id].text).trim()) jobs.push(db.collection("alerts").doc(id).delete());
+        var ad = isAd(reg[id].fullText || reg[id].text);
+        if (a && a.status !== "published" && (ad || !s0(a.review).trim())) jobs.push(db.collection("answers").doc(id).delete());
+        var al = (window.__otvAll("alerts") || {})[id]; if (al && (ad || !s0(al.text).trim())) jobs.push(db.collection("alerts").doc(id).delete());
         n++; return Promise.all(jobs);
       });
-    }, Promise.resolve()).then(function () { if (n) jlog("убрано отзывов без текста (ещё на модерации): " + n); return n; });
+    }, Promise.resolve()).then(function () { if (n) jlog("убрано записей без текста (на модерации) и рекламы: " + n); return n; });
   }
   window.__otvPurgeTextless = purgeTextless;
   function makeAnswers(items) {
@@ -1168,7 +1186,7 @@
     var cutoff = Date.now() - DAYS * 864e5;
     return items.reduce(function (p, it, i) {
       return p.then(function () {
-        if (!it || !it.id || !/^[A-Za-z0-9_.:@+-]{1,200}$/.test(it.id) || it.published === false || !s0(it.text).trim()) return;
+        if (!it || !it.id || !/^[A-Za-z0-9_.:@+-]{1,200}$/.test(it.id) || it.published === false || noText(it) || isAd(it.text)) return;
         if (Date.parse(it.date) < cutoff - 864e5) return;
         var num = it.platform === "ПроДокторов" ? s0(it.id).replace(/^pdl?-/, "") : "";
         var ex = all[it.id] ? it.id : num && all["pdl-" + num] ? "pdl-" + num : num && all["pd-" + num] ? "pd-" + num : byText[it.platform + "|" + ruDate(it.date) + "|" + normT(it.text).slice(0, 60)];
