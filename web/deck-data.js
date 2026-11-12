@@ -259,12 +259,17 @@
     var numbers = { pos: pos, neg: neg, prevPos: prev && prev.pos, prevNeg: prev && prev.neg, avg: avg, avgExact: avgExact, place: place, weeks: Y.length, share: share, shareY: shareY, byPlatform: byP, negByPlatform: negP };
 
     // врачи: каждая строка отчёта с врачом — благодарность (одна строка на площадке = одна благодарность)
+    // 12.11: врач не найден или таких двое — вы выбираете в «Нужно ваше решение» (раньше выгрузка просто блокировалась)
+    var docFix = pick.docFix || {}, docNeed = {};
+    var personFix = function (tok) { var f = docFix[tok]; if (f === "-") return "skip"; var p0 = person(f || tok); return p0 && !p0.ambiguous ? p0 : (f ? person(tok) : p0); };
+    var askDoc = function (tok, p0) { if (docNeed[tok]) return; docNeed[tok] = 1; var R0 = window.__otvReports, opts = p0 && p0.ambiguous ? p0.ambiguous : (R0 && R0.similar ? R0.similar(tok) : []);
+      need.push({ kind: "doctor", tok: tok, options: opts, text: p0 && p0.ambiguous ? "Графа «Врач»: «" + tok + "» — в «Списке врачей» таких несколько. Кто это?" : "Графа «Врач»: «" + tok + "» — нет в «Списке врачей»" + (opts.length ? ". Похожие:" : ". Похожих нет") }); };
     var docs = {}, unresolved = [];
     P.forEach(function (r) {
       s(r.doctor).split(/\s*[,;]\s*/).forEach(function (tok) {
         tok = tok.trim(); if (!tok || tok === "—" || tok === "-") return;
-        var p = person(tok);
-        if (!p || p.ambiguous) { unresolved.push(tok + (p && p.ambiguous ? " (" + p.ambiguous.join(", ") + ")" : "")); return; }
+        var p = personFix(tok); if (p === "skip") return;
+        if (!p || p.ambiguous) { askDoc(tok, p); return; }
         var d = docs[p.short] = docs[p.short] || { p: p, n: 0, plat: {}, rows: [], depts: {} };
         d.n++; d.plat[platKey(r.platform)] = (d.plat[platKey(r.platform)] || 0) + 1; d.rows.push(r);
         if (s(r.doctor).split(/\s*[,;]\s*/).filter(Boolean).length === 1) d.depts[s(r.dept)] = 1;   // в строке с несколькими врачами отделение по главному

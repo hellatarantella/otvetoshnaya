@@ -50,7 +50,7 @@ async def main():
           await new Promise(r => setTimeout(r, 2500));
           const again = [...document.querySelectorAll('#tab-deckw .deck-extra .deck-need')].find(x => x.dataset.k === k);
           return { k, open: !!(document.querySelector('#tab-deckw .deck-extra') || {}).open, msg: again && again.querySelector('.deck-need-msg') ? again.querySelector('.deck-need-msg').textContent : '' }; }""")
-        res.append((ex.get('skip') or (ex['open'] and ex['msg'].startswith('✓')), '«Пересмотреть выбор»: после сохранения в строке «✓ Сохранено», блок не схлопнулся', ex))
+        res.append((ex.get('skip') or (not ex['open'] and ex['msg'].startswith('✓')), '«Пересмотреть выбор»: после сохранения — «✓ Сохранено», блок свёрнут (12.11: «не убираются блоки редактора после решений»)', ex))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         for ok, t, d in res: print(('OK  ' if ok else 'FAIL') + ' ' + t, '' if ok else json.dumps(d, ensure_ascii=False)[:1200])
         await b.close(); print('ALL OK' if all(x[0] for x in res) else 'SOME FAILED')

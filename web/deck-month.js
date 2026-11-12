@@ -122,11 +122,16 @@
     var restD = dl.filter(function (d) { return cards.indexOf(d) < 0; });
 
     // врачи: строка отчёта с врачом — благодарность
+    // 12.11: врач не найден или таких двое — вы выбираете в «Нужно ваше решение» (раньше выгрузка просто блокировалась)
+    var docFix = pick.docFix || {}, docNeed = {};
+    var personFix = function (tok) { var f = docFix[tok]; if (f === "-") return "skip"; var p0 = person(f || tok); return p0 && !p0.ambiguous ? p0 : (f ? person(tok) : p0); };
+    var askDoc = function (tok, p0) { if (docNeed[tok]) return; docNeed[tok] = 1; var R0 = window.__otvReports, opts = p0 && p0.ambiguous ? p0.ambiguous : (R0 && R0.similar ? R0.similar(tok) : []);
+      need.push({ kind: "doctor", tok: tok, options: opts, text: p0 && p0.ambiguous ? "Графа «Врач»: «" + tok + "» — в «Списке врачей» таких несколько. Кто это?" : "Графа «Врач»: «" + tok + "» — нет в «Списке врачей»" + (opts.length ? ". Похожие:" : ". Похожих нет") }); };
     var docs = {}, unresolved = [];
     P.forEach(function (r) {
       var toks = s(r.doctor).split(/\s*[,;]\s*/).filter(function (x) { return x && x !== "—" && x !== "-"; });
       toks.forEach(function (tok) {
-        var p = person(tok); if (!p || p.ambiguous) { if (unresolved.indexOf(tok) < 0) unresolved.push(tok); return; }
+        var p = personFix(tok); if (p === "skip") return; if (!p || p.ambiguous) { askDoc(tok, p); return; }
         var d = docs[p.short] = docs[p.short] || { p: p, n: 0, rows: [] }; d.n++; d.rows.push({ r: r, multi: toks.length > 1 });
       });
     });

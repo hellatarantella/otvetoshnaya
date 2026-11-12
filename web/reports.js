@@ -1308,7 +1308,8 @@
   function personOf(tok) {
     if (!idx) return null;
     var m = /^([А-ЯЁ][а-яё-]+)(?:\s+([А-ЯЁ])\.?\s*([А-ЯЁ])?\.?)?/.exec(s(tok).trim()); if (!m) return null;
-    var list = (idx.bySur[m[1]] || []).filter(function (o) { return !m[2] || (o.name.charAt(0) === m[2] && (!m[3] || o.pat.charAt(0) === m[3])); });
+    var sur = m[1]; if (!idx.bySur[sur]) { var alt = Object.keys(idx.bySur).filter(function (k) { return k.replace(/ё/g, "е") === sur.replace(/ё/g, "е"); })[0]; if (alt) sur = alt; }   // Сёменова = Семенова
+    var list = (idx.bySur[sur] || []).filter(function (o) { return !m[2] || (o.name.charAt(0) === m[2] && (!m[3] || o.pat.charAt(0) === m[3])); });
     var docs = list.filter(function (o) { return o.doctor; }); if (docs.length) list = docs;
     if (list.length !== 1) return list.length ? { ambiguous: list.map(function (o) { return o.short; }) } : null;
     var o = list[0], c = catOf(o);
@@ -1316,6 +1317,15 @@
   }
   window.__otvReports = { call: function (a, x) { return ready() ? call(a, x) : Promise.reject(new Error("Google не подключён")); }, cfg: function () { return cfg ? { url: cfg.url, token: cfg.token, paired: cfg.paired } : null; }, lastTodo: function () { return last && last.todo ? last.todo.slice() : []; }, _selfCheck: selfCheckOf, _pilot: function () { return { pilot: pilot, waiting: pilotWaiting }; }, confirmPilot: confirmPilot, _short: function (m) { render(); setRun(m.cls || "warn", m.text, m); }, refresh: function () { return ready() ? call("state").then(function () { return st; }) : Promise.resolve(st); }, person: personOf, refs: function () { return refs; }, staffStatus: staffStatus, update: updateReport, newWeek: newWeek, decide: function (r, m) { return idx ? decide(r, m) : null; }, state: function () { return st; }, ready: ready, _setRefs: function (r) { refs = r; idx = buildIndex(r); },
     // для ответов: кто упомянут и из какого отделения (без запросов в Google)
+    // похожие фамилии в «Списке врачей» (опечатка, другая буква) — для выбора, если врача из отчёта не нашли
+    similar: function (tok) {
+      if (!idx) return [];
+      var sur = s(tok).trim().split(/\s+/)[0].toLowerCase().replace(/ё/g, "е"), out = [];
+      var lev = function (a, b) { var d = []; for (var i = 0; i <= a.length; i++) { d[i] = [i]; for (var j = 1; j <= b.length; j++) d[i][j] = i ? Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)) : j; } return d[a.length][b.length]; };
+      Object.keys(idx.bySur).forEach(function (k) { var kk = k.toLowerCase().replace(/ё/g, "е"); if (Math.abs(kk.length - sur.length) <= 2 && lev(kk, sur) <= 2) idx.bySur[k].forEach(function (o) { out.push({ o: o, d: lev(kk, sur) }); }); });
+      out.sort(function (a, b) { return a.d - b.d || (b.o.doctor ? 1 : 0) - (a.o.doctor ? 1 : 0); });
+      return out.slice(0, 8).map(function (x) { return x.o.short; });
+    },
     strongNeg: function (t) { return NEG_STRONG.test((window.__otvUnneg || String)(String(t || ""))); },
     people: function (text, page) { return idx ? findPeople(text, page) : []; }, catOf: function (p) { return idx ? catOf(p) : {}; }, textDepts: function (t) { return textDepts(t); } };
 

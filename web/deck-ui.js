@@ -38,7 +38,7 @@
   // каждое нажатие даёт видимый ответ: «Сохранено…» или причину (29.10: казалось, что кнопки не работают)
   function bar(t, kind) { if (window.__otvBar) window.__otvBar.show(t, kind || "", [["Закрыть", window.__otvBar.hide]]); }
   // запрос и его ключ: по нему после пересборки находим ту же строку (или видим, что запрос закрыт)
-  function needKey(n) { return n.kind + ":" + s(n.short || n.field || n.who || n.slot || ""); }
+  function needKey(n) { return n.kind + ":" + s(n.short || n.field || n.who || n.slot || n.tok || ""); }
   // ответ на нажатие — прямо в строке, где нажали (05.11: «нажимаю подтвердить — ниче не меняется, выглядит глючно»)
   function rowMsg(row, text, kind) {
     if (!row) return; var m = row.querySelector(".deck-need-msg");
@@ -60,6 +60,7 @@
       return db.collection("deckPicks").doc(id).set(d);
     }).then(function () {
       fx = { prev: prev, key: key, msg: msg || "Сохранено", until: Date.now() + 4000 };
+      openReview = false;   // 12.11: «не убираются блоки редактора после решений» — после решения «Пересмотреть выбор» сворачивается
       rebuild(); bar((msg || "Сохранено") + ". Презентация пересобрана", "ok");
     }).catch(function (e) {
       log("решение не сохранилось: " + (e && e.stack || e));
@@ -221,6 +222,12 @@
       });
       if (chosen) setQ(chosen);
       row.append(list, rqBox, btn("Выбрать отзыв недели", "primary", function () { if (!chosen) { fail(row, "Выберите отзыв недели"); return; } var v = rq.value() || chosen.quote, bad = quoteProblem(v, n.band); if (bad) { fail(row, "Цитата отзыва недели не принята: " + bad); return; } savePick(row, { review: chosen.key, own: ownList(v, chosen.quotes || [chosen.quote]), reviewText: Object.assign({}, pickDoc().reviewText || {}, { quote: v }) }, "Отзыв недели выбран"); }));
+    } else if (n.kind === "doctor") {
+      // 12.11: врач из графы «Врач» не найден в «Списке врачей» или таких двое — выбор здесь, а не правка таблицы
+      var dsel = el("select", "btn"); dsel.setAttribute("aria-label", "Врач: " + n.tok);
+      (n.options || []).forEach(function (o) { var op = el("option", null, o); op.value = o; dsel.append(op); });
+      var opNo = el("option", null, "Не врач из списка — не считать благодарностью врачу"); opNo.value = "-"; dsel.append(opNo);
+      row.append(dsel, btn("Подтвердить", "primary", function () { var f = Object.assign({}, pickDoc().docFix || {}); f[n.tok] = dsel.value; savePick(row, { docFix: f }, n.tok + ": " + (dsel.value === "-" ? "не считаем" : dsel.value)); }));
     } else if (n.kind === "choice") {
       // выбор одного из вариантов (например, как считать месяц) — сохраняется в решениях периода
       var box = el("div", "deck-opts"), val = n.current, nm = "ch" + Math.random().toString(36).slice(2, 7);
