@@ -712,6 +712,7 @@
       }
       if (removedRows) todo.push("Из таблицы удалены строки: " + removedRows + " — решите в «Нужна проверка»");
       if (frozen) todo.push("Неделя закрыта в четверг в 15:00");
+      lastRecon = { at: Date.now(), site: site ? JSON.parse(JSON.stringify(site)) : null, orphans: orphanRows.slice(), orphanData: orphanData.slice(), dup: extraRows.slice(), removed: removedRows, ads: adsRemoved.slice(), checks: checks || (site && site.check) || 0, adding: site ? Math.max(0, site.adding) : 0, frozen: frozen };
       var acts = orphanData.length ? [["Добавить в программу: " + orphanData.length, function () { importOrphans(orphanData.slice()); }]] : null;
       setRun(warn ? "warn" : "ok", msg, { head: head, todo: todo, actions: acts });
       saveLast(msg, head, todo);
@@ -943,7 +944,7 @@
       var acts = ctl.querySelector(".actions"); if (acts) acts.after(runEl, dlEl); else ctl.append(runEl, dlEl);
     }
     line.textContent = "";
-    renderPast();
+    renderPast(); renderRecon();
     if (st && st.period) $("ckPeriod").textContent = "Текущий отчёт: " + st.period;
     if (ready()) {
       var p = el("p", "gs-ok");
@@ -1085,6 +1086,82 @@
      и недели, исправленные после закрытия (например, убрана реклама), собираются заново из снимка недели,
      в том же виде, что и обычный отчёт. Снимок недели — то же, из чего строятся презентации: файл и презентация не расходятся */
   var snaps = {}, pastMsg = null, pastBusy = "";
+  /* ---------- сверка всех данных (12.11): площадки → программа → отчёт («Позитив» и «Негатив») → презентация → ответы ----------
+     Одна карточка: по каждой связке ✓ или ⚠ с цифрами и кнопкой, как исправить. Считается после каждого «Обновить отчёт» */
+  var lastRecon = null;
+  function reconAnswers() {
+    var reg = window.__otvAll("registry") || {}, ans = window.__otvAll("answers") || {}, mail = window.__otvAll("mail") || {};
+    var o = { total: 0, done: 0, mailTodo: [], pending: [], queued: [], failed: [], noReply: [] };
+    Object.keys(reg).forEach(function (id) {
+      var r = reg[id]; if (!r || !s(r.reportRef) || !(r.report === "positive" || r.report === "negative")) return;
+      if (r.reportWeek && r.reportWeek !== st.start) return;
+      if (!r.reportWeek && !/^(Позитив|Негатив) · /.test(s(r.reportRef))) return;
+      o.total++;
+      var lab = s(r.platform) + " " + dmyOf(r.date).slice(0, 5);
+      if (r.platform === "Сайт") { var m = mail[id]; if (m && (m.status || "todo") === "todo") o.mailTodo.push(lab); else o.done++; return; }
+      var a = ans[id] || ans[id + "-appeal"];
+      if (!a) { if (r.answered) o.done++; else o.pending.push(lab); return; }
+      if (a.status === "published" || a.status === "skip") { o.done++; if (a.status === "published" && r.answered === false && r.platform !== "ПроДокторов") o.noReply.push(lab); return; }
+      if (s(a.publishError)) { o.failed.push(lab); return; }
+      if (a.status === "approved" && s(a.publishRequested)) { o.queued.push(lab); return; }
+      if (r.answered) { o.done++; return; }
+      o.pending.push(lab);
+    });
+    return o;
+  }
+  function reconDeck() {
+    var U = window.__otvDeckUi && window.__otvDeckUi._state && window.__otvDeckUi._state(), res = U && U.res, n = res && (res.numbers || (res.D && res.D.numbers));
+    var pos = (st.positive || []).length, neg = (st.negative || []).length;
+    if (!n || (U.cur && U.cur !== "cur")) return { pos: pos, neg: neg, built: false };
+    return { pos: pos, neg: neg, built: true, dpos: n.pos, dneg: n.neg, same: n.pos === pos && n.neg === neg };
+  }
+  function renderRecon() {
+    var ctl = $("ckCtl"); if (!ctl) return;
+    var box = $("ckRecon");
+    if (!box) { box = el("div", "ck-recon"); box.id = "ckRecon"; var past = $("ckPast"); if (past) ctl.insertBefore(box, past); else ctl.append(box); }
+    box.textContent = "";
+    box.hidden = !ready() || !st || !lastRecon;
+    if (box.hidden) return;
+    var R = lastRecon, rows = [];
+    var line = function (ok, title, text, btn) { rows.push({ ok: ok, title: title, text: text, btn: btn }); };
+    // 1. площадки → программа
+    var hl = window.__otvSrcHealth ? window.__otvSrcHealth() : [], bad = hl.filter(function (h) { return !h.ok || !h.okAt || Date.now() - Date.parse(h.okAt) > 12 * 3600e3; });
+    line(!bad.length, "Площадки и почта → программа", bad.length ? "не прочитаны: " + bad.map(function (h) { return h.name + (h.needLogin ? " (нужен вход)" : ""); }).join(", ") : "все прочитаны" + (R.site ? ", собрано за неделю " + R.site.total : ""),
+      bad.length ? ["Перейти к сбору", function () { var b = document.querySelector('nav#tabs [data-tab="sources"]'); if (b) b.click(); }] : null);
+    // 2. программа → отчёт
+    var probs = [];
+    if (R.adding) probs.push("не записались в Google " + R.adding);
+    if (R.orphans.length) probs.push("в отчёте есть, в программе нет " + R.orphans.length);
+    if (R.dup.length) probs.push("один отзыв дважды " + R.dup.length);
+    if (R.removed) probs.push("строки удалены из таблицы " + R.removed);
+    if (R.checks) probs.push("ждут решения в «Нужна проверка» " + R.checks);
+    var inR = R.site ? R.site.inRep : 0;
+    line(!probs.length, "Программа → отчёт (таблица «Позитив» и документ «Негатив»)", (probs.length ? probs.join("; ") + ". " : "сходится. ") + "В отчёте: позитив " + (st.positive || []).length + ", негатив " + (st.negative || []).length + (R.site ? "; из собранного за неделю в отчёте " + inR + " из " + R.site.total : "") + (R.ads.length ? "; реклама убрана: " + R.ads.length : ""),
+      R.orphans.length ? ["Добавить в программу: " + R.orphanData.length, function () { importOrphans(R.orphanData.slice()); }] : (R.adding || R.dup.length) ? ["Обновить отчёт", function () { updateReport(); }] : null);
+    // 3. отчёт → презентация
+    var D = reconDeck();
+    line(!D.built || D.same, "Отчёт → презентация недели", !D.built ? "презентация строится из этого же отчёта: позитив " + D.pos + ", негатив " + D.neg : D.same ? "сходится: позитив " + D.pos + ", негатив " + D.neg : "в презентации позитив " + D.dpos + " и негатив " + D.dneg + ", а в отчёте " + D.pos + " и " + D.neg + " — пересоберите",
+      D.built && !D.same ? ["Пересобрать презентацию", function () { if (window.__otvDeckUi) window.__otvDeckUi.rebuild(); setTimeout(renderRecon, 1500); }] : null);
+    // 4. ответы
+    var A = reconAnswers(), aw = [];
+    if (A.mailTodo.length) aw.push("письма без отметки «Ответ дан»: " + A.mailTodo.length + " (" + A.mailTodo.slice(0, 4).join(", ") + ")");
+    if (A.pending.length) aw.push("ждут вашего согласования: " + A.pending.length);
+    if (A.queued.length) aw.push("публикуются: " + A.queued.length);
+    if (A.failed.length) aw.push("не опубликовались: " + A.failed.length + " (" + A.failed.slice(0, 4).join(", ") + ")");
+    if (A.noReply.length) aw.push("опубликованы в программе, а на площадке ответа нет: " + A.noReply.length + " (" + A.noReply.slice(0, 4).join(", ") + ")");
+    line(!A.mailTodo.length && !A.pending.length && !A.failed.length && !A.noReply.length, "Ответы на отзывы отчёта", "отвечено " + A.done + " из " + A.total + (aw.length ? ". " + aw.join("; ") : ""),
+      (A.pending.length || A.failed.length || A.mailTodo.length) ? ["К ответам", function () { var b = document.querySelector('nav#tabs [data-tab="answers"]'); if (b) b.click(); }] : null);
+    box.append(el("h3", null, "Сверка всех данных · " + new Date(R.at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })));
+    rows.forEach(function (x) {
+      var r = el("div", "rc-row " + (x.ok ? "ok" : "warn"));
+      r.append(el("span", "rc-ic", x.ok ? "✓" : "⚠"));
+      var tx = el("div", "rc-tx"); tx.append(el("b", null, x.title), el("span", null, " — " + x.text)); r.append(tx);
+      if (x.btn) { var b = el("button", "btn", x.btn[0]); b.type = "button"; b.addEventListener("click", x.btn[1]); r.append(b); }
+      box.append(r);
+    });
+    if (window.__otvLog) { var sig = rows.map(function (x) { return x.ok ? "1" : "0"; }).join(""); if (sig !== renderRecon.sig) { renderRecon.sig = sig; window.__otvLog("сверка всех данных: " + rows.map(function (x) { return (x.ok ? "✓ " : "⚠ ") + x.title; }).join("; ")); } }
+  }
+  window.__otvRecon = { render: renderRecon, answers: reconAnswers, deck: reconDeck, last: function () { return lastRecon; } };
   function pad2(n) { return ("0" + n).slice(-2); }
   function isoAdd(iso, days) { var d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + days); return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
   function dm(iso) { return iso.slice(8, 10) + "." + iso.slice(5, 7); }
@@ -1199,7 +1276,8 @@
   }, true);
   // после «Собрать отзывы» отчёт обновляется сам
   window.addEventListener("otv-collected", function () { if (ready() && !(window.__otvDuty && !window.__otvDuty.isDuty())) updateReport({ auto: true }); });   // отчёт сам обновляет только дежурный компьютер
-  window.addEventListener("otv-write", function (ev) { var d = ev.detail || {}; if (d.name === "registry") renderChecksSoon(); });
+  window.addEventListener("otv-write", function (ev) { var d = ev.detail || {}; if (d.name === "registry") renderChecksSoon(); if (d.name === "mail" || d.name === "answers" || d.name === "registry") { clearTimeout(rcRecT); rcRecT = setTimeout(renderRecon, 600); } });
+  var rcRecT = null;
   var rcT = null;
   function renderChecksSoon() { clearTimeout(rcT); rcT = setTimeout(renderChecks, 300); }
   /* сотрудник из графы «Врач» отчёта («Трофимова», «Иванова А.А.») → строка «Списка врачей» и отделение в отчёте.

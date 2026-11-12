@@ -136,3 +136,11 @@ input.ck-in{flex:1 1 200px}
 .ck-past summary{cursor:pointer;color:var(--muted)}
 .ck-past-list{margin:6px 0 0;padding:0;list-style:none}
 .ck-past-list li{padding:4px 0;border-bottom:1px solid var(--border)}
+/* сверка всех данных */
+.ck-recon{margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+.ck-recon h3{margin:0 0 6px;font-size:15px}
+.rc-row{display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--border);font-size:14px}
+.rc-row:first-of-type{border-top:0}
+.rc-ic{width:18px;text-align:center;font-weight:700}
+.rc-row.ok .rc-ic{color:#3fb37f}.rc-row.warn .rc-ic{color:#e0a03a}
+.rc-tx{flex:1;min-width:0}
