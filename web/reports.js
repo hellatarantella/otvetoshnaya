@@ -461,7 +461,7 @@
       return p.then(function () {
         n++;
         return db.collection("registry").doc(id).set({ platform: x.pl, date: m[3] + "-" + m[2] + "-" + m[1], time: "", author: "", rating: null, page: "", text: x.full.slice(0, 300), fullText: x.full, link: x.link || "",
-          answered: true, report: x.tone, reportRef: x.ref, reportWeek: st.start, tone: x.tone, dept: x.dept || "", doctor: x.doctor || "", reason: "", source: "manual", fromReport: true, arrivedAt: nowIso(), updatedAt: nowIso() });
+          answered: true, report: x.tone, reportRef: x.ref, reportWeek: st.start, tone: x.tone, dept: x.dept || "", doctor: x.doctor || "", reason: "", source: "manual", fromReport: true, arrivedAt: ((m[3] + "-" + m[2] + "-" + m[1]) > st.start ? m[3] + "-" + m[2] + "-" + m[1] : st.start) + "T12:00:00+03:00", updatedAt: nowIso() });   // 12.11: строка уже в отчёте этой недели — и запись этой недели, даже если добавлена после закрытия в четверг
       });
     }, Promise.resolve()).then(function () {
       if (window.__otvLog) window.__otvLog("сверка: добавлено в программу из отчёта: " + n);
@@ -1094,7 +1094,7 @@
       go.disabled = true;
       var why = reason.value.trim() || "не вносить — решено вручную";
       var decision = { forced: true, tone: tone, dept: dept.value, doctor: doc.value.trim() || "—", reason: tone === "excluded" ? why : "" };
-      db.collection("registry").doc(r.id).update({ decision: decision, reason: tone === "excluded" ? why : "Нужна проверка: решено, вношу" })
+      db.collection("registry").doc(r.id).update(Object.assign({ decision: decision, reason: tone === "excluded" ? why : "Нужна проверка: решено, вношу" }, tone === "excluded" ? { report: "excluded" } : {}))   // «Не вносить» действует сразу, и после закрытия недели
         .then(function () { return updateReport(); })
         .catch(function (e) { go.disabled = false; msg.hidden = false; msg.className = "ctl-st err"; msg.textContent = "Не вышло: " + (e && e.message || e); });
     });

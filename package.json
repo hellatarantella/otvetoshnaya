@@ -1,7 +1,7 @@
 {
   "name": "otvetoshnaya",
   "private": true,
-  "version": "0.2.77",
+  "version": "0.2.78",
   "scripts": {
     "tauri": "tauri",
     "build:page": "node scripts/build-page.mjs"

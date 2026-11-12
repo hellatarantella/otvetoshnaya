@@ -27,7 +27,7 @@
     var p = photos[photoKey(k, kind)];
     // обложка и закрывающий слайд — фото утверждённых презентаций (как раньше); своё ставится только кнопкой «Заменить»
     if (isFixed(kind)) {
-      if (p && p.override) return { src: p.src, pos: "center center" };
+      // 12.11: «не редактируем фото первого и последнего слайдов» — всегда фото утверждённых презентаций, загруженные замены не действуют
       var A = window.__otvDeckAssets || {}, d = A[FIXED[kind]];
       return d ? { src: d, pos: "center center" } : null;
     }
@@ -207,6 +207,8 @@
       if (kind === "face") row.append(btn("Фото нет: перенести в строку «Ещё…»", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick(row, { gold: g }); }));
     } else if (n.kind === "quote") {
       var qp = quotePicker(n.options, n.current, n.band, "Цитата");
+      // нечего выбрать — можно перенести врача в строку «Ещё…» одной кнопкой, а не вписывать фразу
+      if (!(n.options || []).length) row.append(btn("Перенести в строку «Ещё…» (без карточки)", "", function () { var g = Object.assign({}, pickDoc().gold || {}); g[n.short] = "rest"; savePick(row, { gold: g }, n.short + " — в строке «Ещё…»"); }));
       row.append(qp.box, btn("Подтвердить цитату", "primary", function () { var v = qp.value(), bad = quoteProblem(v, n.band) || usedProblem(v, n.used) || (n.stale ? n.stale(v) : ""); if (bad) { fail(row, "Цитата для " + n.short + " не принята: " + bad); return; } var q = Object.assign({}, pickDoc().quote || {}); q[n.short] = v; savePick(row, { quote: q, own: ownList(v, n.options) }, "Цитата для " + n.short + " сохранена"); }));
     } else if (n.kind === "review") {
       var list = el("div", "deck-opts"), chosen = null, rq = null, rqBox = el("div");
@@ -245,7 +247,7 @@
         v.forEach(function (x) { ownAll = ownList(x.quote, x.opts, ownAll); delete x.opts; });
         var bad = v.map(function (x, i) { var p = quoteProblem(x.quote, n.band); return p ? "голос " + (i + 1) + " (" + x.short + "): " + p : ""; }).filter(Boolean);
         if (bad.length) { fail(row, "Голоса не приняты: " + bad.join("; ")); return; }
-        savePick(row, { voices: v, own: ownAll }, "Голоса недели сохранены");
+        savePick(row, { voices: v, own: ownAll, voicesEq: true }, "Голоса недели сохранены");
       }));
     }
     return row;
@@ -276,7 +278,7 @@
     // всё, что уже выбрано, можно поменять: варианты показаны с текущим выбором
     (res.choices || []).forEach(function (c) { d.append(needRow(c)); });
     d.append(el("h3", null, "Фото"));
-    K.photos(D, fioOf).forEach(function (x) { d.append(el("p", null, x[0]), photoPicker(x[1], x[2])); });
+    K.photos(D, fioOf).forEach(function (x) { if (isFixed(x[2])) return; d.append(el("p", null, x[0]), photoPicker(x[1], x[2])); });
     d.append(btn(K.resetText, "", function () { if (!cur) return; var id = pickId(); picks[id] = {}; db.collection("deckPicks").doc(id).delete().then(rebuild); }));
     return d;
   }
@@ -284,6 +286,7 @@
 
   /* ---------- фото: загрузка и кадрирование ---------- */
   function photoPicker(key, kind) {
+    if (isFixed(kind)) { var w0 = el("span", "deck-ph"), ph0 = photoOf(key, kind); if (ph0) { var i0 = el("img"); i0.src = ph0.src; i0.alt = key; w0.append(i0); } w0.append(el("span", "hint", "Постоянное фото, не меняется")); return w0; }
     var wrap = el("span", "deck-ph"), f = el("input"); f.type = "file"; f.accept = "image/jpeg,image/png,image/webp"; f.setAttribute("aria-label", "Фото: " + key);
     var have = isFixed(kind) ? photoOf(key, kind) : photos[photoKey(key, kind)];
     if (have) { var im = el("img"); im.src = have.src; im.alt = key; im.className = kind === "face" ? "round" : ""; wrap.append(im); }

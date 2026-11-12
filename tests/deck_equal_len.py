@@ -36,7 +36,19 @@ async def main():
             await pg.evaluate("window.__otvDeckUi.rebuild()"); await pg.wait_for_timeout(2500)
             c = await pg.evaluate(SPREAD)
             res.append((c['sv'] < max(bad['lens']) - min(bad['lens']) and any('сильно разного объёма' in t for t in c['need']), 'сохранённые голоса разной длины — подобраны близкие и просят подтвердить', [bad, c]))
+            # вы подтвердили голоса (даже разной длины) — запрос уходит и больше не возвращается (12.11: «все решения приняты, а поле не уходит»)
+            await pg.evaluate("""async () => { const db = await window.__otvRt.use('db'), k = '2026-10-23', cur = (await db.collection('deckPicks').doc(k).get()).data() || {};
+              cur.voicesEq = true; await db.collection('deckPicks').doc(k).set(cur); }""")
+            await pg.evaluate("window.__otvDeckUi.rebuild()"); await pg.wait_for_timeout(2500)
+            e = await pg.evaluate("() => window.__otvDeckUi._state().res.need.filter(n => n.kind === 'voices' || n.kind === 'info').map(n => n.text)")
+            res.append((not e, 'подтверждённые вами голоса не переспрашиваются', e))
         else: print('  (пропуск:', bad, ')')
+        # обложка и закрывающий слайд — всегда утверждённые фото, загруженная замена не действует (12.11)
+        f = await pg.evaluate("""async () => { const db = await window.__otvRt.use('db');
+          await db.collection('deckPhotos').doc('end_x').set({ key: 'Закрывающий слайд', kind: 'end', src: 'data:image/png;base64,AAAA', override: true, at: '2026-11-12' });
+          await new Promise(r => setTimeout(r, 300)); await window.__otvDeckUi.rebuild(); await new Promise(r => setTimeout(r, 2000));
+          const D = window.__otvDeckUi._state().res.D; return { end: (D.photos.end || {}).src === (window.__otvDeckAssets || {}).endDefault, inputs: [...document.querySelectorAll('#tab-deckw input[type=file]')].filter(x => /Закрывающий|Обложка/.test(x.getAttribute('aria-label') || '')).length }; }""")
+        res.append((f['end'] and f['inputs'] == 0, 'фото обложки и закрывающего слайда не меняются, кнопки замены нет', f))
         res.append((not errs, 'без ошибок на странице', errs[:3]))
         ok = True
         for good, name, info in res:

@@ -308,16 +308,20 @@
     gold.forEach(function (d) {
       if (!photoOf(d.p.fio, "face")) need.push({ kind: "photo", who: d.p.fio, short: d.p.short, dept: d.dept, text: "Нужно фото: " + d.p.fio + " (" + d.dept + ") — загрузите или уберите из золотых карточек" });
       var qa = quotesAbout(d, list, usedRows).filter(function (x) { return notPrev(x.text); }), q = (pick.quote || {})[d.p.short];
+      // 12.11: «пусть программа всегда предлагает вариант» — только из отзывов этой недели (прошлые презентации — нельзя):
+      // фраз нужной длины нет — допускаем чуть короче или длиннее, для этой карточки
+      var bandD = band; d.bandD = band;
+      if (!inBand(qa.map(function (x) { return x.text; }), band).length) { var bw = [Math.max(25, band[0] - 20), band[1] + 30, band[2]]; if (inBand(qa.map(function (x) { return x.text; }), bw).length) { bandD = bw; d.bandD = bw; d.wide = true; } }
       d.usedBefore = usedRows.map(function (r) { return norm2(s(r.full || r.text)); });   // отзывы других блоков — для проверки вписанной цитаты
       var why = "";
       if (q && usedRows.some(function (r) { return inRow(q, r); })) { q = ""; why = " (выбранная раньше цитата — из отзыва, который уже есть в другом блоке)"; }
       if (q && staleWhy(q)) { why = " (выбранная раньше «" + q + "» — " + staleWhy(q) + ")"; q = ""; }
-      if (q && !valid(q, band, own(q))) { why = " (выбранная раньше «" + q + "» — " + (!okQuote(q, band) ? (q.length < band[0] ? "слишком короткая или обрывок" : q.length > band[1] ? "длиннее других" : "обрывок фразы") : "не благодарность и не оценка врача") + ")"; q = ""; }
+      if (q && !valid(q, bandD, own(q))) { why = " (выбранная раньше «" + q + "» — " + (!okQuote(q, bandD) ? (q.length < bandD[0] ? "слишком короткая или обрывок" : q.length > bandD[1] ? "длиннее других" : "обрывок фразы") : "не благодарность и не оценка врача") + ")"; q = ""; }
       d.quotes = qa.map(function (x) { return x.text; });
-      d.options = inBand(d.quotes, band);
+      d.options = inBand(d.quotes, bandD);
       if (!q) {
-        q = nearestVar(d.options, target, lim, usedFirst);
-        need.push({ kind: "quote", short: d.p.short, options: d.options, current: q, band: band, used: d.usedBefore, stale: staleWhy, text: "Цитата для карточки " + d.p.short + ": выберите или впишите, " + band[0] + "–" + band[1] + " знаков" + why });
+        q = nearestVar(d.options, target, bandD[1], usedFirst);
+        need.push({ kind: "quote", short: d.p.short, options: d.options, current: q, band: bandD, used: d.usedBefore, stale: staleWhy, text: "Цитата для карточки " + d.p.short + ": выберите или впишите, " + bandD[0] + "–" + bandD[1] + " знаков" + why + (d.wide ? ". Фраз такой длины в отзывах недели нет — варианты чуть короче или длиннее" : "") });
       }
       d.quote = q; d.locked = !!q && q === (pick.quote || {})[d.p.short]; d.qa = qa; if (q) usedFirst[first(q)] = 1;
       var src = qa.filter(function (x) { return x.text === q; })[0]; d.src = src ? [src.row] : d.rows.filter(function (r) { return inRow(q, r); }); d.src.forEach(function (r) { usedRows.push(r); });
@@ -332,7 +336,7 @@
         x.d.quote = x.quote; var s1 = x.d.qa.filter(function (y) { return y.text === x.quote; })[0]; x.d.src = s1 ? [s1.row] : []; x.d.src.forEach(function (r) { usedRows.push(r); });
         need.forEach(function (n) { if (n.kind === "quote" && n.short === x.d.p.short) n.current = x.quote; });
       });
-      if (sp0 > EQ) need.push({ kind: "info", text: "Цитаты золотых карточек заметно разного объёма (разница " + sp0 + " знаков): выберите для какой-то карточки цитату другой длины" });
+      if (sp0 > EQ) checks.push({ bad: false, text: "Цитаты золотых карточек разного объёма (разница " + sp0 + " знаков): ближе по длине фраз в отзывах нет" });
     }
     var rest = list.filter(function (d) { return gold.indexOf(d) < 0; });
     D.heroes = { cards: gold.map(function (d) {
@@ -350,7 +354,7 @@
       var free = function (c) { return c.p.short !== r0.p.short && usedRows.indexOf(c.row) < 0; };
       var vc = cand.filter(function (c) { return free(c) && !goldSet[c.p.short]; }).concat(cand.filter(function (c) { return free(c) && goldSet[c.p.short]; }));
       var vp = (pick.voices || []).filter(function (v) { return v.short !== r0.p.short && !usedRows.some(function (r) { return inRow(v.quote, r); }) && valid(v.quote, BAND.voice, own(v.quote)) && !staleWhy(v.quote); });
-      var dropped = (pick.voices || []).length !== vp.length || spreadOf(vp) > EQ + 4;   // сохранённые голоса сильно разной длины — подбираем заново и просим подтвердить
+      var dropped = (pick.voices || []).length !== vp.length || (!pick.voicesEq && spreadOf(vp) > EQ + 4);   // подтверждённые после 12.11 — ваш выбор, не пересматриваем   // сохранённые голоса сильно разной длины — подбираем заново и просим подтвердить
       var voices = vp.length && !dropped ? vp : [], seen = {};
       voices.forEach(function (v) { seen[v.short] = 1; });
       // сначала цитаты с другим началом, чем у уже стоящих на слайде; не хватает — любые подходящие
@@ -364,7 +368,7 @@
         var vi = voices.map(function (v) { var c = vc.filter(function (x) { return x.key === v.key || !v.key && x.p.short === v.short; })[0]; return { v: v, locked: vp.length && !dropped, quote: v.quote, options: c ? inBand(c.quotes, BAND.voice).filter(function (o) { return !usedRows.some(function (r) { return inRow(o, r); }); }) : [] }; });
         var spv = equalize(vi);
         vi.forEach(function (x) { x.v.quote = x.quote; });
-        if (spv > EQ && vp.length && !dropped) need.push({ kind: "info", text: "Три голоса недели заметно разного объёма (разница " + spv + " знаков): выберите цитаты близкой длины" });
+        if (spv > EQ) checks.push({ bad: false, text: "Три голоса недели разного объёма (разница " + spv + " знаков)" + (vp.length && !dropped ? ": так подтвердили вы" : "") });
       }
       // на слайде — в порядке кандидатов (как предложено), а не в порядке подбора
       voices.sort(function (a, b) { var ia = vc.map(function (c) { return c.key; }).indexOf(a.key), ib = vc.map(function (c) { return c.key; }).indexOf(b.key); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
@@ -372,7 +376,7 @@
       D.review.voicesTitle = voices.length === 3 ? "И ещё три голоса недели" : voices.length === 2 ? "И ещё два голоса недели" : voices.length === 1 ? "И ещё один голос недели" : "";
       vcAll = vc.map(function (c) { return { key: c.key, short: c.p.short, quote: nearest(inBand(c.quotes, BAND.voice), BAND.voice[2], BAND.voice[1]) || "", quotes: inBand(c.quotes, BAND.voice) }; }).filter(function (o) { return o.quote; });
       voices.forEach(function (v) { var o = vcAll.filter(function (x) { return x.key === v.key || !v.key && x.short === v.short; })[0]; if (o && o.quotes.indexOf(v.quote) < 0) o.quotes = [v.quote].concat(o.quotes); });
-      if ((!vp.length || dropped) && voices.length) need.push({ kind: "voices", band: BAND.voice, options: vcAll.slice(0, 12), current: voices.map(function (v) { return { short: v.short, key: v.key, quote: v.quote }; }), text: dropped && spreadOf(vp) > EQ + 4 ? "Три голоса недели: выбранные цитаты сильно разного объёма — подобрала близкие по длине, подтвердите" : dropped ? "Три голоса недели: в выбранных был повтор, цитата не того объёма или не благодарность — подтвердите заново" : "Три голоса недели: подтвердите или замените (у каждого — выбор цитаты)" });
+      if ((!vp.length || dropped) && voices.length) need.push({ kind: "voices", band: BAND.voice, options: vcAll.slice(0, 12), current: voices.map(function (v) { return { short: v.short, key: v.key, quote: v.quote }; }), text: dropped && !pick.voicesEq && spreadOf(vp) > EQ + 4 ? "Три голоса недели: выбранные цитаты сильно разного объёма — подобрала близкие по длине, подтвердите" : dropped ? "Три голоса недели: в выбранных был повтор, цитата не того объёма или не благодарность — подтвердите заново" : "Три голоса недели: подтвердите или замените (у каждого — выбор цитаты)" });
     } else { D.skip.review = true; checks.push({ bad: false, text: "Отзывов о врачах с цитатой нет: слайд «Отзыв недели» пропущен" }); }
 
     // отделения: строки отчёта по графе «Отделение»; «ГКБ 24» — о больнице в целом
@@ -422,7 +426,7 @@
     var revOpts = function (c) { var qs = inBand(c.quotes, BAND.review).filter(praise); if (c === r0 && rQuote && qs.indexOf(rQuote) < 0) qs = [rQuote].concat(qs); return { key: c.key, short: c.p.short, platform: platKey(c.row.platform), date: c.row.date, quote: c === r0 ? rQuote : nearest(qs, BAND.review[2], BAND.review[1]) || c.quotes[0], quotes: qs, text: s(c.row.full || c.row.text) }; };
     var choices = [];
     if (r0) choices.push({ kind: "review", band: BAND.review, options: cand.slice(0, 8).map(revOpts), current: r0.key, text: "Отзыв недели и его цитата (" + BAND.review[0] + "–" + BAND.review[1] + " знаков)" });
-    gold.forEach(function (d) { choices.push({ kind: "quote", short: d.p.short, options: d.options || [], band: band, current: d.quote, used: d.usedBefore || [], stale: staleWhy, text: "Цитата для карточки " + d.p.short + " (" + band[0] + "–" + band[1] + " знаков)" }); });
+    gold.forEach(function (d) { choices.push({ kind: "quote", short: d.p.short, options: d.options || [], band: d.bandD || band, current: d.quote, used: d.usedBefore || [], stale: staleWhy, text: "Цитата для карточки " + d.p.short + " (" + band[0] + "–" + band[1] + " знаков)" }); });
     if (D.review && D.review.voices.length) choices.push({ kind: "voices", band: BAND.voice, options: (vcAll || []).slice(0, 12), current: voices.map(function (v) { return { short: v.short, key: v.key, quote: v.quote }; }), text: "Три голоса недели: врач и цитата (" + BAND.voice[0] + "–" + BAND.voice[1] + " знаков)" });
     return { choices: choices, D: D, checks: checks, need: need, numbers: numbers, doctors: list.map(function (d) { return { short: d.p.short, fio: d.p.fio, dept: d.dept, n: d.n, gold: gold.indexOf(d) >= 0, hasPhoto: !!photoOf(d.p.fio, "face") }; }) };
   }
