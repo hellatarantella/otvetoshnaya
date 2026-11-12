@@ -23,6 +23,12 @@ async def main():
           await new Promise(r => setTimeout(r, 3000)); const st = window.__otvDeckUi._state().res;
           const ex = document.querySelector('#tab-deckw .deck-extra'); return { left: st.need.filter(n => n.kind === 'doctor').length, open: ex ? ex.open : null }; }""")
         res.append((r['left'] == 0 and not r['open'], 'после выбора запрос ушёл, «Пересмотреть выбор» свёрнут', r))
+        # неделя до 12.11: фото «Отделений», загруженные тогда (без отметки недели), подставляются — прошлую презентацию можно скачать
+        L = await pg.evaluate("""async () => { const db = await window.__otvRt.use('db'), src = window.__otvDeckUi._state().res.D.where.photos[0].src;
+          const all = await db.collection('deckPhotos').get(); for (const d of all.docs) { const v = d.data(); if (v.kind === 'dept') { await db.collection('deckPhotos').doc(d.id).set(Object.assign({}, v, { week: '' })); } }
+          await new Promise(r => setTimeout(r, 500)); await window.__otvDeckUi.rebuild(); await new Promise(r => setTimeout(r, 2000));
+          const st = window.__otvDeckUi._state().res; return { photos: st.D.where.photos.filter(Boolean).length, slots: st.D.where.slots.length, need: st.need.filter(n => n.slot === 'dept').length }; }""")
+        res.append((L['photos'] == L['slots'] and L['need'] == 0, 'прошлая неделя (до 12.11): фото «Отделений» того времени на месте, ничего не просит', L))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         ok = True
         for good, name, info in res: print(('OK   ' if good else 'FAIL ') + name + ('' if good else '  ' + json.dumps(info, ensure_ascii=False)[:500])); ok = ok and good
