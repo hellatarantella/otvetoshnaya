@@ -2865,7 +2865,17 @@ gkb24@zdrav.mos.ru
 
   function renderScan(){
     var p = $("ckScan"); p.textContent = "";
-    if (!meta || !meta.lastScan) { p.textContent = "Автоматическая проверка площадок ещё не записывала результат."; return; }
+    // 12.11: время последнего сбора самой программой (раньше здесь стояла дата старой проверки скриптом — «9 октября»)
+    var srcM = window.__OTV_APP && window.__otvGet ? window.__otvGet("registry_meta", "sources") : null;
+    var lastT = srcM && Date.parse(srcM.updatedAt);
+    if (lastT) {
+      var hl = window.__otvSrcHealth ? window.__otvSrcHealth() : [];
+      p.append("Площадки проверены: " + new Date(lastT).toLocaleString("ru-RU", {day:"numeric", month:"long", hour:"2-digit", minute:"2-digit"}) + ".");
+      var badA = hl.filter(function(x){ return !x.ok; }).map(function(x){ return x.name + (x.needLogin ? " (нужен вход)" : x.down ? " (сбой у площадки)" : ""); });
+      if (badA.length) { p.append(" "); p.append(el("span", "bad", "Не прочитано: " + badA.join(", ") + ".")); }
+      return;
+    }
+    if (!meta || !meta.lastScan) { p.textContent = "Площадки ещё не проверялись: нажмите «Собрать отзывы»."; return; }
     var d = new Date(meta.lastScan);
     var when = isNaN(d) ? s(meta.lastScan) : d.toLocaleString("ru-RU", {day:"numeric", month:"long", hour:"2-digit", minute:"2-digit"});
     p.append("Площадки проверены автоматически: " + when + ".");
@@ -2960,7 +2970,7 @@ gkb24@zdrav.mos.ru
     head.append(el("span", "rp " + REP[rp].cls, REP[rp].label));
     card.append(head);
     var txt = s(r.text).trim();
-    card.append(el("p", "rg-text" + (txt ? "" : " muted"), txt || "Текст появится после публикации на площадке."));
+    card.append(el("p", "rg-text" + (txt ? "" : " muted"), txt || "Текст не сохранён."));
     var foot = el("div", "rg-foot");
     if ((rp === "positive" || rp === "negative") && r.reportRef) foot.append(el("span", null, s(r.reportRef)));
     if (r.answered === true) foot.append(el("span", null, "ответ на площадке есть"));
@@ -3155,7 +3165,8 @@ gkb24@zdrav.mos.ru
     if (!db) { failed = true; render(); $("ckSum").textContent = "Окно «Отчёты» работает только внутри приложения Claude."; return; }
     coll = db.collection("registry");
     coll.onSnapshot(function(snap){
-      rows = snap.docs.map(function(d){ var o = Object.assign({}, d.data() || {}); o.id = d.id; return o; });
+      rows = snap.docs.map(function(d){ var o = Object.assign({}, d.data() || {}); o.id = d.id; return o; })
+        .filter(function(o){ return s(o.fullText || o.text).trim() || o.reportRef || o.source === "manual"; });   // без текста (на модерации) не показываем
       loaded = true; failed = false; render();
     }, function(){ failed = true; render(); });
     try {

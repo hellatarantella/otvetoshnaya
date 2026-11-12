@@ -14,9 +14,10 @@
   function s(v) { return v == null ? "" : String(v); }
   function jlog(x) { if (window.__otvLog) window.__otvLog("синхронизация: " + x); }
 
-  var SHARED = { registry: 1, registry_meta: 1, alerts: 1, mail: 1, answers: 1, phrases: 1, facts: 1, deckPicks: 1, kb: 1, weeks: 1 };
+  var SHARED = { registry: 1, alerts: 1, mail: 1, answers: 1, phrases: 1, facts: 1, deckPicks: 1, kb: 1, weeks: 1 };
   var SHARED_SETTINGS = { refs: 1, report: 1, judge: 1, learn: 1, trainRules: 1, custom_sources: 1, deckFonts: 1, stats: 1, pilot: 1 };
-  function shared(c, i) { return !!SHARED[c] || (c === "settings" && !!SHARED_SETTINGS[i]); }
+  var SHARED_META = { custom_sources: 1, settings: 1 };   // registry_meta/sources (входы, что прочиталось) у каждого компьютера своё
+  function shared(c, i) { return !!SHARED[c] || (c === "settings" && !!SHARED_SETTINGS[i]) || (c === "registry_meta" && !!SHARED_META[i]); }
   var PART = 1500000, BATCH = 4, TICK = 120e3, SNAP_EVERY = 300;   // обмен раз в 2 минуты и через 15 секунд после правки
 
   var db = null, cfg = null, tsm = {}, out = {}, busy = false, again = false, st = { at: 0, sent: 0, got: 0, err: "" };
@@ -95,6 +96,8 @@
     });
     var sets = window.__otvAll("settings") || {}, tss = tsm.settings || {};
     Object.keys(SHARED_SETTINGS).forEach(function (i) { if (sets[i] !== undefined) all.push({ c: "settings", i: i, d: sets[i], t: Math.abs(tss[i] || 0) || 1 }); });
+    var rm = window.__otvAll("registry_meta") || {}, tsr = tsm.registry_meta || {};
+    Object.keys(SHARED_META).forEach(function (i) { if (rm[i] !== undefined) all.push({ c: "registry_meta", i: i, d: rm[i], t: Math.abs(tsr[i] || 0) || 1 }); });
     var parts = [], cur = [], size = 0;
     all.forEach(function (ch) { var n = JSON.stringify(ch).length; if (size + n > PART && cur.length) { parts.push(cur); cur = []; size = 0; } cur.push(ch); size += n; });
     if (cur.length || !parts.length) parts.push(cur);

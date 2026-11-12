@@ -996,6 +996,9 @@
     return items.reduce(function (pr, it) {
       return pr.then(function () {
         if (!it || !it.id || !/^[A-Za-z0-9_.:@+-]{1,200}$/.test(it.id)) return;
+        // договорённость: отзыв без текста (на модерации, «текст появится после публикации») нигде не фиксируем —
+        // ни в реестре, ни в ответах, ни в тревогах. Появится текст — запишется при следующем сборе как новый
+        if (!String(it.text || "").trim()) return;
         return getDoc("registry", it.id).then(function (snap) {
           var base = {
             platform: it.platform, date: it.date, time: it.time || "", author: it.author || "", rating: it.rating == null ? null : it.rating,
@@ -1027,7 +1030,7 @@
           }));
           }
         }).then(function () {
-          if (!(it.low || strongNeg(it.text)) || it.published === false) return;
+          if (!(it.low || strongNeg(it.text)) || it.published === false || !String(it.text || "").trim()) return;
           return getDoc("alerts", it.id).then(function (a) {
             if (a.exists) {
               // состояние «ответ дан» берём с площадки при каждом сборе, в обе стороны: изменилось на площадке — меняется и отметка
@@ -1142,6 +1145,20 @@
       }).catch(function () {}).then(function () { modelBusy = false; next(); });
     })();
   }
+  // уже записанные раньше отзывы без текста убираем (в отчёт они не попали, ответа на них нет)
+  function purgeTextless() {
+    var reg = window.__otvAll("registry") || {}, ans = window.__otvAll("answers") || {}, n = 0;
+    var ids = Object.keys(reg).filter(function (id) { var r = reg[id]; return r && !s0(r.fullText || r.text).trim() && !r.reportRef && r.source !== "manual" && (r.report === "pending" || r.report === "unpublished" || !r.report); });
+    return ids.reduce(function (p, id) {
+      return p.then(function () {
+        var a = ans[id], jobs = [db.collection("registry").doc(id).delete()];
+        if (a && a.status !== "published" && !s0(a.review).trim()) jobs.push(db.collection("answers").doc(id).delete());
+        if ((window.__otvAll("alerts") || {})[id] && !s0((window.__otvAll("alerts") || {})[id].text).trim()) jobs.push(db.collection("alerts").doc(id).delete());
+        n++; return Promise.all(jobs);
+      });
+    }, Promise.resolve()).then(function () { if (n) jlog("убрано отзывов без текста (ещё на модерации): " + n); return n; });
+  }
+  window.__otvPurgeTextless = purgeTextless;
   function makeAnswers(items) {
     var all = window.__otvAll("answers") || {}, byText = {}, made = 0, closed = 0, n0 = Date.now(), fresh = [];
     // совпадение по тексту только для записей без номера площадки (перенесённые из онлайн-версии) и только в тот же день:
@@ -1151,7 +1168,7 @@
     var cutoff = Date.now() - DAYS * 864e5;
     return items.reduce(function (p, it, i) {
       return p.then(function () {
-        if (!it || !it.id || !/^[A-Za-z0-9_.:@+-]{1,200}$/.test(it.id) || it.published === false) return;
+        if (!it || !it.id || !/^[A-Za-z0-9_.:@+-]{1,200}$/.test(it.id) || it.published === false || !s0(it.text).trim()) return;
         if (Date.parse(it.date) < cutoff - 864e5) return;
         var num = it.platform === "ПроДокторов" ? s0(it.id).replace(/^pdl?-/, "") : "";
         var ex = all[it.id] ? it.id : num && all["pdl-" + num] ? "pdl-" + num : num && all["pd-" + num] ? "pd-" + num : byText[it.platform + "|" + ruDate(it.date) + "|" + normT(it.text).slice(0, 60)];
@@ -1881,7 +1898,7 @@
       step("запись отзывов");
       var all = [], mails = [], answeredMail = [], mdiag = null, replies = {};
       results.forEach(function (r) { all = all.concat(r.items); mails = mails.concat(r.mail || []); answeredMail = answeredMail.concat(r.answered || []); Object.assign(replies, r.replies || {}); if (r.mdiag) mdiag = r.mdiag; });
-      return ingest(all).then(function (sum) { step("запись почты"); return ingestMail(mails, answeredMail, mdiag).then(function (m) { return saveReplies(replies, mdiag && mdiag.complete ? mails.map(function (x) { return x && x.id; }).filter(Boolean) : []).then(function () { return m; }); }).then(function (m) { sum.added += m.added; sum.alerts += m.alerts; sum.mail = m; return sum; }); })
+      return purgeTextless().catch(function () {}).then(function () { return ingest(all); }).then(function (sum) { step("запись почты"); return ingestMail(mails, answeredMail, mdiag).then(function (m) { return saveReplies(replies, mdiag && mdiag.complete ? mails.map(function (x) { return x && x.id; }).filter(Boolean) : []).then(function () { return m; }); }).then(function (m) { sum.added += m.added; sum.alerts += m.alerts; sum.mail = m; return sum; }); })
         .then(function (sum) { step("карточки ответов"); return makeAnswers(all).then(function (a) { sum.toAnswer = a.made; sum.closedA = a.closed; return sum; }, function () { return sum; }); }).then(function (sum) {
         var secs = Math.max(1, Math.round((Date.now() - t0) / 1000));
         var badR = results.filter(function (r) { return !r.stopped && !srcState[r.s.id].ok; });
@@ -2066,6 +2083,7 @@
       if (snap && snap.exists) { srcState = (snap.data() || {}).sources || {}; Object.keys(srcState).forEach(function (k) { srcState[k].busy = false; }); }
       render();
       jlog("запуск программы");
+      setTimeout(function () { purgeTextless().catch(function () {}); }, 15000);   // записи без текста, оставшиеся с прошлых версий
       scheduleAuto();
       // проекты в порядок, затем публикуем то, что вы уже отправили на публикацию
       return tidyDrafts().then(function () { schedulePub(); });
