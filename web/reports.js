@@ -975,8 +975,10 @@
     host.append(el("h2", null, "Нужна проверка · " + list.length));
     list.forEach(function (r) { host.append(checkCard(r)); });
   }
+  // выбор в карточке переживает перерисовку (фоновая запись в реестр не сбрасывает то, что вы уже выбрали)
+  var ckState = {};
   function checkCard(r) {
-    var sug = r.suggest || {}, c = el("div", "card ck-card");
+    var sug = r.suggest || {}, c = el("div", "card ck-card"), keep = ckState[r.id] = ckState[r.id] || {};
     var hd = el("div", "head");
     hd.append(el("span", "badge " + ({ "ПроДокторов": "pf-pd", "Яндекс": "pf-ya", "2ГИС": "pf-gis", "Google": "pf-go", "ДокТу": "pf-dt", "Сайт": "pf-site", "НаПоправку": "pf-np" }[r.platform] || "pf-go"), r.platform));
     hd.append(el("span", "meta", [dmyOf(r.date), s(r.page), r.rating != null && r.rating !== "" ? "★" + r.rating : ""].filter(Boolean).join(" · ")));
@@ -984,32 +986,40 @@
     c.append(el("p", "ck-why", s(r.reason).replace(/^Нужна проверка:\s*/, "")));
     var rv = el("blockquote", "review clamp"); rv.textContent = s(r.fullText || r.text); c.append(rv);
     rv.addEventListener("click", function () { rv.classList.toggle("clamp"); });
-    var tone = sug.tone || "positive";
+    var tone = keep.tone || sug.tone || "positive";
     var seg = el("div", "ck-seg");
     var opts = [["positive", "Позитив"], ["negative", "Негатив"], ["excluded", "Не вносить"]];
-    var reason = el("input"); reason.type = "text"; reason.placeholder = "Причина: например, не отзыв, а вопрос"; reason.className = "ck-in";
+    var reason = el("input"); reason.type = "text"; reason.placeholder = "Причина (необязательно): например, не отзыв, а вопрос"; reason.className = "ck-in";
+    var go = el("button", "btn primary pawbtn", "Внести"); go.type = "button";
+    var msg = el("p", "ctl-st"); msg.hidden = true;
     var dept = el("select", "ck-in"), doc = el("input"); doc.type = "text"; doc.className = "ck-in"; doc.placeholder = "Врач: фамилии через запятую, пусто, если врача нет"; doc.value = s(sug.doctor && sug.doctor !== "—" ? sug.doctor : "");
     var cats = (idx && idx.cats.length ? idx.cats : ["ГКБ 24"]).slice();
     if (cats.indexOf("ГКБ 24") < 0) cats.unshift("ГКБ 24");
     var o0 = el("option", null, "Отделение…"); o0.value = ""; dept.append(o0);
-    cats.forEach(function (x) { var o = el("option", null, x); o.value = x; if (x === sug.dept) o.selected = true; dept.append(o); });
+    cats.forEach(function (x) { var o = el("option", null, x); o.value = x; if (x === (keep.dept != null ? keep.dept : sug.dept)) o.selected = true; dept.append(o); });
+    if (keep.doc != null) doc.value = keep.doc; if (keep.reason != null) reason.value = keep.reason;
+    dept.addEventListener("change", function () { keep.dept = dept.value; });
+    doc.addEventListener("input", function () { keep.doc = doc.value; });
+    reason.addEventListener("input", function () { keep.reason = reason.value; });
     function sync() {
       seg.querySelectorAll("button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.v === tone)); });
       dept.hidden = doc.hidden = tone !== "positive"; reason.hidden = tone !== "excluded";
+      // 12.11: решающая кнопка говорит, что именно будет сделано («Не вносить» → кнопка «Не вносить», а не «Внести»)
+      go.textContent = tone === "excluded" ? "Не вносить" : tone === "negative" ? "Внести в «Негатив»" : "Внести в «Позитив»";
+      go.classList.toggle("pawbtn", tone !== "excluded");
     }
     opts.forEach(function (o) {
       var b = el("button", "chip", o[1]); b.type = "button"; b.dataset.v = o[0];
-      b.addEventListener("click", function () { tone = o[0]; sync(); });
+      b.addEventListener("click", function () { tone = keep.tone = o[0]; sync(); });
       seg.append(b);
     });
-    var go = el("button", "btn primary pawbtn", "Внести"); go.type = "button";
-    var msg = el("p", "ctl-st"); msg.hidden = true;
+
     go.addEventListener("click", function () {
       if (tone === "positive" && !dept.value) { dept.focus(); return; }
-      if (tone === "excluded" && !reason.value.trim()) { reason.focus(); return; }
       go.disabled = true;
-      var decision = { forced: true, tone: tone, dept: dept.value, doctor: doc.value.trim() || "—", reason: reason.value.trim() };
-      db.collection("registry").doc(r.id).update({ decision: decision, reason: tone === "excluded" ? reason.value.trim() : "Нужна проверка: решено, вношу" })
+      var why = reason.value.trim() || "не вносить — решено вручную";
+      var decision = { forced: true, tone: tone, dept: dept.value, doctor: doc.value.trim() || "—", reason: tone === "excluded" ? why : "" };
+      db.collection("registry").doc(r.id).update({ decision: decision, reason: tone === "excluded" ? why : "Нужна проверка: решено, вношу" })
         .then(function () { return updateReport(); })
         .catch(function (e) { go.disabled = false; msg.hidden = false; msg.className = "ctl-st err"; msg.textContent = "Не вышло: " + (e && e.message || e); });
     });

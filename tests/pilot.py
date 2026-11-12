@@ -39,4 +39,4 @@ async def main():
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         for ok, t, d in res: print(('OK  ' if ok else 'FAIL') + ' ' + t, '' if ok else json.dumps(d, ensure_ascii=False)[:2500])
         await b.close(); print('ALL OK' if all(x[0] for x in res) else 'SOME FAILED')
-asyncio.run(main())
+if __name__ == "__main__": asyncio.run(main())
