@@ -474,7 +474,7 @@
     if (!ready()) { if (!opts.auto) setRun("err", "Сначала подключите Google. Кнопка «Подключить Google» выше."); return Promise.resolve(); }
     if (busy) return Promise.resolve();
     busy = true; setRun("", "Читаю отчёты…");
-    var orphanRows = [], orphanData = [], W = null, frozen = false, warnSrc = false, added = { pos: 0, neg: 0 }, checks = 0, later = 0, excl = 0, waiting = 0, removedRows = 0, dupList = [], extraRows = [], manualAdded = 0, site = null;
+    var restoredLost = [], checkIds = [], orphanRows = [], orphanData = [], W = null, frozen = false, warnSrc = false, added = { pos: 0, neg: 0 }, checks = 0, later = 0, excl = 0, waiting = 0, removedRows = 0, dupList = [], extraRows = [], manualAdded = 0, site = null;
     var adsRemoved = [];
     return loadRefs().then(function () { return call("state"); }).then(function () {
       // 12.11: реклама в таблице (не отзыв) — убираем строку сразу, до сверки
@@ -527,6 +527,18 @@
       byLen.forEach(function (r) { if (refOf[r.id]) return; var f = findRef(rows, r, claimed); if (f) { claimed[f] = r.id; refOf[r.id] = f; } });
       // строки таблицы, за которыми нет ни одного отзыва этой недели (вписаны руками, остались от прошлой недели, отзыв удалён с площадки):
       // называем их, чтобы итог «в таблице = в программе» сходился и было видно, что проверить
+      // 12.11: строка стоит в отчёте, а запись программы по ней потеряла отметку «в отчёте» (старый пересмотр вида письма
+      // сделал из благодарности «вопрос» и исключил её) — отчёт правильный, восстанавливаем запись по тексту, а не зовём её «лишней»
+      var lostPool = Object.keys(reg).map(function (id) { var r = reg[id]; if (r) r.id = id; return r; }).filter(function (r) {
+        return r && !refOf[r.id] && r.source !== "manual" && r.report !== "unpublished" && (!r.reportWeek || r.reportWeek === st.start) && s(r.date) >= W.floor && s(r.date) <= st.end && !live.some(function (x) { return x.id === r.id; });
+      });
+      lostPool.forEach(function (r) {
+        var f = findRef(rows, r, claimed); if (!f) return;
+        claimed[f] = r.id; refOf[r.id] = f;
+        regWrites.push([r.id, { report: /^Негатив/.test(f) ? "negative" : "positive", reportRef: f, reportWeek: st.start, reason: "", removedRow: false, tone: /^Негатив/.test(f) ? "negative" : "positive" }]);
+        restoredLost.push(s(r.platform) + " " + dmyOf(r.date));
+      });
+      if (restoredLost.length && window.__otvLog) window.__otvLog("сверка: запись восстановлена по строке отчёта: " + restoredLost.join(", "));
       orphanData = rows.filter(function (x) { return !claimed[x.ref] && s(x.text).trim(); });
       orphanRows = orphanData.map(function (x) { return x.ref.replace(/^Позитив · /, "«Позитив» ").replace(/^Негатив · /, "«Негатив» ") + (x.date ? " (" + x.date + ")" : ""); });
       // 2. понятные повторы: тот же отзыв дважды (тот же человек и тот же текст, или почти слово в слово)
@@ -601,7 +613,7 @@
         if (d.status === "wait") { waiting++; return; }
         if (d.status === "excluded") { excl++; regWrites.push([id, { report: "excluded", reason: d.why.join("; "), tone: d.tone || "" }]); return; }
         if (d.status === "check") {
-          checks++;
+          checks++; checkIds.push(id);
           var w0 = { report: "pending", reportRef: "", reason: "Нужна проверка: " + d.why.join("; "), tone: d.tone, suggest: { tone: d.tone, dept: d.dept, doctor: d.doctor } };
           if (d.removed) w0.removedRow = true;
           regWrites.push([id, w0]);
@@ -691,6 +703,7 @@
       }
       var msg = "Отчёт " + s(st.period) + ": " + parts.join(" · ");
       if (adsRemoved.length) msg += ". Убрала из отчёта рекламу (это не отзывы): " + adsRemoved.join(", ");
+      if (restoredLost.length) msg += ". Восстановлены записи программы по строкам отчёта: " + restoredLost.join(", ");
       if (extraRows.length) msg += ". ⚠ В таблице один и тот же отзыв стоит дважды, удалите лишние строки: " + extraRows.join("; ");
       if (orphanRows.length) msg += ". ⚠ В таблице есть строки без отзыва этой недели в программе (" + orphanRows.length + "): " + orphanRows.slice(0, 6).join("; ") + ". Проверьте: отзыв другой недели, вписан вручную или удалён с площадки";
       if (removedRows) msg += ". Из таблицы удалены строки отзывов: " + removedRows + ". Решите в «Нужна проверка», вернуть их или нет";
@@ -717,6 +730,7 @@
       }
       if (removedRows) todo.push("Из таблицы удалены строки: " + removedRows + " — решите в «Нужна проверка»");
       if (frozen) todo.push("Неделя закрыта в четверг в 15:00");
+      lastCheckIds = checkIds.slice();
       lastRecon = { at: Date.now(), site: site ? JSON.parse(JSON.stringify(site)) : null, orphans: orphanRows.slice(), orphanData: orphanData.slice(), dup: extraRows.slice(), removed: removedRows, ads: adsRemoved.slice(), checks: checks || (site && site.check) || 0, adding: site ? Math.max(0, site.adding) : 0, frozen: frozen };
       var acts = orphanData.length ? [["Добавить в программу: " + orphanData.length, function () { importOrphans(orphanData.slice()); }]] : null;
       setRun(warn ? "warn" : "ok", msg, { head: head, todo: todo, actions: acts });
@@ -1017,6 +1031,7 @@
     return box;
   }
 
+  var lastCheckIds = null;
   /* ---------- «Нужна проверка»: вы решаете, программа вносит ---------- */
   function renderChecks() {
     var host = $("ckCheck");
@@ -1024,8 +1039,11 @@
     host.textContent = "";
     if (!ready() || !st) return;
     var reg = window.__otvAll("registry") || {};
+    // 12.11: показываем ровно те, что посчитаны в итоге «Ждут решения» (раньше счётчик и список расходились)
     var list = Object.keys(reg).map(function (id) { var r = reg[id]; r.id = id; return r; }).filter(function (r) {
-      return r.report === "pending" && /^Нужна проверка/.test(s(r.reason)) && r.source !== "manual" && s(r.date) >= st.start && s(r.date) <= st.end;
+      if (!(r.report === "pending" && /^Нужна проверка/.test(s(r.reason)))) return false;
+      if (lastCheckIds && lastCheckIds.indexOf(r.id) >= 0) return true;   // посчитанные при обновлении — всегда в списке
+      return r.source !== "manual" && s(r.date) >= st.start && s(r.date) <= st.end;   // и пришедшие после него
     });
     if (!list.length) return;
     host.className = "ck-check";

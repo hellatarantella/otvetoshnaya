@@ -111,6 +111,28 @@
     return c.filter(function (q) { return near(q) && fresh(q); })[0] || c.filter(fresh)[0] || c.filter(near)[0] || c[0] || "";
   }
   function okQuote(q, band) { q = s(q).trim(); var w = q.split(/\s+/).length; return q.length >= band[0] && q.length <= band[1] && w >= 6 && !(WEAK_START.test(q) && w < 8); }
+  /* 12.11: «отзывы очень разного объёма в похожих блоках». Цитаты карточек одного вида (и три голоса) подбираются
+     так, чтобы разница по длине была не больше EQ знаков: ваши подтверждённые остаются, остальные подстраиваются под них */
+  var EQ = 24;
+  function equalize(items) {
+    var free = items.filter(function (x) { return !x.locked && x.options && x.options.length; });
+    if (!free.length) return spreadOf(items);
+    var lockL = items.filter(function (x) { return x.locked && x.quote; }).map(function (x) { return x.quote.length; });
+    var targets = lockL.length ? [lockL.slice().sort(function (a, b) { return a - b; })[Math.floor(lockL.length / 2)]] : [].concat.apply([], free.map(function (x) { return x.options.map(function (q) { return q.length; }); }));
+    var best = null;
+    targets.forEach(function (T) {
+      var pickQ = free.map(function (x) {
+        var o = x.options.slice().sort(function (a, b) { return Math.abs(a.length - T) - Math.abs(b.length - T) || x.options.indexOf(a) - x.options.indexOf(b); });
+        return o[0];
+      });
+      var lens = pickQ.map(function (q) { return q.length; }).concat(lockL), sp = Math.max.apply(null, lens) - Math.min.apply(null, lens);
+      var dev = pickQ.reduce(function (a, q, i) { return a + free[i].options.indexOf(q); }, 0);   // при равном разбросе — фразы повыше в списке (лучше по смыслу)
+      if (!best || sp < best.sp || (sp === best.sp && dev < best.dev)) best = { sp: sp, dev: dev, q: pickQ };
+    });
+    free.forEach(function (x, i) { x.quote = best.q[i]; });
+    return spreadOf(items);
+  }
+  function spreadOf(items) { var l = items.filter(function (x) { return x.quote; }).map(function (x) { return x.quote.length; }); return l.length > 1 ? Math.max.apply(null, l) - Math.min.apply(null, l) : 0; }
   function inBand(list, band) { return (list || []).filter(function (q) { return okQuote(q, band); }); }
   function nearest(list, target, max) { var c = (list || []).filter(function (q) { return q.length <= max; }); return c.filter(function (q) { return Math.abs(q.length - target) <= 30; })[0] || c[0] || ""; }
 
@@ -297,9 +319,21 @@
         q = nearestVar(d.options, target, lim, usedFirst);
         need.push({ kind: "quote", short: d.p.short, options: d.options, current: q, band: band, used: d.usedBefore, stale: staleWhy, text: "Цитата для карточки " + d.p.short + ": выберите или впишите, " + band[0] + "–" + band[1] + " знаков" + why });
       }
-      d.quote = q; if (q) usedFirst[first(q)] = 1;
-      var src = qa.filter(function (x) { return x.text === q; })[0]; if (src) usedRows.push(src.row); else d.rows.forEach(function (r) { if (inRow(q, r)) usedRows.push(r); });
+      d.quote = q; d.locked = !!q && q === (pick.quote || {})[d.p.short]; d.qa = qa; if (q) usedFirst[first(q)] = 1;
+      var src = qa.filter(function (x) { return x.text === q; })[0]; d.src = src ? [src.row] : d.rows.filter(function (r) { return inRow(q, r); }); d.src.forEach(function (r) { usedRows.push(r); });
     });
+    // карточки одного вида — одного объёма; цитата другой карточки не может прийти из отзыва, уже стоящего в другом блоке
+    if (gold.length > 1) {
+      var gi = gold.map(function (d) { return { d: d, locked: d.locked, quote: d.quote, options: (d.options || []).filter(function (o) { var src0 = d.qa.filter(function (x) { return x.text === o; })[0]; return !src0 || d.src.indexOf(src0.row) >= 0 || usedRows.indexOf(src0.row) < 0; }) }; });
+      var sp0 = equalize(gi);
+      gi.forEach(function (x) {
+        if (x.quote === x.d.quote) return;
+        x.d.src.forEach(function (r) { var k = usedRows.indexOf(r); if (k >= 0) usedRows.splice(k, 1); });
+        x.d.quote = x.quote; var s1 = x.d.qa.filter(function (y) { return y.text === x.quote; })[0]; x.d.src = s1 ? [s1.row] : []; x.d.src.forEach(function (r) { usedRows.push(r); });
+        need.forEach(function (n) { if (n.kind === "quote" && n.short === x.d.p.short) n.current = x.quote; });
+      });
+      if (sp0 > EQ) need.push({ kind: "info", text: "Цитаты золотых карточек заметно разного объёма (разница " + sp0 + " знаков): выберите для какой-то карточки цитату другой длины" });
+    }
     var rest = list.filter(function (d) { return gold.indexOf(d) < 0; });
     D.heroes = { cards: gold.map(function (d) {
       return { photo: photoOf(d.p.fio, "face"), short: d.p.short, dept: slideDept(d.dept), sur: d.p.sur, name: d.p.name + " " + d.p.pat, n: d.n, quote: d.quote || "", where: whereLine(d.plat, d.n) };
@@ -316,7 +350,7 @@
       var free = function (c) { return c.p.short !== r0.p.short && usedRows.indexOf(c.row) < 0; };
       var vc = cand.filter(function (c) { return free(c) && !goldSet[c.p.short]; }).concat(cand.filter(function (c) { return free(c) && goldSet[c.p.short]; }));
       var vp = (pick.voices || []).filter(function (v) { return v.short !== r0.p.short && !usedRows.some(function (r) { return inRow(v.quote, r); }) && valid(v.quote, BAND.voice, own(v.quote)) && !staleWhy(v.quote); });
-      var dropped = (pick.voices || []).length !== vp.length;
+      var dropped = (pick.voices || []).length !== vp.length || spreadOf(vp) > EQ + 4;   // сохранённые голоса сильно разной длины — подбираем заново и просим подтвердить
       var voices = vp.length && !dropped ? vp : [], seen = {};
       voices.forEach(function (v) { seen[v.short] = 1; });
       // сначала цитаты с другим началом, чем у уже стоящих на слайде; не хватает — любые подходящие
@@ -325,13 +359,20 @@
         var qs = inBand(c.quotes, BAND.voice), q = strict ? qs.filter(function (x) { return !usedFirst[first(x)]; })[0] && nearestVar(qs, BAND.voice[2], BAND.voice[1], usedFirst) : nearest(qs, BAND.voice[2], BAND.voice[1]);
         if (!q || strict && usedFirst[first(q)]) return; seen[c.p.short] = 1; usedFirst[first(q)] = 1; voices.push({ short: c.p.short, quote: q, key: c.key });
       }); });
+      // три голоса — одного объёма: подтверждённые остаются, подобранные программой подстраиваются; не выходит — просим выбрать
+      if (voices.length > 1) {
+        var vi = voices.map(function (v) { var c = vc.filter(function (x) { return x.key === v.key || !v.key && x.p.short === v.short; })[0]; return { v: v, locked: vp.length && !dropped, quote: v.quote, options: c ? inBand(c.quotes, BAND.voice).filter(function (o) { return !usedRows.some(function (r) { return inRow(o, r); }); }) : [] }; });
+        var spv = equalize(vi);
+        vi.forEach(function (x) { x.v.quote = x.quote; });
+        if (spv > EQ && vp.length && !dropped) need.push({ kind: "info", text: "Три голоса недели заметно разного объёма (разница " + spv + " знаков): выберите цитаты близкой длины" });
+      }
       // на слайде — в порядке кандидатов (как предложено), а не в порядке подбора
       voices.sort(function (a, b) { var ia = vc.map(function (c) { return c.key; }).indexOf(a.key), ib = vc.map(function (c) { return c.key; }).indexOf(b.key); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
       D.review.voices = voices.map(function (v) { var dd = docs[v.short]; return { short: v.short, quote: v.quote, role: dd ? deptLow(dd.dept) : "" }; });
       D.review.voicesTitle = voices.length === 3 ? "И ещё три голоса недели" : voices.length === 2 ? "И ещё два голоса недели" : voices.length === 1 ? "И ещё один голос недели" : "";
       vcAll = vc.map(function (c) { return { key: c.key, short: c.p.short, quote: nearest(inBand(c.quotes, BAND.voice), BAND.voice[2], BAND.voice[1]) || "", quotes: inBand(c.quotes, BAND.voice) }; }).filter(function (o) { return o.quote; });
       voices.forEach(function (v) { var o = vcAll.filter(function (x) { return x.key === v.key || !v.key && x.short === v.short; })[0]; if (o && o.quotes.indexOf(v.quote) < 0) o.quotes = [v.quote].concat(o.quotes); });
-      if ((!vp.length || dropped) && voices.length) need.push({ kind: "voices", band: BAND.voice, options: vcAll.slice(0, 12), current: voices.map(function (v) { return { short: v.short, key: v.key, quote: v.quote }; }), text: dropped ? "Три голоса недели: в выбранных был повтор, цитата не того объёма или не благодарность — подтвердите заново" : "Три голоса недели: подтвердите или замените (у каждого — выбор цитаты)" });
+      if ((!vp.length || dropped) && voices.length) need.push({ kind: "voices", band: BAND.voice, options: vcAll.slice(0, 12), current: voices.map(function (v) { return { short: v.short, key: v.key, quote: v.quote }; }), text: dropped && spreadOf(vp) > EQ + 4 ? "Три голоса недели: выбранные цитаты сильно разного объёма — подобрала близкие по длине, подтвердите" : dropped ? "Три голоса недели: в выбранных был повтор, цитата не того объёма или не благодарность — подтвердите заново" : "Три голоса недели: подтвердите или замените (у каждого — выбор цитаты)" });
     } else { D.skip.review = true; checks.push({ bad: false, text: "Отзывов о врачах с цитатой нет: слайд «Отзыв недели» пропущен" }); }
 
     // отделения: строки отчёта по графе «Отделение»; «ГКБ 24» — о больнице в целом
