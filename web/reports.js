@@ -456,7 +456,7 @@
       return p.then(function () {
         n++;
         return db.collection("registry").doc(id).set({ platform: x.pl, date: m[3] + "-" + m[2] + "-" + m[1], time: "", author: "", rating: null, page: "", text: x.full.slice(0, 300), fullText: x.full, link: x.link || "",
-          answered: true, report: x.tone, reportRef: x.ref, reportWeek: st.start, tone: x.tone, dept: x.dept || "", doctor: x.doctor || "", reason: "", source: "manual", fromReport: true, arrivedAt: m[3] + "-" + m[2] + "-" + m[1] + "T09:00:00.000Z", updatedAt: nowIso() });   // поступил в день отзыва: если это прошлая неделя — отзыв уйдёт в неё
+          answered: true, report: x.tone, reportRef: x.ref, reportWeek: st.start, tone: x.tone, dept: x.dept || "", doctor: x.doctor || "", reason: "", source: "manual", fromReport: true, arrivedAt: nowIso(), updatedAt: nowIso() });
       });
     }, Promise.resolve()).then(function () {
       if (window.__otvLog) window.__otvLog("сверка: добавлено в программу из отчёта: " + n);
@@ -464,54 +464,13 @@
       return updateReport({ auto: true });
     }, function (e) { setRun("err", "Не добавилось: " + (e && e.message || e)); });
   }
-  /* 12.11: отзыв (обычно письмо с сайта), который пришёл в уже закрытую неделю, но собран позже (почта не читалась),
-     идёт в СВОЮ неделю: дописывается в её снимок (файл недели пересобирается, презентация тоже), а из текущей таблицы
-     убирается. Так прошлый отчёт сходится, а текущий содержит только свою неделю. Решения «на проверку» не трогаем */
-  function weekOfArrival(a) {
-    var ks = Object.keys(snaps);
-    for (var i = 0; i < ks.length; i++) { var w = snaps[ks[i]], c = Date.parse(w.end + "T15:00:00+03:00"); if (a < c && a >= c - 7 * 864e5) return w; }
-    return null;
-  }
-  function lateToPast() {
-    if (!db || !st || !st.start) return Promise.resolve(0);
-    var reg = window.__otvAll("registry") || {}, Wb = weekBounds(), moves = [], cur = reportRows();
-    Object.keys(reg).forEach(function (id) {
-      var r = reg[id]; if (!r || r.lateMoved) return;
-      var a = arrivedOf(r); if (isNaN(a) || a >= Wb.prevCut) return;
-      var w = weekOfArrival(a); if (!w || w.start >= st.start) return;
-      var inCur = (r.report === "positive" || r.report === "negative") && s(r.reportRef) && (!r.reportWeek || r.reportWeek === st.start) && /^(Позитив|Негатив) · /.test(s(r.reportRef));
-      var fresh = r.report === "pending" && !s(r.reportRef) && !/^Нужна проверка/.test(s(r.reason));
-      if (!inCur && !fresh) return;
-      var tone = r.report, dept = s(r.dept), doctor = s(r.doctor) || "—";
-      if (fresh) { var d = idx ? decide(Object.assign({ id: id }, r), (window.__otvAll("mail") || {})[id]) : null; if (!d || d.status !== "ok") return; tone = d.tone; dept = d.dept; doctor = d.doctor || "—"; }
-      moves.push({ id: id, r: r, w: w, tone: tone, dept: dept, doctor: doctor, inCur: inCur });
-    });
-    if (!moves.length) return Promise.resolve(0);
-    var byW = {}, rm = [];
-    moves.forEach(function (m) {
-      var w = byW[m.w.start] = byW[m.w.start] || Object.assign({}, m.w, { positive: (m.w.positive || []).slice(), negative: (m.w.negative || []).slice() });
-      var full = s(m.r.fullText || m.r.text), have = (m.tone === "negative" ? w.negative : w.positive).some(function (x) { return norm(s(x.full || x.text)).slice(0, 60) === norm(full).slice(0, 60); });
-      if (!have) {
-        if (m.tone === "negative") { var na = negAnswer(m.r); w.negative.push({ platform: NEG_PLAT[m.r.platform] || m.r.platform, date: ruDate(m.r.date), text: full.slice(0, 120), full: full, answer: s(m.r.negWritten) || clean(na.text) || "—", link: linkFor(m.r, reg) }); }
-        else w.positive.push({ platform: m.r.platform, num: "", date: dmyOf(m.r.date), dept: m.dept, doctor: m.doctor, text: full.slice(0, 120), full: full });
-      }
-      if (m.inCur) { var row = cur.filter(function (x) { return x.ref === m.r.reportRef; })[0]; if (row) rm.push({ kind: m.tone === "negative" ? "neg" : "pos", platform: row.plat || row.pl, text: row.full || row.text }); }
-    });
-    var jobs = Object.keys(byW).map(function (k) { return db.collection("weeks").doc(k).set(Object.assign(byW[k], { dirty: true, lateAt: nowIso() })); });
-    return Promise.all(jobs).then(function () {
-      return moves.reduce(function (p, m) { return p.then(function () { return regUpdate(m.id, { report: m.tone, reportWeek: m.w.start, reportRef: (m.tone === "negative" ? "Негатив" : "Позитив") + " прошлой недели " + m.w.period, tone: m.tone, dept: m.dept, doctor: m.doctor, lateMoved: true, reason: "" }); }); }, Promise.resolve());
-    }).then(function () { return rm.length ? call("remove", { items: rm }) : null; }).then(function () {
-      if (window.__otvLog) window.__otvLog("сверка: собранные с опозданием перенесены в свою неделю: " + moves.map(function (m) { return m.r.platform + " " + dmyOf(m.r.date) + " → " + m.w.period; }).join("; "));
-      return moves.length;
-    });
-  }
   function updateReport(opts) {
     opts = opts || {};
     if (!ready()) { if (!opts.auto) setRun("err", "Сначала подключите Google. Кнопка «Подключить Google» выше."); return Promise.resolve(); }
     if (busy) return Promise.resolve();
     busy = true; setRun("", "Читаю отчёты…");
     var orphanRows = [], orphanData = [], W = null, frozen = false, warnSrc = false, added = { pos: 0, neg: 0 }, checks = 0, later = 0, excl = 0, waiting = 0, removedRows = 0, dupList = [], extraRows = [], manualAdded = 0, site = null;
-    var adsRemoved = [], lateMoved = 0;
+    var adsRemoved = [];
     return loadRefs().then(function () { return call("state"); }).then(function () {
       // 12.11: реклама в таблице (не отзыв) — убираем строку сразу, до сверки
       var isAd = window.__otvIsAd || function () { return false; };
@@ -523,8 +482,7 @@
         adsRemoved = adItems.map(function (x) { return x.label; });
         if (window.__otvLog) window.__otvLog("сверка: убрано из отчёта рекламы " + (r && r.removed) + ": " + adsRemoved.join(", "));
       });
-    }).then(function () { return lateToPast(); }).then(function (n) {
-      lateMoved = n || 0;
+    }).then(function () {
       setRun("", "Сверяю отзывы с таблицами…");
       var reg = window.__otvAll("registry") || {}, mail = window.__otvAll("mail") || {}, have = inReport(), rows = reportRows();
       var pos = [], neg = [], decisions = {}, regWrites = [];
@@ -728,7 +686,6 @@
       }
       var msg = "Отчёт " + s(st.period) + ": " + parts.join(" · ");
       if (adsRemoved.length) msg += ". Убрала из отчёта рекламу (это не отзывы): " + adsRemoved.join(", ");
-      if (lateMoved) msg += ". Дополнены прошлые недели: " + lateMoved + " отзыв(ов), собранных с опозданием, перенесены в свою неделю — скачайте её заново в «Отчётах прошлых недель»";
       if (extraRows.length) msg += ". ⚠ В таблице один и тот же отзыв стоит дважды, удалите лишние строки: " + extraRows.join("; ");
       if (orphanRows.length) msg += ". ⚠ В таблице есть строки без отзыва этой недели в программе (" + orphanRows.length + "): " + orphanRows.slice(0, 6).join("; ") + ". Проверьте: отзыв другой недели, вписан вручную или удалён с площадки";
       if (removedRows) msg += ". Из таблицы удалены строки отзывов: " + removedRows + ". Решите в «Нужна проверка», вернуть их или нет";
@@ -1168,6 +1125,24 @@
       });
     }, Promise.resolve());
   }
+  // 12.11: записи, у которых старый пересмотр вида письма стёр «в отчёте», хотя отзыв стоит в отчёте закрытой недели:
+  // восстанавливаем по снимку недели (текст совпадает) — тогда письмо снова видно в «Позитиве»/«Негативе» программы
+  function repairFromSnaps() {
+    if (!db) return Promise.resolve(0);
+    var reg = window.__otvAll("registry") || {}, fixes = [];
+    Object.keys(reg).forEach(function (id) {
+      var r = reg[id]; if (!r || !r.reportWeek || s(r.reportRef) || r.report === "excluded") return;
+      var w = snaps[r.reportWeek]; if (!w) return;
+      var h = norm(s(r.fullText || r.text)).slice(0, 60); if (h.length < 20) return;
+      var inPos = (w.positive || []).some(function (x) { return norm(s(x.full || x.text)).slice(0, 60) === h; });
+      var inNeg = !inPos && (w.negative || []).some(function (x) { return norm(s(x.full || x.text)).slice(0, 60) === h; });
+      if (inPos || inNeg) fixes.push([id, { report: inPos ? "positive" : "negative", reportRef: (inPos ? "Позитив" : "Негатив") + " · неделя " + w.period, tone: inPos ? "positive" : "negative", reason: "" }]);
+    });
+    return fixes.reduce(function (p, f) { return p.then(function () { return regUpdate(f[0], f[1]); }); }, Promise.resolve()).then(function () {
+      if (fixes.length && window.__otvLog) window.__otvLog("сверка: восстановлено «в отчёте» по снимкам недель: " + fixes.length);
+      return fixes.length;
+    });
+  }
   function downloadWeek(w) {
     var tl = titlesOf(w); if (!tl) { pastMsg = { cls: "err", text: "Не вышло: сначала обновите текущий отчёт" }; renderPast(); return; }
     pastBusy = w.start; pastMsg = { cls: "", text: "Готовлю отчёты за " + w.period + "…" }; renderPast();
@@ -1206,8 +1181,8 @@
     d.collection("weeks").onSnapshot(function (sn) { snaps = {}; sn.docs.forEach(function (x) { var v = x.data() || {}; if (v.start) snaps[v.start] = v; }); renderPast(); cleanSoon(); }, function () {});
   }).catch(function () {});
   var cleanT = null;
-  function cleanSoon() { clearTimeout(cleanT); cleanT = setTimeout(function () { cleanSnaps().catch(function () {}); }, 3000); }
-  window.__otvPastWeeks = { titles: titlesOf, rows: rowsOf, clean: cleanSnaps, download: downloadWeek };
+  function cleanSoon() { clearTimeout(cleanT); cleanT = setTimeout(function () { cleanSnaps().then(repairFromSnaps).catch(function () {}); }, 3000); }
+  window.__otvPastWeeks = { titles: titlesOf, rows: rowsOf, clean: cleanSnaps, repair: repairFromSnaps, download: downloadWeek };
 
   /* ---------- кнопки вкладки «Отчёты» в программе ведёт этот модуль ---------- */
   window.addEventListener("click", function (e) {

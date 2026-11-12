@@ -1474,6 +1474,7 @@
     var bad = edited ? window.__otvGen.isGeneric(m[1]) : !window.__otvGen.nameOf(m[1]);
     return bad ? t.replace(m[0], "Здравствуйте" + m[2]) : t;
   }
+  window.__otvTidyDrafts = function () { return tidyDrafts(); };   // для проверок
   function tidyDrafts() {
     if (!db || !window.__otvGen) return Promise.resolve();
     var jobs = [], alertsNew = [];
@@ -1518,6 +1519,14 @@
         jobs.push(["registry", id, { platform: "Сайт", date: s0(m.date), time: s0(m.time), author: s0(m.name), rating: null, page: s0(m.page), text: s0(m.text).slice(0, 300),
           fullText: s0(m.text), link: "", answered: !!m.answered, tone: k1 === "complaint" ? "negative" : k1 === "thanks" ? "positive" : "", report: "pending", reportRef: "", reason: "", source: "auto", arrivedAt: arrIso(m.date, m.time), updatedAt: nowIso() }, true]);
       }
+      // 12.11: письмо уже стоит в отчёте — его вид берём из отчёта и больше не пересматриваем. Раньше пересмотр
+      // (после обновления правил) сбрасывал запись «в отчёте» и менял вид письма: в отчёте оно было, а в «Позитиве»
+      // программы пропадало
+      var rg0 = regAll[id], inRep0 = rg0 && (rg0.report === "positive" || rg0.report === "negative") && s0(rg0.reportRef);
+      if (inRep0) {
+        var want = rg0.report === "positive" ? "thanks" : "complaint";
+        if (m.kind !== want) { jobs.push(["mail", id, { kind: want }]); jlog("почта: письмо " + id + " в отчёте как «" + (want === "thanks" ? "Позитив" : "Негатив") + "» — вид письма приведён к отчёту"); }
+      }
       if (m.status === "done") return;
       // письма раньше отчётного периода: давно отвечены, убираем из «к ответу»
       if (s0(m.date) && s0(m.date) < since) {
@@ -1525,8 +1534,8 @@
         if (alAll[id] && alAll[id].status !== "done") jobs.push(["alerts", id, { status: "done", statusAt: nowIso() }]);
         return;
       }
-      // заново по смыслу текста: жалоба, благодарность или вопрос
-      if (!m.manual && s0(m.text).trim()) {
+      // заново по смыслу текста: жалоба, благодарность или вопрос (только для писем, которых ещё нет в отчёте)
+      if (!inRep0 && !m.manual && s0(m.text).trim()) {
         var ty = s0(m.type) || (s0(m.subject).match(/^(\S+)/) || [])[1] || "";
         var k = letterKind(ty, m.text);
         if (k !== m.kind) {

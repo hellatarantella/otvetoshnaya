@@ -651,7 +651,13 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     return !!r.selfSend && r.kind !== "question";
   }
   function rowSide(r){ return r && r.kind === "question" ? "qa" : isNegRow(r) ? "neg" : "pos"; }
-  function mbSide(m){ return m.kind === "thanks" ? "pos" : m.kind === "complaint" ? "neg" : "qa"; }
+  // письмо, которое стоит в отчёте, показывается там же, где в отчёте: «Позитив» или «Негатив» (12.11)
+  function mbSide(m){
+    var r = window.__otvAll ? (window.__otvAll("registry") || {})[m.id] : null;
+    if (r && s(r.reportRef) && r.report === "positive") return "pos";
+    if (r && s(r.reportRef) && r.report === "negative") return "neg";
+    return m.kind === "thanks" ? "pos" : m.kind === "complaint" ? "neg" : "qa";
+  }
   function goSide(sd){ if (sd !== side && window.__otvShowTab) window.__otvShowTab(sd); }
   function subCounts(){
     var n = {pos: 0, neg: 0, qa: 0};
