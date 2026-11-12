@@ -364,13 +364,31 @@
       var fr = el("div", "deck-slide"), inner = el("div", "deck-slide-in"); fr.dataset.n = String(i + 1);
       setHtml(inner, h); fr.append(inner); pv.append(fr); fit(fr, inner);
       var sec = inner.firstElementChild, id = sec.id, saved = edits[id];
+      var gen = [].filter.call(sec.querySelectorAll("p,h1,h2"), function (x) { return x.textContent.trim(); }).map(function (x) { return tnorm(x.textContent); });
       if (saved && saved.sig === sig(h)) {
         var srcs = [].map.call(sec.querySelectorAll("img"), function (im) { return im.getAttribute("src"); });
         setHtml(sec, saved.html);
         [].forEach.call(sec.querySelectorAll("img"), function (im, k) { if (!im.getAttribute("src") && srcs[k]) im.setAttribute("src", srcs[k]); });
       }
       editable(sec);
-      sec.addEventListener("focusout", function () { clean(sec); var e = Object.assign({}, pickDoc().edits || {}); e[id] = { sig: sig(h), html: lightHtml(sec.innerHTML) }; savePickQuiet({ edits: e }); check(); });
+      /* 12.11: ваша правка текста держится за сам абзац (его исходный текст), а не за весь слайд: пересборка
+         из-за новых данных отчёта (цифры, другие строки) её больше не стирает. Правка пропадает, только если
+         программа поставила в это место другой текст (например, вы выбрали другую цитату) */
+      var te = (pickDoc().tedits || {})[id] || [];
+      (sec.__eds || []).forEach(function (t2, k) {
+        t2.__orig = gen[k] != null ? gen[k] : tnorm(t2.textContent);
+        var e2 = te.filter(function (x) { return x.o === t2.__orig; })[0];
+        if (e2 && tnorm(t2.textContent) === t2.__orig && e2.t) { t2.textContent = e2.t; fixNb(t2); }
+      });
+      sec.addEventListener("focusout", function () {
+        clean(sec);
+        var e = Object.assign({}, pickDoc().edits || {}); e[id] = { sig: sig(h), html: lightHtml(sec.innerHTML) };
+        var all2 = Object.assign({}, pickDoc().tedits || {}), eds2 = sec.__eds || [];
+        var list = (all2[id] || []).filter(function (x) { return !eds2.some(function (t3) { return t3.__orig === x.o; }); });
+        eds2.forEach(function (t3) { var now = t3.textContent.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim(); if (t3.__orig && tnorm(now) !== t3.__orig) list.push({ o: t3.__orig, t: now }); });
+        all2[id] = list;
+        savePickQuiet({ edits: e, tedits: all2 }); check();
+      });
       all.push(sec);
     });
     try { showFx(pv); } catch (e) { log("отметка сохранения: " + e); }
@@ -436,6 +454,7 @@
       t.normalize(); fixNb(t);
     });
   }
+  function tnorm(x) { return String(x || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim(); }
   function sig(h) { var x = 0; for (var i = 0; i < h.length; i++) x = (x * 31 + h.charCodeAt(i)) | 0; return x; }
   function savePickQuiet(patch) { if (!cur) return; var id = pickId(); picks[id] = Object.assign({}, picks[id] || {}, patch); db.collection("deckPicks").doc(id).set(picks[id]).catch(function () {}); }
 
