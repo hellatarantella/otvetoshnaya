@@ -63,12 +63,11 @@ async def main():
         kept = await pg.evaluate("window.__maxSent.map(x => x.text).join(' ')")
         res.append(('имя автора письма не ушло в MAX', 'Петрова' not in kept, ''))
         n0 = len(await pg.evaluate("window.__maxSent"))
-        await pg.evaluate("""async () => { const old = new Date(Date.now() - 13 * 3600e3).toISOString(), recent = new Date(Date.now() - 5 * 3600e3).toISOString();
+        await pg.evaluate("""async () => { const d = new Date(); d.setHours(20, 30, 0, 0); const old = new Date(d - 13 * 3600e3).toISOString(), recent = new Date(d - 5 * 3600e3).toISOString();   /* время отсчитываем от «вечера» проверки, а не от часа запуска теста */
           window.__otvSrcHealth = () => [{ name: 'Яндекс', ok: false, okAt: old, needLogin: true }, { name: '2ГИС', ok: false, okAt: recent }];
-          const d = new Date(); d.setHours(20, 30, 0, 0);
           await window.__otvNotify.health(d); await window.__otvNotify.health(d);
           window.__dailyBefore = (window.__maxSent || []).filter(x => /сводка/.test(x.text)).length;
-          window.__otvSrcHealth = () => [{ name: 'Яндекс', ok: true, okAt: new Date().toISOString() }, { name: '2ГИС', ok: true, okAt: new Date().toISOString() }];
+          window.__otvSrcHealth = () => [{ name: 'Яндекс', ok: true, okAt: d.toISOString() }, { name: '2ГИС', ok: true, okAt: d.toISOString() }];
           await window.__otvNotify.health(d); }""")
         h = [x['text'] for x in (await pg.evaluate("window.__maxSent"))[n0:]]
         warn = [x for x in h if 'Яндекс не читается — нужен вход' in x]; back = [x for x in h if 'Яндекс снова читается' in x]; daily = [x for x in h if 'сводка за сутки' in x]
