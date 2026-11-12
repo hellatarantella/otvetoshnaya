@@ -387,7 +387,7 @@
       one: dl.filter(function (d) { return goldN.indexOf(d.n) < 0; }).map(function (d) { return { name: d.name, n: d.n }; }), general: general,
       photos: [] };
     // фото на слайде «Отделения» — лучших отделений недели (по местам); подойдёт фото отделения или врачей этого отделения.
-    // Фото хранится по названию отделения и в следующие недели подставляется само
+    // 12.11: фото — только этой недели (каждую неделю новые, вёрстка та же); прошлонедельные не подставляются
     var w0 = D.where, wide = false;   // всегда утверждённая сетка с тремя фото: не хватает фото — программа просит
     var slotsN = wide ? 2 : 3, slots = dl.slice(0, slotsN).map(function (d) { return d.name; });
     while (slots.length < slotsN) slots.push(slots.indexOf("ГКБ 24") < 0 ? "ГКБ 24" : "ГКБ 24 (" + (slots.length + 1) + ")");
@@ -398,8 +398,8 @@
     slots.forEach(function (nm, i) {
       if (w0.photos[i]) return;
       var dd = dl.filter(function (d) { return d.name === nm; })[0], docsIn = list.filter(function (d) { return d.dept === nm; }).map(function (d) { return d.p.short; });
-      need.push({ kind: "photo", who: nm, slot: "dept", text: /^ГКБ 24/.test(nm) ? "Фото больницы для слайда «Отделения» (ячейка " + (i + 1) + ")" :
-        "Фото для слайда «Отделения»: " + nm + (dd ? " (" + (i + 1) + "-е по благодарностям, " + dd.n + ")" : "") + " — фото отделения или врачей отделения" + (docsIn.length ? " (" + docsIn.slice(0, 3).join(", ") + ")" : "") + ". Сохранится для следующих недель" });
+      need.push({ kind: "photo", who: nm, slot: "dept", text: /^ГКБ 24/.test(nm) ? "Фото больницы для слайда «Отделения» (ячейка " + (i + 1) + ", каждую неделю — новое)" :
+        "Фото для слайда «Отделения»: " + nm + (dd ? " (" + (i + 1) + "-е по благодарностям, " + dd.n + ")" : "") + " — фото отделения или врачей отделения" + (docsIn.length ? " (" + docsIn.slice(0, 3).join(", ") + ")" : "") + ". Каждую неделю — новые фото" });
     });
 
     // год

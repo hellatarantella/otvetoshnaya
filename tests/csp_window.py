@@ -45,7 +45,7 @@ async def main():
           const c = document.createElement('canvas'); c.width = 400; c.height = 300; const g = c.getContext('2d'); g.fillStyle = '#7a9cc6'; g.fillRect(0, 0, 400, 300);
           const src = c.toDataURL('image/jpeg', 0.8);
           for (const [key, kind] of [['Белкина Анна Петровна','face'],['Белкина Анна Петровна','tall'],['Соколов Иван Ильич','tall'],['Хирургия','dept'],['Урология','dept'],['ГКБ 24','dept']])
-            await db.collection('deckPhotos').doc(kind + '_' + key.replace(/\\s+/g, '_')).set({ key, kind, src, at: '2026-10-27' });
+            await db.collection('deckPhotos').doc(kind + '_' + key.replace(/\\s+/g, '_')).set({ key, kind, week: kind === 'dept' ? '2026-10-23' : '', src, at: '2026-10-27' });
         }""", [FR, FB])
         await pg.evaluate("window.__otvShowTab('deckw')"); await pg.wait_for_timeout(500)
         await pg.evaluate("window.__otvDeckUi.rebuild()"); await pg.wait_for_timeout(1500)

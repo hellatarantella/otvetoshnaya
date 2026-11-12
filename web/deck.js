@@ -215,7 +215,9 @@
       // читаем слева направо: левая колонка сверху вниз, потом правая (по убыванию, как в списке)
       var half = Math.ceil(rows.length / 2);
       for (var k = 0; k < half; k++) { list.appendChild(rows[k]); if (rows[k + half]) list.appendChild(rows[k + half]); }
-      rows.forEach(function (r) { r.style.gridTemplateColumns = "minmax(0px, 1fr) auto"; r.style.gap = "10px"; var b = r.children[1] && r.children[1].children[0]; if (b) b.style.width = "36px"; var p = r.querySelector("p"); if (p) p.style.whiteSpace = "normal"; });
+      rows.forEach(function (r) { r.style.gridTemplateColumns = "minmax(0px, 1fr) auto"; r.style.gap = "10px"; var b = r.children[1] && r.children[1].children[0]; if (b) b.style.width = "36px"; var p = r.querySelector("p"); if (p) p.style.whiteSpace = "normal";
+        // 12.11: «не ровно стоят кубики» — число одной ширины («1» и «2» разной ширины сдвигали кубик), кубики в колонке на одной линии
+        var num = r.children[1] && r.children[1].children[1]; if (num) { num.style.width = "1.3em"; num.style.flex = "none"; num.style.textAlign = "left"; } });
       i = 0; setRows.apply(null, steps[0]);
       while (content() > avail + 1 && ++i < steps.length) setRows.apply(null, steps[i]);
     }

@@ -42,7 +42,7 @@ async def main():
           const src = c.toDataURL('image/jpeg', 0.8), put = (key, kind, weekly) => db.collection('deckPhotos').doc(kind + '_' + key.replace(/\\s+/g, '_')).set({ key, kind, week: weekly ? wk : '', src });
           for (const n of st.res.need.filter(n => n.kind === 'photo')) {
             const kind = n.slot === 'cover' ? 'cover' : n.slot === 'end' ? 'end' : n.slot === 'dept' ? 'dept' : n.tall ? 'tall' : 'face';
-            await put(n.who, kind, false);
+            await put(n.who, kind, kind === 'dept');
           }
         }""")
         await pg.wait_for_timeout(1500)
@@ -73,8 +73,8 @@ async def main():
           const st = window.__otvDeckUi._state();
           return { week: st.cur.data.start, need: st.res.need.map(n => n.who), slots: st.res.D.where.slots, cover: !!st.res.D.photos.cover };
         }""")
-        ok5 = s3['week'] == '2026-10-30' and s3['cover'] and 'Обложка' not in s3['need'] and not any(x in s3['need'] for x in s3['slots']) and s3['slots'][0] == 'Хирургия'
-        print(('OK  ' if ok5 else 'FAIL') + ' следующая неделя: обложка и фото отделений (по названию) подставляются сами', s3 if not ok5 else '')
+        ok5 = s3['week'] == '2026-10-30' and s3['cover'] and 'Обложка' not in s3['need'] and all(x in s3['need'] for x in s3['slots']) and s3['slots'][0] == 'Хирургия'
+        print(('OK  ' if ok5 else 'FAIL') + ' следующая неделя: обложка подставляется сама, фото отделений программа просит новые (12.11: «на 5 слайде всегда новые фото»)', s3 if not ok5 else '')
         await pg.evaluate("async () => { const sel = document.querySelector('.deck-ui select'); sel.value = [...sel.options].find(o => o.textContent.includes('23.10')).value; sel.dispatchEvent(new Event('change')); await new Promise(r => setTimeout(r, 1500)); }")
         await pg.wait_for_timeout(1500)
         await pg.click("text=Скачать PDF"); await pg.wait_for_function("(window.__demoFiles||[]).length >= 1", timeout=90000)

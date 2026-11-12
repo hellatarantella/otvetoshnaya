@@ -68,7 +68,11 @@ async def main():
         L, Rr = oo['pos'][:half], oo['pos'][half:]
         ok4 = oo['cols'] == '2' and len(set(x for x, _ in L)) == 1 and len(set(x for x, _ in Rr)) == 1 and L[0][0] < Rr[0][0] and all(L[i][1] < L[i + 1][1] for i in range(len(L) - 1)) and all(Rr[i][1] < Rr[i + 1][1] for i in range(len(Rr) - 1))
         print(('OK  ' if ok4 else 'FAIL') + ' «Отделения», две колонки: сначала левая сверху вниз, потом правая', oo if not ok4 else '')
-        ok3 = not errs and ok4
+        cb = await pg.evaluate("""() => { const list = document.querySelector('.deck-slide-in section#where [data-fit="list"]'), rows = [...list.children].slice(1);
+          return { x: rows.map(r => Math.round(r.children[1].children[0].getBoundingClientRect().left)), w: rows.map(r => Math.round(r.children[1].children[1].getBoundingClientRect().width)), n: rows.map(r => r.children[1].children[1].textContent) }; }""")
+        ok5 = len(set(cb['x'])) <= 2 and len(set(cb['w'])) == 1
+        print(('OK  ' if ok5 else 'FAIL') + ' «Отделения», две колонки: кубики в каждой колонке стоят ровно (12.11)', cb if not ok5 else '')
+        ok3 = not errs and ok4 and ok5
         print(('OK  ' if ok3 else 'FAIL') + ' без ошибок на странице', errs[:3] if errs else '')
         await b.close(); print('ALL OK' if ok1 and ok2 and ok3 else 'SOME FAILED')
 asyncio.run(main())

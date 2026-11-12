@@ -28,5 +28,5 @@ async ([fr, fb]) => {
   const c = document.createElement('canvas'); c.width = 400; c.height = 300; const g = c.getContext('2d'); g.fillStyle = '#7a9cc6'; g.fillRect(0,0,400,300); g.fillStyle='#fff'; g.fillRect(150,80,100,120);
   const src = c.toDataURL('image/jpeg', 0.8);
   for (const k of staff.map(x=>x[0])) for (const kind of ['face','tall']) await db.collection('deckPhotos').doc(kind+'_'+k.replace(/\s+/g,'_')).set({ key: k, kind, src, at: '2026-10-27' });
-  for (const k of cats.concat(['ГКБ 24'])) await db.collection('deckPhotos').doc('dept_'+k.replace(/\s+/g,'_')).set({ key: k.replace(/^Отделение реанимации и интенсивной терапии №2$/,'ОРИТ №2').replace(/^Аллергология и иммунология$/,'Аллергология').replace(/^Ультразвуковая и функциональная диагностика$/,'УЗИ и функциональная диагностика').replace(/^Межокружное отделение рассеянного склероза$/,'МОРС'), kind: 'dept', src, at: '2026-10-27' });
+  for (const k of cats.concat(['ГКБ 24'])) await db.collection('deckPhotos').doc('dept_'+k.replace(/\s+/g,'_')).set({ key: k.replace(/^Отделение реанимации и интенсивной терапии №2$/,'ОРИТ №2').replace(/^Аллергология и иммунология$/,'Аллергология').replace(/^Ультразвуковая и функциональная диагностика$/,'УЗИ и функциональная диагностика').replace(/^Межокружное отделение рассеянного склероза$/,'МОРС'), kind: 'dept', week: '2026-10-23', src, at: '2026-10-27' });
 }

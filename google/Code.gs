@@ -44,10 +44,12 @@ function doPost(e) {
       return out({ ok: true, version: VERSION, state: state() });
     }
     if (!tok || tok !== given) return out({ ok: false, error: 'Нет доступа: подключите скрипт заново' });
-    var fn = ACTIONS[req.action];
-    if (!fn) return out({ ok: false, error: 'Неизвестное действие: ' + req.action });
+    var fn = ACTIONS[req.action], V = VERSION;
+    // 12.11: установлен этот файл, а не постоянный скрипт: если программа прислала более новую логику — работаем по ней
+    if (req.code) { try { var lib = (new Function(String(req.code) + '\nreturn { ACTIONS: ACTIONS, VERSION: VERSION };'))(); if (lib.VERSION > VERSION && lib.ACTIONS[req.action]) { fn = lib.ACTIONS[req.action]; V = lib.VERSION; } } catch (e0) {} }
+    if (!fn) return out({ ok: false, error: 'Неизвестное действие: ' + req.action + '. Обновите скрипт в Google: «Отчёты» → «Скопировать скрипт»' });
     var res = fn(req) || {};
-    res.ok = true; res.version = VERSION;
+    res.ok = true; res.version = V;
     return out(res);
   } catch (err) {
     return out({ ok: false, error: String(err && err.message || err) });

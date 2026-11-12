@@ -21,7 +21,8 @@
 
   /* ---------- данные ---------- */
   function weeks() { return K.list(snaps); }
-  function photoKey(k, kind) { return kind + "|" + k; }
+  // 12.11: фото слайда «Отделения» — каждую неделю новые: хранится за свою неделю, на следующей программа просит свежие (вёрстка та же)
+  function photoKey(k, kind) { return kind === "dept" ? kind + "|" + k + "|" + (cur ? pickId() : "") : kind + "|" + k; }
   function photoOf(k, kind, slot) {
     var p = photos[photoKey(k, kind)];
     // обложка и закрывающий слайд — фото утверждённых презентаций (как раньше); своё ставится только кнопкой «Заменить»
@@ -290,7 +291,7 @@
     wrap.append(f); return wrap;
   }
   function savePhoto(key, kind, data) {
-    var id = photoKey(key, kind), doc = { key: key, kind: kind, week: "", src: data, at: new Date().toISOString(), override: isFixed(kind) };
+    var id = photoKey(key, kind), doc = { key: key, kind: kind, week: kind === "dept" && cur ? pickId() : "", src: data, at: new Date().toISOString(), override: isFixed(kind) };
     photos[id] = doc;
     return db.collection("deckPhotos").doc(id.replace(/[^\wа-яё-]+/gi, "_")).set(doc).then(rebuild);
   }
@@ -523,7 +524,7 @@
     // 12.11: данные отчёта изменились — презентация пересобирается сама, даже если её вкладка закрыта
     window.addEventListener("otv-report-changed", function () { if (root) { clearTimeout(rbTimer); rbTimer = setTimeout(rebuild, 400); } });
   }
-  function photoKey2(v) { return v.kind + "|" + v.key; }
+  function photoKey2(v) { return v.kind === "dept" ? v.kind + "|" + v.key + "|" + (v.week || "") : v.kind + "|" + v.key; }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount();
   return { rebuild: function () { rebuild(); }, _state: function () { return { res: res, cur: cur, photos: photos, picks: picks, observers: observers.length, rebuilds: rebuild.count || 0 }; } };
   }
