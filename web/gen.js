@@ -282,6 +282,15 @@
       return x.charAt(0).toUpperCase() + x.slice(1);
     });
     if (!sents.length) return "";
+    // 13.11: «здесь отделение, а в ответе ничего» — на странице врача благодарят и персонал отделения: отвечаем и на это.
+    // Врачу со страницы ничего не «передаём» (его страница), а слова сотрудникам отделения — передаём
+    if (tone === "positive" && type === "doctor" && /(персонал|медсестр|медсёстр|сотрудник|коллектив|команд)\S*/i.test(s(it.review)) && /отделени|персонал|медсестр|медсёстр/i.test(s(it.review)) && !/отделени|сотрудник/i.test(sents.join(" "))) {
+      var Rr = window.__otvReports, dts = (Rr && Rr.textDepts ? Rr.textDepts(s(it.review)) : []).filter(function (d) { return DEPT_GEN[d]; });
+      var who2 = dts.length === 1 ? "сотрудникам " + DEPT_GEN[dts[0]] : /медсестр|медсёстр/i.test(s(it.review)) ? "медицинским сёстрам и всем сотрудникам отделения" : "сотрудникам отделения";
+      var line2 = "Ваши добрые слова обязательно передадим " + who2 + ".";
+      var endI = sents.length && /^Желаем/.test(sents[sents.length - 1]) ? sents.length - 1 : sents.length;
+      sents.splice(endI, 0, line2);
+    }
     if (sents.join(" ").length < 45) return "";
     if (tone === "negative" && type !== "question" && !/gkb24@|свяж|разбер/i.test(sents.join(" "))) {
       sents.push("Если хотите, чтобы мы разобрались подробнее, напишите нам на gkb24@zdrav.mos.ru с указанием даты и отделения.");
