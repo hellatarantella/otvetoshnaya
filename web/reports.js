@@ -160,6 +160,8 @@
       });
       return out;
     };
+    // похоже на сотрудника, но написано иначе (другое отчество, опечатка) — не вносим сами: в проверку «это он?»
+    var guess = function (said, p) { if (!p) return; found.guess = (found.guess || []).concat([{ said: said, p: p }]); open.push({ label: "в отзыве «" + said + "», в списке сотрудников есть " + p.short + " — имя написано иначе. Это он? Если да, впишите в графу «Врач»", list: [p], weak: true }); };
     var used = {};
     for (var i = 0; i < words.length; i++) {
       if (used[i]) continue;
@@ -170,9 +172,10 @@
         if (sc.length) {
           var full = sc.filter(function (x) { return x.name && nameOk(nx, x.name) && x.pat && patOk(nx2, x.pat); });
           if (full.length) { var f1 = oneOf(full); if (f1) addP(f1, "full"); else open.push({ label: w + " " + nx + " " + nx2, list: full }); used[i + 1] = used[i + 2] = 1; continue; }
-          // 13.11: «люди часто неверно называют сотрудников» — фамилия и имя совпали, отчество перепутано: это он, если такой один
+          // 13.11: «люди часто неверно называют сотрудников» — фамилия и имя совпали, отчество другое. Сами НЕ приписываем
+          // («это опасно: можно приписать отзыв врачу») — спрашиваем вас: «похоже на … — это он?»
           var sn = sc.filter(function (x) { return x.name && nameOk(nx, x.name); });
-          if (sn.length === 1 && !byName(nx, nx2).length) { addP(sn[0], "fuzzy"); used[i + 1] = used[i + 2] = 1; continue; }
+          if (sn.length === 1 && !byName(nx, nx2).length) { guess(w + " " + nx + " " + nx2, sn[0]); used[i + 1] = used[i + 2] = 1; continue; }
           if (byName(nx, nx2).length) { /* имя-отчество наше, фамилия другая — разберёт шаг «имя и отчество» */ }
           else if (SURLIKE.test(w)) { used[i + 1] = used[i + 2] = 1; open.push({ label: w + " " + nx + " " + nx2 + ": в списке с другим именем", list: sc, weak: true }); continue; }
         }
@@ -184,7 +187,7 @@
         if (!m.length) {   // опечатка в отчестве или имени («Александровне» / «Алексадровне», «Наталье» / «Натальи»): одна буква, и такой человек один
           var fz = idx.staff.filter(function (x) { return x.pat && x.name && nameOk(w, x.name) && lev(nx.replace(/(а|у|ем|ом|е|ой|ы|и|ою)$/, ""), yo(x.pat).replace(/а$/, "")) <= 1; });
           if (!fz.length) fz = idx.staff.filter(function (x) { return x.pat && x.name && patOk(nx, x.pat) && lev(w.replace(/(ой|ей|е|у|ю|и|ы|а|я)$/, ""), stemName(x.name)) <= 1; });
-          if (fz.length === 1 || (fz.length > 1 && fz.filter(function (x) { return x.doctor; }).length === 1)) m = fz;
+          if (fz.length === 1 || (fz.length > 1 && fz.filter(function (x) { return x.doctor; }).length === 1)) { guess(w + " " + nx, oneOf(fz)); used[i + 1] = 1; continue; }
         }
         if (w0 && SURLIKE.test(w0) && !bySurWord(w0).length) m = [];                  // подпись пациента: «Сычева Анастасия Владимировна»
         if (m.length) { var m1 = oneOf(m); if (m1) addP(m1, "name"); else open.push({ label: w + " " + nx, list: m }); }
@@ -197,7 +200,8 @@
         if (/врач|доктор|хирург|специалист|гинеколог|уролог|терапевт|невролог|кардиолог|проктолог|эндоскопист|медсестр|[А-ЯЕ]\.\s?[А-ЯЕ]\./.test(near0)) {
           var ws = stemSur(w.replace(/(у|ой|ым|ом|е|ою)$/, "")), cands = [];
           Object.keys(idx.bySur).forEach(function (sur) { if (sur.length >= 6 && lev(stemSur(sur), ws) === 1) cands = cands.concat(idx.bySur[sur]); });
-          if (cands.length) list = cands;
+          if (cands.length === 1 || (cands.length > 1 && cands.filter(function (x) { return x.doctor; }).length === 1)) { guess(w, oneOf(cands)); continue; }
+          if (cands.length) { open.push({ label: "в отзыве «" + w + "», в списке сотрудников есть " + cands.map(function (x) { return x.short; }).join(" и ") + " — фамилия написана иначе. Кто это? Впишите в графу «Врач»", list: cands, weak: true }); continue; }
         }
       }
       if (!list.length) continue;
@@ -296,7 +300,7 @@
     var people = findPeople(text, r.page || (mail && mail.page));
     if (plat === "ДокТу" && people.page404 && res.tone === "positive") { res.status = "excluded"; res.why = ["ДокТу: врача нет в списке врачей (правило 17)"]; return res; }
     if (people.page404) { dw.push("врача «" + people.page404 + "» нет в списке врачей"); }
-    if (people.ambiguous) { dw.push("не понял, кто из врачей: " + people.ambiguous.slice(0, 3).join(", ")); }
+    if (people.ambiguous) { var amb0 = people.ambiguous.filter(function (x) { return !/^в отзыве «/.test(x); }); if (amb0.length) dw.push("не понял, кто из врачей: " + amb0.slice(0, 3).join(", ")); people.ambiguous.filter(function (x) { return /^в отзыве «/.test(x); }).forEach(function (x) { dw.push(x); }); }
     var docs = people;
     var surCount = {};
     docs.forEach(function (x) { surCount[x.p.sur] = (idx.bySur[x.p.sur] || []).length; });
