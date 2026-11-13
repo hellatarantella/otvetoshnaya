@@ -1,0 +1,16 @@
+ok  tests/bridge.test.js
+ok  tests/collect_fallback.test.js
+ok  tests/compose_doctor.test.js
+ok  tests/compose_neg.test.js
+НЕ ПРОШЛА: tests/compose_occasions.test.js
+FAIL повод в ответе: Пришла к врачу по рекомендации знакомых, [0.48333333333333334,["Благодарим вас за тёплый отзыв. Рады, что вы остались довольны лечением. Ценим ваше доверие и всегда готовы помочь.","Спасибо за обратную связь и высокую оценку профессионализма наших сотрудников. Ценим ваше доверие и всегда готовы помочь.","Спасибо за такую высокую оценку. Приятно, что к нам приходят по рекомендации. Желаем здоровья и всего самого доброго."]]
+SOME FAILED
+ok  tests/compose_theme.test.js
+ok  tests/deck_rules.test.js
+ok  tests/gen_check.test.js
+ok  tests/google_script.test.js
+ok  tests/pub_guard.test.js
+ok  tests/report_rules.test.js
+ok  tests/runner.test.js
+ok  tests/speech.test.js
+ПРОВЕРКИ НЕ ПРОШЛИ: выпуск запрещён
