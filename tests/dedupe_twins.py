@@ -17,6 +17,16 @@ async def main():
           const a = (await db.collection('answers').doc('google-b2').get()).data(), k = (await db.collection('answers').doc('google-a1').get()).data(), g = (await db.collection('registry').doc('google-b2').get()).data();
           return { n, b2: a.status, a1: k.status, rep: g.report }; }""", T)
         res = [(r['b2'] == 'skip' and r['a1'] == 'approved' and r['rep'] == 'dup', 'уже записанный дубль: второй — «не отвечаем: дубль», первый остаётся, в отчёт дубль не идёт', r)]
+        # уже отмеченный дубль, стоящий в отчёте, не находится снова (раньше публикация зацикливалась на поиске дублей)
+        r2 = await pg.evaluate("""async () => { const db = await window.__otvRt.use('db'); await db.collection('registry').doc('google-b2').update({ report: 'positive', reportRef: 'Google!6' });
+          await new Promise(r => setTimeout(r, 300)); const n1 = await window.__otvDedupe(); await new Promise(r => setTimeout(r, 300)); const n2 = await window.__otvDedupe(); return { n1, n2 }; }""")
+        res.append((r2['n2'] == 0, 'повторный поиск дублей ничего не находит — публикация не зацикливается', r2))
+        # публикация идёт: одобренный ответ с «Опубликовать» уходит в работу, а не висит
+        r3 = await pg.evaluate("""async () => { const db = await window.__otvRt.use('db');
+          await db.collection('answers').doc('google-a1').update({ publishRequested: new Date().toISOString(), publishError: '' }); window.__otvPubNow();
+          for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 500)); const a = (await db.collection('answers').doc('google-a1').get()).data(); if (!a.publishRequested || a.status === 'published') return { done: true, a: [a.status, a.publishError] }; }
+          return { done: false }; }""")
+        res.append((r3['done'], 'после поиска дублей публикация запускается и доходит до площадки', r3))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         ok = True
         for good, name, info in res: print(('OK   ' if good else 'FAIL ') + name + ('' if good else '  ' + json.dumps(info, ensure_ascii=False))); ok = ok and good

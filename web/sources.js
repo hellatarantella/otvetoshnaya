@@ -1487,8 +1487,12 @@
   function runPub() {
     if (!db) return;
     if (pubBusy) { pubAgain = true; return; }
-    if (!runPub.dd) { runPub.dd = true; dedupeTwins().then(function (n) { runPub.dd = false; if (n) schedulePub(); else runPub2(); }, function () { runPub.dd = false; runPub2(); }); return; }   // дубль не публикуем дважды
-    runPub2();
+    // 13.11: дубли убираем перед публикацией — один раз, и публикация идёт в любом случае (раньше уже отмеченный дубль,
+    // стоящий в отчёте, находился снова и снова, и публикация зацикливалась на поиске дублей: «Публикуется» без конца)
+    if (runPub.dd) return;
+    runPub.dd = true;
+    var go2 = function () { runPub.dd = false; runPub2(); };
+    dedupeTwins().then(go2, go2);
   }
   function runPub2() {
     if (!db || pubBusy) return;
@@ -1544,7 +1548,7 @@
     if (!db || !window.__otvAll) return Promise.resolve(0);
     var reg = window.__otvAll("registry") || {}, ans = window.__otvAll("answers") || {}, nt = function (x) { return String(x || "").toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim(); };
     var groups = {};
-    Object.keys(reg).forEach(function (id) { var r = reg[id] || {}; if (!/^(Google|2ГИС)$/.test(r.platform) || r.report === "dup") return; var k = nt(r.fullText || r.text).slice(0, 80); if (k.length < 80) return; (groups[r.platform + "|" + k] = groups[r.platform + "|" + k] || []).push(id); });
+    Object.keys(reg).forEach(function (id) { var r = reg[id] || {}; if (!/^(Google|2ГИС)$/.test(r.platform) || r.report === "dup" || r.dupOf) return; var k = nt(r.fullText || r.text).slice(0, 80); if (k.length < 80) return; (groups[r.platform + "|" + k] = groups[r.platform + "|" + k] || []).push(id); });
     var jobs = [];
     Object.keys(groups).forEach(function (k) {
       var ids = groups[k]; if (ids.length < 2) return;
@@ -1553,7 +1557,7 @@
       var keep = ids[0];
       ids.slice(1).forEach(function (id) {
         var a = ans[id];
-        jobs.push(["registry", id, { report: (reg[id] || {}).reportRef ? (reg[id] || {}).report : "dup", reason: "дубль отзыва " + keep, updatedAt: nowIso() }]);
+        jobs.push(["registry", id, { report: (reg[id] || {}).reportRef ? (reg[id] || {}).report : "dup", dupOf: keep, reason: "дубль отзыва " + keep, updatedAt: nowIso() }]);
         if (a && a.status !== "published") jobs.push(["answers", id, { status: "skip", publishRequested: "", note: "дубль: тот же отзыв, что " + keep + " — отвечаем там" }]);
         jlog("дубли: " + id + " — тот же отзыв, что " + keep + "; оставлен " + keep);
       });
