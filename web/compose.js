@@ -231,7 +231,7 @@
   }
   function persLine(c, rnd) {
     var pp = (c.pers || []).filter(function (p) { return /^pp_/.test(p.id); });
-    if (!pp.length || rnd() > 0.85) return null;
+    if (!pp.length || rnd() > 0.93) return null;   // повод из отзыва — почти всегда в ответе (13.11)
     var p = pp[Math.floor(rnd() * pp.length)]; return [p.id, p.lines[Math.floor(rnd() * p.lines.length)]];
   }
   // второй повод для подробного отзыва: подробный отзыв — развёрнутый ответ (ваше правило), без повтора первого повода

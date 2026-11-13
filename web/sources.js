@@ -1286,13 +1286,18 @@
       if (!card) await sleep(700);
     }
     if (!card) throw new Error('не нашла этот отзыв на странице');
-    const replyBtn = el => [...el.querySelectorAll('button,[role=button],a,span')].find(e => e.children.length < 3 && /^Ответить$/i.test((e.textContent || '').trim()));
+    // 13.11: в Google кнопка «Ответить» — с иконкой и вложенными блоками, иногда только с подписью aria-label
+    const isReply = e => { const tx = (e.textContent || '').trim(), al = (e.getAttribute && e.getAttribute('aria-label')) || ''; return (e.children.length < 6 && /^Ответить( на отзыв)?$/i.test(tx)) || /^Ответить( на отзыв)?/i.test(al); };
+    const replyBtn = el => [...el.querySelectorAll('button,[role=button],a,span')].find(isReply);
+    const replyCount = el => [...el.querySelectorAll('button,[role=button],a')].filter(isReply).length;
     // уже отвеченный отзыв не трогаем
     if (cfg.answered && cfg.answered.test(card.innerText)) return { already: true };
     // поле ответа ищем только внутри этого отзыва: подниматься выше можно, пока в блоке нет других отзывов
     const own = card;
     const others = el => [...el.querySelectorAll(cfg.card)].some(o => o !== own && !own.contains(o) && !o.contains(own));
-    for (let i = 0; i < 6 && card.parentElement && !card.querySelector('textarea') && !replyBtn(card) && !others(card.parentElement); i++) card = card.parentElement;
+    // у Google и 2ГИС блок отзыва — просто div: «другие отзывы» внутри родителя узнаём по второй кнопке «Ответить», а не по любому div
+    const generic = cfg.card === 'div';
+    for (let i = 0; i < (generic ? 14 : 6) && card.parentElement && !card.querySelector('textarea') && !replyBtn(card) && (generic ? replyCount(card.parentElement) <= 1 && !(head.length >= 10 && [...card.parentElement.querySelectorAll('div')].filter(d => d !== own && !own.contains(d) && !d.contains(own) && norm(d.innerText).length > 60 && !norm(d.innerText).includes(head.slice(0, 30))).some(d => /\d{1,2} (янв|фев|мар|апр|мая|июн|июл|авг|сен|окт|ноя|дек)|назад/.test(norm(d.innerText)) && replyBtn(d))) : !others(card.parentElement)); i++) card = card.parentElement;
     if (cfg.answered && cfg.answered.test(card.innerText)) return { already: true };
     if (!card.querySelector('textarea') && !replyBtn(card)) throw new Error('у этого отзыва нет кнопки «Ответить»: возможно, ответ уже есть или на модерации. Проверьте вручную');
     let ta = card.querySelector('textarea');
@@ -1302,7 +1307,7 @@
     }
     if (!ta) throw new Error('не нашла поле ответа');
     // поле ответа должно принадлежать именно этому отзыву
-    const holder = ta.closest(cfg.card);
+    const holder = generic ? (card.contains(ta) ? null : ta) : ta.closest(cfg.card);   // у div-разметки: поле должно быть внутри найденного блока отзыва
     if ((holder && holder !== own && !own.contains(holder) && !holder.contains(own)) || (head.length >= 10 && !norm(card.innerText).includes(head))) throw new Error('поле ответа относится к другому отзыву. Опубликуйте вручную');
     const win = ta.ownerDocument.defaultView;
     const setter = Object.getOwnPropertyDescriptor(win.HTMLTextAreaElement.prototype, 'value').set;
