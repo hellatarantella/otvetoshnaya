@@ -113,5 +113,35 @@
     });
     return out;
   }
-  window.__otvLibrary = { pick: pick, sits: sits, all: L };
+  /* 13.11: «мои правки должны учитываться и идти в дело». Ваши исправленные и согласованные ответы — тоже целые ответы библиотеки:
+     для похожего отзыва (та же страница, та же ситуация, похожая длина) они идут выше общих. Имена и «передадим…» из них
+     убираем (программа поставит свои — из нового отзыва), а повтор на той же странице не даёт правило «не повторять три предыдущих» */
+  var NAME = /[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]+(?:вн|вич|ичн)[а-яё]{0,3}|[А-ЯЁ][а-яё]+ [А-ЯЁ]\.\s?[А-ЯЁ]\./;
+  // предложение про частности старого отзыва («операция на колене», «роды») в новый ответ не берём, если в новом отзыве этого нет
+  function alien(sent, oldRv, newRv) {
+    var st = function (w) { return w.toLowerCase().replace(/ё/g, "е").slice(0, 5); }, nw = {};
+    (newRv.match(/[А-Яа-яЁё]{5,}/g) || []).forEach(function (w) { nw[st(w)] = 1; });
+    var ol = {}; (oldRv.match(/[А-Яа-яЁё]{7,}/g) || []).forEach(function (w) { ol[st(w)] = 1; });
+    return (sent.match(/[А-Яа-яЁё]{7,}/g) || []).some(function (w) { var k = st(w); return ol[k] && !nw[k]; });
+  }
+  function mine(it, type) {
+    var all = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("answers")) || {}, out = [];
+    var page = type === "doctor" ? "d" : "h", t = String(it.review || ""), S = sits(t), ln = lenOf(t.length), own = t.replace(/\s+/g, " ").slice(0, 60);
+    Object.keys(all).forEach(function (id) {
+      var a = all[id]; if (!a || !a.edited || !(a.status === "approved" || a.status === "published") || a.kind === "appeal" || a.kind === "question" || a.tone === "negative") return;
+      if (/врача/i.test(String(a.page || "")) !== (page === "d")) return;
+      var rv = String(a.review || ""); if (rv.replace(/\s+/g, " ").slice(0, 60) === own) return;
+      if (/gkb24@|разобрат|свяжемся|напишите/i.test(String(a.answer || ""))) return;   // ответы на жалобы — не сюда
+      var body = String(a.answer || "").replace(/^\s*Здравствуйте[^\n]*\n?/, "").replace(/\n?\s*С уважением[\s\S]*$/, "").trim();
+      var ss = (body.match(/[^.!?]+[.!?]+/g) || []).map(function (x) { return x.trim(); }).filter(function (x) { return x && !NAME.test(x) && !/передад|переда[её]м/i.test(x) && !alien(x, rv, t); });
+      if (ss.length < 2) return;
+      var aS = sits(rv), share = aS.filter(function (x) { return S.indexOf(x) >= 0; }).length;
+      if (aS.indexOf("fam") >= 0 && S.indexOf("fam") < 0 && /близки/.test(body)) return;
+      var aln = lenOf(rv.length), lenOk = aln === ln ? 0.4 : (Math.abs("sml".indexOf(aln) - "sml".indexOf(ln)) === 1 ? 0 : -0.8);
+      out.push({ key: "my:" + id, raw: ss.join(" "), score: 1.7 + share * 0.3 + lenOk + (a.status === "published" ? 0.1 : 0) });
+    });
+    return out.sort(function (x, y) { return y.score - x.score; }).slice(0, 12);
+  }
+  function pickAll(it, type) { return pick(it, type).concat(mine(it, type)); }
+  window.__otvLibrary = { pick: pickAll, lib: pick, mine: mine, sits: sits, all: L };
 })();

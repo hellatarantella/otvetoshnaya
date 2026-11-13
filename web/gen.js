@@ -150,7 +150,7 @@
     var cats = [];
     found.forEach(function (x) {
       var p = x.p; if (!p || !p.name || !p.pat) return;
-      if (out.names.length < 3) out.names.push(dat(p.name, p.pat));
+      if (out.names.length < 6) out.names.push(dat(p.name, p.pat));   // 13.11: «опять не все имена» — благодарят четверых и больше
       var c = R.catOf(p); if (c && c.cat && c.sure && DEPT_GEN[c.cat] && cats.indexOf(c.cat) < 0) cats.push(c.cat);
     });
     var main = cats.filter(function (c) { return !/Анестезиология|реанимации|Приёмное|Лучевая|Ультразвуковая/.test(c); });
@@ -179,7 +179,7 @@
     // 13.11: имя-отчество из самого отзыва («хирургу Татьяне Ильиничне»), если по «Списку врачей» никого не нашли
     if (!names.length) { var dn0 = dativeName(rv0); if (dn0) names.push(dn0); }
     // медсёстры и весь персонал, которых благодарят в отзыве, — в ту же фразу (раньше отдельной фразой «передадим… медсёстрам» и повтор «передадим»)
-    var nurses = /медсестр|медсёстр|медицинск\S* с[её]стр|медбрат|сестрички/i.test(rv0), allStaff = /всему персоналу|всем сотрудникам|всему коллективу|всей команде|всем,? кто/i.test(rv0);
+    var nurses = /медсестрам|медсёстрам|медсестры|медсёстры|медсестер|медсестёр|медицинским с[её]страм|медицинских с[её]стер|медперсонал|сестрички|сестричкам/i.test(rv0), allStaff = /всему персоналу|всем сотрудникам|всему коллективу|всей команде|всем,? кто/i.test(rv0);
     var extra = (rv0.match(/[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]+(?:вне|вичу|ичне|ьичу)\b/g) || []).filter(function (x, i, a) { return a.indexOf(x) === i; }).length > names.length && names.length;   // назвали ещё кого-то не из списка
     var tail = [];
     if (nurses) tail.push("медицинским сёстрам");

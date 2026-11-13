@@ -70,6 +70,7 @@
   }
   function yo(x) { return s(x).replace(/ё/g, "е").replace(/Ё/g, "Е"); }
   function stemSur(x) { x = yo(x); var y = x.replace(/(ий|ый|ой|ая|яя|а|я|ь)$/, ""); return y.length >= 4 ? y : x; }
+  function lev(a, b) { a = yo(a).toLowerCase(); b = yo(b).toLowerCase(); if (Math.abs(a.length - b.length) > 2) return 9; var d = []; for (var i = 0; i <= a.length; i++) { d[i] = [i]; for (var j = 1; j <= b.length; j++) d[i][j] = i ? Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)) : j; } return d[a.length][b.length]; }
   function stemName(x) { x = yo(x); var y = x.replace(/(ия|ья|ь|й|а|я)$/, ""); return y.length >= 3 ? y : x; }
   function buildIndex(r) {
     var dep = {}, exc = {}, bySur = {};
@@ -143,7 +144,7 @@
     // имена, написанные целиком заглавными («КАРАПЕТЯН ЭЛЕН АРМАНОВНЫ»), приводим к обычному виду
     var ytx = yo(text).replace(/[А-ЯЕ]{2,}(?:-[А-ЯЕ]{2,})?/g, function (w) { return w.split("-").map(function (x) { return x.charAt(0) + x.slice(1).toLowerCase(); }).join("-"); }), words = [], adj = [], re = /[А-ЯЕ][а-яе]+(?:-[А-ЯЕ][а-яе]+)?/g, mm, prevEnd = -1;
     while ((mm = re.exec(ytx))) { adj.push(prevEnd >= 0 && /^\s+$/.test(ytx.slice(prevEnd, mm.index))); words.push(mm[0]); prevEnd = mm.index + mm[0].length; }
-    var isPat = function (w) { return /(вич|вн|ичн)[а-я]{0,3}$/.test(w); };
+    var isPat = function (w) { return /(вич|веч|вн|ичн)[а-я]{0,3}$/.test(w); };   // «Павловечу» — опечатка
     var NAME_END = /^(|а|я|ы|и|е|у|ю|ой|ей|ем|ом|ий|ия|ию|ии|ией|ья|ье|ью|ьи|ьей)$/;   // «Наталией», «Марией»
     var nameOk = function (w, name) { var st = stemName(name); return w.indexOf(st) === 0 && NAME_END.test(w.slice(st.length)); };
     var patOk = function (w, pat) { var st = yo(pat).replace(/а$/, ""); return w.indexOf(st) === 0 && /^(|а|у|ем|ом|е|ой|ы|и|ою)$/.test(w.slice(st.length)); };
@@ -169,6 +170,9 @@
         if (sc.length) {
           var full = sc.filter(function (x) { return x.name && nameOk(nx, x.name) && x.pat && patOk(nx2, x.pat); });
           if (full.length) { var f1 = oneOf(full); if (f1) addP(f1, "full"); else open.push({ label: w + " " + nx + " " + nx2, list: full }); used[i + 1] = used[i + 2] = 1; continue; }
+          // 13.11: «люди часто неверно называют сотрудников» — фамилия и имя совпали, отчество перепутано: это он, если такой один
+          var sn = sc.filter(function (x) { return x.name && nameOk(nx, x.name); });
+          if (sn.length === 1 && !byName(nx, nx2).length) { addP(sn[0], "fuzzy"); used[i + 1] = used[i + 2] = 1; continue; }
           if (byName(nx, nx2).length) { /* имя-отчество наше, фамилия другая — разберёт шаг «имя и отчество» */ }
           else if (SURLIKE.test(w)) { used[i + 1] = used[i + 2] = 1; open.push({ label: w + " " + nx + " " + nx2 + ": в списке с другим именем", list: sc, weak: true }); continue; }
         }
@@ -177,12 +181,25 @@
       if (nx && isPat(nx)) {
         var w0 = adj[i] ? words[i - 1] || "" : "";
         var m = byName(w, nx);
+        if (!m.length) {   // опечатка в отчестве или имени («Александровне» / «Алексадровне», «Наталье» / «Натальи»): одна буква, и такой человек один
+          var fz = idx.staff.filter(function (x) { return x.pat && x.name && nameOk(w, x.name) && lev(nx.replace(/(а|у|ем|ом|е|ой|ы|и|ою)$/, ""), yo(x.pat).replace(/а$/, "")) <= 1; });
+          if (!fz.length) fz = idx.staff.filter(function (x) { return x.pat && x.name && patOk(nx, x.pat) && lev(w.replace(/(ой|ей|е|у|ю|и|ы|а|я)$/, ""), stemName(x.name)) <= 1; });
+          if (fz.length === 1 || (fz.length > 1 && fz.filter(function (x) { return x.doctor; }).length === 1)) m = fz;
+        }
         if (w0 && SURLIKE.test(w0) && !bySurWord(w0).length) m = [];                  // подпись пациента: «Сычева Анастасия Владимировна»
         if (m.length) { var m1 = oneOf(m); if (m1) addP(m1, "name"); else open.push({ label: w + " " + nx, list: m }); }
         used[i + 1] = 1; continue;
       }
       // фамилия
       var list = bySurWord(w);
+      if (!list.length && SURLIKE.test(w) && w.length >= 6) {   // опечатка в фамилии: «Шахбозова» → «Шахбазова» (одна буква, только у длинных фамилий и рядом со словом «врач» или инициалами)
+        var near0 = ytx.slice(Math.max(0, ytx.indexOf(w) - 40), ytx.indexOf(w) + w.length + 12);
+        if (/врач|доктор|хирург|специалист|гинеколог|уролог|терапевт|невролог|кардиолог|проктолог|эндоскопист|медсестр|[А-ЯЕ]\.\s?[А-ЯЕ]\./.test(near0)) {
+          var ws = stemSur(w.replace(/(у|ой|ым|ом|е|ою)$/, "")), cands = [];
+          Object.keys(idx.bySur).forEach(function (sur) { if (sur.length >= 6 && lev(stemSur(sur), ws) === 1) cands = cands.concat(idx.bySur[sur]); });
+          if (cands.length) list = cands;
+        }
+      }
       if (!list.length) continue;
       var at = ytx.indexOf(w), after = ytx.slice(at + w.length, at + w.length + 8);
       var ini = /^\s*([А-ЯЕ])\.?\s?([А-ЯЕ])(\.|[^а-яе])/.exec(after);
