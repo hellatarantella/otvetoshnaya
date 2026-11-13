@@ -175,7 +175,18 @@
   ];
   var TEAM = ["всей команде ", "коллективу ", "сотрудникам "];
   function thanksLine(it, seed, rest) {
-    var pp = people(it), who = pp.names.length ? pp.names.slice(0, -1).join(", ") + (pp.names.length > 1 ? " и " : "") + pp.names[pp.names.length - 1] : "";
+    var pp = people(it), rv0 = s(it.review), names = pp.names.slice();
+    // 13.11: имя-отчество из самого отзыва («хирургу Татьяне Ильиничне»), если по «Списку врачей» никого не нашли
+    if (!names.length) { var dn0 = dativeName(rv0); if (dn0) names.push(dn0); }
+    // медсёстры и весь персонал, которых благодарят в отзыве, — в ту же фразу (раньше отдельной фразой «передадим… медсёстрам» и повтор «передадим»)
+    var nurses = /медсестр|медсёстр|медицинск\S* с[её]стр|медбрат|сестрички/i.test(rv0), allStaff = /всему персоналу|всем сотрудникам|всему коллективу|всей команде|всем,? кто/i.test(rv0);
+    var extra = (rv0.match(/[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]+(?:вне|вичу|ичне|ьичу)\b/g) || []).filter(function (x, i, a) { return a.indexOf(x) === i; }).length > names.length && names.length;   // назвали ещё кого-то не из списка
+    var tail = [];
+    if (nurses) tail.push("медицинским сёстрам");
+    if (extra) tail.push("всем, кого вы назвали в отзыве");
+    else if (allStaff && !pp.dept) tail.push("всем сотрудникам");
+    var all = names.concat(tail), who = all.length ? all.slice(0, -1).join(", ") + (all.length > 1 ? " и " : "") + all[all.length - 1] : "";
+    if (tail.length) pp = { names: names, dept: "" };   // «…и медицинским сёстрам и всей команде отделения» — слишком длинно
     if (!who && !pp.dept) return "";
     var h = 0, k6 = function (t) { var o = {}; (norm(t).match(/[а-яa-z]{5,}/g) || []).forEach(function (w) { o[w.slice(0, 5)] = 1; }); return o; };
     for (var i = 0; i < s(seed).length; i++) h = (h * 31 + s(seed).charCodeAt(i)) | 0;
@@ -184,7 +195,8 @@
     (norm(rest).match(/[а-я]{4,}/g) || []).forEach(function (x) { if (!/^(ваш|наш|всег|кото|чтоб|этог)/.test(x)) R4[x.slice(0, 4)] = 1; });
     for (var j = 0; j < THX.length * TEAM.length; j++) {
       var team = pp.dept ? TEAM[((h >> 3) + Math.floor(j / THX.length)) % TEAM.length] + DEPT_GEN[pp.dept] : "";
-      var line = THX[(h + j) % THX.length](who && team ? who + " и " + team : who || team), L = k6(line), n = 0;
+      var whoT = who && team ? (all.length > 1 ? all.join(", ") : who) + " и " + team : who || team;   // «Павлу Анатольевичу, Ирине Викторовне и всей команде…», без двух «и» подряд
+      var line = THX[(h + j) % THX.length](whoT), L = k6(line), n = 0;
       for (var w in L) if (R[w]) n++;
       // 4 буквы — как проверка повторов в карточке («благодарим» / «благодарность», «сотрудников» / «сотрудникам»)
       (norm(line).match(/[а-я]{4,}/g) || []).forEach(function (x) { if (R4[x.slice(0, 4)]) n += 0.5; });
@@ -226,8 +238,20 @@
       var thx = thanksLine(it, text, gen0.join(" "));
       if (thx) {
         sents = gen0;
-        var at = sents.length && /спасибо|благодар/i.test(sents[0]) ? 1 : 0;
+        if (/с[её]страм/.test(thx)) sents = sents.filter(function (x) { return !/медс[её]стр/i.test(x); });   // медсёстры уже в фразе «передадим…»
+        // ответ начинается с благодарности за отзыв, а не с «Передадим…» (13.11)
+        if (!sents.length || !/^(Спасибо|Благодарим|Большое спасибо|Огромное спасибо)/i.test(sents[0])) sents.unshift(/т[её]пл|благодар|спасибо/i.test(s(it.review)) ? "Спасибо за тёплый отзыв." : "Спасибо за отзыв.");
+        var at = /спасибо|благодар/i.test(sents[0]) ? 1 : 0;
         sents.splice(at, 0, thx);
+        // подробный отзыв — развёрнутый ответ (ваше правило): фразы «передадим…» из шаблона ушли — добавляем фразу из ваших шаблонов
+        var rl = s(it.review).length, need = rl > 300 ? 4 : rl > 180 ? 3 : 0;
+        var FILL = ["Важно и приятно получать такие отзывы.", "Мы очень рады вашей обратной связи.", "Рады, что работа наших сотрудников оставила у вас положительное впечатление.", "Мы стараемся, чтобы пациентам было у нас комфортно.", "Ценим ваше доверие и всегда готовы помочь."];
+        for (var fi = 0; sents.length < need && fi < FILL.length * 2; fi++) {
+          var f = FILL[(s(text).length + fi) % FILL.length], low = sents.join(" ").toLowerCase();
+          if (low.indexOf(f.toLowerCase().slice(0, 18)) >= 0 || (/^Ценим/.test(f) && /ценим/.test(low)) || (/рады/i.test(f) && /\bрады\b/.test(low) && fi < FILL.length)) continue;
+          var end = sents.length && /^Желаем|^Ценим ваше доверие|^Всегда готовы/i.test(sents[sents.length - 1]) ? sents.length - 1 : sents.length;
+          sents.splice(end, 0, f);
+        }
       }
     }
     function keepSent(x) {
@@ -243,6 +267,7 @@
       if (/Департамент|ДЗМ\b|dzdmos|@dzm/i.test(x)) return false;                     // п. 3: ДЗМ без необходимости не упоминаем
       if (/стало легче|восстановлен|выздоровлен|операция прошла|лечение помогло/i.test(x)) return false; // п. 8: не лезем в лечение
       if (/особенно ценим|то, что мы ценим|очень рады, что это заметно/i.test(x)) return false;        // п. 9, 13
+      if (/^Важно получать такие|в надёжных руках|ради чего мы работаем|лучшая поддержка для команды|радостно читать|понятен каждый шаг|гордимся/i.test(x)) return false;   // 13.11: «смотри какую хрень он пишет» — роботизированные фразы не берём ни из базы, ни из обучения
       if (/столица здоровья/i.test(x) && !/област|регион|подмосков|иногород|из другого город/i.test(s(it.review))) return false; // проект — не для москвичей
       if (type === "doctor" && /нам очень приятно их получать|для нас они очень много значат|наш\S* сотрудник/i.test(x)) return false;
       if (/медицинск\S* центр|клиник/i.test(x)) return false;                         // мы — больница
@@ -397,7 +422,8 @@
      и его тон должен совпадать с отзывом (на жалобу не благодарим за «тёплые слова», на благодарность не «разбираемся в ситуации») */
   var THANKS_ONLY = /т[её]пл\S* слов|высок\S* оценк|спасибо за (добрые|т[её]плые|высокую)|благодарим за т[её]пл|передадим (ваши )?(слова )?благодарност/i;
   var COMPLAINT_ONLY = /разобраться в ситуации|разберёмся|сожалеем|прин(осим|ести) извинени|приносим извинения|ответственными подразделениями/i;
-  function stem(w, n) { return norm(w).slice(0, n); }
+  // основа слова без падежного окончания: «Нине» / «Нины» → «нин» (короткие имена раньше не совпадали — 13.11 ответ на отзыв о Ярцевой Нине Дмитриевне не собирался вовсе)
+  function stem(w, n) { var x = norm(w); return x.slice(0, Math.min(n, Math.max(3, x.length - 1))); }
   // «Антонова» в отзыве = «Владислава Игоревна» в ответе: по «Списку врачей» (фамилия в любом падеже)
   function staffNamed(raw, first, pat) {
     var R = window.__otvReports; if (!R || !R.person) return false;
@@ -432,6 +458,30 @@
   // Тексты, выданные за последние 30 минут любому отзыву, второй раз не выдаём
   var issued = [];
   function issuedRecently(b) { var t = Date.now() - 30 * 60000; issued = issued.filter(function (x) { return x.at > t; }); return issued.some(function (x) { return x.b === b; }); }
+  var BANW = /^Важно получать такие|в надёжных руках|ради чего мы работаем|лучшая поддержка для команды|радостно читать|понятен каждый шаг|гордимся|становиться лучше|особенно ценим/i;
+  function scrub(tx) {
+    var lines = s(tx).split("\n");
+    return lines.map(function (l, i) {
+      if (i === 0 && /^Здравствуйте/.test(l)) return l;
+      if (/^С уважением/.test(l)) return l;
+      var ss = l.match(/[^.!?]+[.!?]*/g) || [l]; var keep = ss.filter(function (x) { return !BANW.test(x.trim()); });
+      return keep.length ? keep.join("").replace(/^\s+/, "") : "";
+    }).filter(function (l, i) { return l !== "" || i === 0; }).join("\n");
+  }
+  // концовка благодарности (ваши правила): подробный отзыв — «Желаем здоровья и всего самого доброго.»; в отзыве семья — «…вам и вашим близким.»
+  var FAMR = /(^|[^а-яё])(мам[аеуы]|пап[аеуы]|муж[аеу]?|жен[аеуы]|сын[аеу]?|доч[ьи]|отц[аеу]|отец)([^а-яё]|$)|бабушк|дедушк|родствен|внучк|внук[аеу]?([^а-яё]|$)/i;
+  function closeFix(tx, it) {
+    var rv = s(it.review), fam = FAMR.test(rv), lines = s(tx).split("\n"), bi = -1;
+    for (var i = 0; i < lines.length; i++) if (i > 0 && !/^С уважением/.test(lines[i]) && lines[i].trim()) bi = i;
+    if (bi < 0) return tx;
+    var ss = lines[bi].match(/[^.!?]+[.!?]*/g) || [], li = ss.length - 1, last = (ss[li] || "").trim();
+    var W = fam ? "Желаем здоровья вам и вашим близким." : "Желаем здоровья и всего самого доброго.";
+    if (fam && /близким/.test(lines[bi])) return tx;
+    if (/^Желаем/.test(last)) { if (!fam) return tx; ss[li] = " " + W; }
+    else if (fam || rv.length > 250) { if (/^(Ценим ваше доверие|Всегда готовы|Будем рады помочь)/.test(last) && ss.length > 3) ss[li] = " " + W; else ss.push(" " + W); }
+    else return tx;
+    lines[bi] = ss.join("").trim(); return lines.join("\n");
+  }
   function answer(it, opts) {
     opts = opts || {};
     var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform, it.review), rs = recentSents(it.review);
@@ -450,6 +500,8 @@
       if (tx && L && L.rewrite) tx = L.rewrite(tx, lc);
       var SP = window.__otvSpeech;
       if (tx && SP) tx = SP.tidy(tx, L && L.favorites ? L.favorites(lc).map(function (r) { return r.phrase; }) : []);
+      if (tx) tx = scrub(tx);   // 13.11: обучение на правках не должно возвращать роботизированные фразы
+      if (tx && p.tone === "positive" && p.type !== "question") tx = closeFix(tx, it);
       // речь по Ильяхову и «ответ закрывает части отзыва» влияют на выбор варианта
       var sp = tx && SP ? SP.penalty(tx) + 0.8 * SP.covers(tx, it.review).length : 0;
       var stale = tx ? sentsOf(tx).reduce(function (a, x) { return a + Math.min(2, rs[x] || 0) * 0.25; }, 0) : 0;   // свежесть формулировок

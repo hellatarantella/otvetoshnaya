@@ -1325,13 +1325,24 @@
     const sleep = ms => new Promise(r => setTimeout(r, ms));
     const norm = s => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
     const SIGNED = /администрация 24 Московской больницы/;
-    const head = norm(review).replace(/[.…\s]+$/, '').slice(0, 40), sur = norm(surname);
-    let row = null;
+    // 13.11: текст собран с открытой страницы ДокТу, а в кабинете он может отличаться знаками («—» и «-», кавычки, переносы,
+    // обрезка «…»). Сравниваем только буквы и цифры; не нашлось на первой странице — листаем дальше
+    const lett = s => norm(s).replace(/[^а-яa-z0-9]/g, '');
+    const words = s => norm(s).replace(/[^а-яa-z0-9 ]/g, ' ').split(' ').filter(w => w.length > 3);
+    const head = lett(review).slice(0, 30), sur = norm(surname), W = words(review).slice(0, 14);
+    const like = x => { const tx = (x.querySelector('.commentTextElipsis') || x).innerText; if (lett(tx).includes(head)) return 2;
+      const ws = new Set(words(tx)); return W.length >= 5 && W.filter(w => ws.has(w)).length >= Math.ceil(W.length * 0.7) ? 1 : 0; };
+    let row = null, lastMore = 0, pages = 0;
     for (const t0 = Date.now(); Date.now() - t0 < 170000 && !row;) {   // кабинет ДокТу грузит сценарий до 2 минут (05.11): ждём список до 3 минут
       const rows = [...document.querySelectorAll('tr.table-row')].filter(x => x.querySelector('legend a'));
-      const m = rows.filter(x => (!sur || norm(x.querySelector('legend a').textContent).includes(sur)) && norm((x.querySelector('.commentTextElipsis') || x).innerText).includes(head));
-      if (m.length > 1) throw new Error('нашлось несколько похожих отзывов. Опубликуйте вручную');
+      const bySur = rows.filter(x => !sur || norm(x.querySelector('legend a').textContent).includes(sur));
+      let m = bySur.filter(x => like(x) === 2); if (!m.length) m = bySur.filter(x => like(x) === 1);
+      if (m.length > 1) { const un = m.filter(x => !SIGNED.test(x.textContent)); if (un.length === 1) m = un; else throw new Error('нашлось несколько похожих отзывов. Опубликуйте вручную'); }
       row = m[0] || null;
+      if (!row && rows.length && Date.now() - lastMore > 6000 && pages < 8) {
+        const more = [...document.querySelectorAll('button, a')].find(b => /^(Показать ещё|Показать еще|Загрузить ещё|Загрузить еще|Следующая|Далее|›|»|>)$/i.test((b.textContent || '').trim()) && b.offsetParent && !b.disabled);
+        if (more) { more.click(); pages++; lastMore = Date.now(); }
+      }
       if (!row) await sleep(700);
     }
     if (!row) throw new Error('не нашла этот отзыв в кабинете ДокТу');
