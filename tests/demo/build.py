@@ -13,7 +13,7 @@ def inline(name):
     assert tag in h, name
     js = open(root + name, encoding='utf-8').read().replace('</script', '<\\/script')
     h = h.replace(tag, '<script>\n' + js + '\n</script>')
-inline('runtime.js'); inline('speech.js'); inline('sources.js'); inline('kb.js'); inline('templates.js'); inline('judge.js'); inline('facts.js'); inline('compose.js'); inline('gen.js'); inline('model.js'); inline('gscode.js'); inline('reports.js')
+inline('runtime.js'); inline('speech.js'); inline('sources.js'); inline('kb.js'); inline('templates.js'); inline('judge.js'); inline('facts.js'); inline('compose.js'); inline('library.js'); inline('gen.js'); inline('model.js'); inline('gscode.js'); inline('reports.js')
 for n in ['learn.js', 'appeal.js', 'vendor/jspdf.umd.min.js', 'vendor/pptxgen.bundle.js', 'deck-assets.js', 'deck.js', 'deck-data.js', 'deck-export.js', 'deck-ui.js', 'deck-month.js', 'analytics.js', 'control.js', 'notify.js', 'sync.js', 'duty.js']: inline(n)
 h = h.replace('<head>', '<head>\n<script>\n' + stub + '\n</script>', 1)
 h = h.replace('window.claude', 'window.__otvRt')

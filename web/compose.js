@@ -246,6 +246,9 @@
   var FREE = /^(gkb24|zdrav)/;
   function k4(w) { w = w.toLowerCase().replace(/ё/g, "е"); if (/^так(ой|ая|ое|ие|ую|им|их|ими|ого|ому)$/.test(w)) return "такой"; return w.length >= 4 ? w.slice(0, 4) : null; }
   function repeats(text) {
+    // 13.11: «все ответы из одинаковых фраз» — две фразы с одного слова («Рады…», «Рады…»; «Спасибо…», «Спасибо…») в одном ответе не пускаем
+    var heads = (s(text).match(/[^.!?]+[.!?]*/g) || []).map(function (x) { return (x.trim().match(/^[А-Яа-яЁё]+/) || [""])[0].toLowerCase(); }).filter(function (w) { return /^(рады|спасибо|благодарим|приятно|важно|ценим|мы|желаем)$/.test(w); });
+    if (heads.some(function (w, i) { return heads.indexOf(w) !== i; })) return true;
     var S = s(text).split(/[.!?]+\s+/).filter(Boolean).map(function (x) {
       return (x.match(/[А-Яа-яЁё]+/g) || []).filter(function (w) { return !FUNC.test(w.toLowerCase()); }).map(k4).filter(Boolean);
     });
