@@ -347,6 +347,22 @@
     return out;
   }
   function sentsOf(t) { return (s(t).replace(/^Здравствуйте[^\n]*\n/, "").replace(SIGN, "").match(/[^.!?]+[.!?]*/g) || []).map(norm).filter(function (x) { return x.length > 12 && !COMMONS.test(x); }); }
+  // 13.11: «на странице больницы (ПроДокторов и других площадках) ответ не должен повторять предыдущие 3 ответа»:
+  // фразы трёх последних ответов на той же странице (кроме приветствия, подписи и пожелания) в новом ответе не повторяются
+  function prev3(it) {
+    var all = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("answers")) || {}, ok = norm(it.review).slice(0, 80);
+    var docPage = /врача/i.test(s(it.page)), list = [];
+    Object.keys(all).forEach(function (id) {
+      var a = all[id]; if (!a || !s(a.answer).trim() || s(a.platform) !== s(it.platform) || a.kind === "appeal") return;
+      if (norm(a.review).slice(0, 80) === ok) return;
+      if (docPage ? s(a.page) !== s(it.page) : /врача/i.test(s(a.page))) return;   // страница больницы — все ответы больнице; страница врача — ответы на ней
+      if (!(a.status === "published" || QUEUE.test(s(a.status)))) return;
+      list.push(a);
+    });
+    list.sort(function (x, y) { return s(y.publishedAt || y.decidedAt || y.date).localeCompare(s(x.publishedAt || x.decidedAt || x.date)); });
+    var out = {}; list.slice(0, 3).forEach(function (a) { sentsOf(a.answer).forEach(function (x) { if (!/^желаем/.test(x)) out[x] = 1; }); });
+    return out;
+  }
   function recentTexts(platform, own) {
     var all = ((window.__otvAllRO || window.__otvAll) && (window.__otvAllRO || window.__otvAll)("answers")) || {}, out = {}, ok = norm(own).slice(0, 80);
     Object.keys(all).forEach(function (id) {
@@ -485,6 +501,7 @@
   function answer(it, opts) {
     opts = opts || {};
     var p = pool(it), ex = {}, cur = norm(s(opts.current).replace(/^Здравствуйте[^\n]*\n/, "")), recent = recentTexts(it.platform, it.review), rs = recentSents(it.review);
+    var p3 = prev3(it);
     (opts.exclude || []).forEach(function (k) { ex[k] = 1; });
     // дорогая обработка (оформление, проверки, судья) — только для 80 лучших по предварительной оценке:
     // база ответов растёт, а остальные варианты всё равно не выигрывают
@@ -508,7 +525,8 @@
       var LN = window.__otvLint, lintBad = 0; if (tx && LN) { try { lintBad = LN({ page: it.page, kind: it.kind === "question" ? "question" : "", review: it.review }, tx).length; stale += 10 * lintBad; } catch (e) {} }
       if (tx && issuedRecently(norm(tx.replace(/^Здравствуйте[^\n]*\n/, "")))) stale += 4;   // этот текст только что получил другой отзыв
       var CP = window.__otvCompose; if (tx && CP && CP.repeats && CP.repeats(tx.replace(/^Здравствуйте[^\n]*\n/, "").replace(SIGN, ""))) stale += 1.5;   // одно слово в двух фразах
-      return { lint: lintBad, key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) - sp - stale };
+      var rep3 = tx ? sentsOf(tx).filter(function (x) { return p3[x]; }).length : 0;
+      return { rep3: rep3, lint: lintBad, key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) - sp - stale };
     }).filter(function (c) {
       if (!c.text) return false;
       var body = norm(c.text.replace(/^Здравствуйте[^\n]*\n/, ""));
@@ -516,6 +534,7 @@
       return body && body !== cur && !(cur && sim(body, cur) > 0.8) && !recent[body]; // правило 15: подряд одинаковых не публикуем
     }).sort(function (a, b) { return b.score - a.score; });
     // варианты, на которые ругается проверка текста, не предлагаем, пока есть чистые
+    var fresh3 = cands.filter(function (c) { return !c.rep3; }); if (fresh3.length) cands = fresh3;   // повтор фраз трёх предыдущих ответов на странице — только если иначе нечего предложить
     var cleanC = cands.filter(function (c) { return !c.lint; });
     if (cleanC.length || (opts.exclude && opts.exclude.length)) cands = cleanC;   // «ещё вариант» — только чистые; первый черновик — лучший из того, что есть
     // судья (учится на ваших выборах) переставляет первые 10 вариантов

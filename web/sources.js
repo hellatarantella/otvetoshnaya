@@ -984,8 +984,11 @@
       var t1 = nt(r.fullText || r.text), a1 = nt(r.author);
       // автор тот же; у старых записей Google вместо имени могла записаться строка «12 отзывов · 3 фото»
       var sameAu = au && a1 === au || /\d+ (отзыв|фото|review|photo)|местный эксперт|local guide/.test(a1 + " " + au);
+      var sameText = head.length >= 40 && t1.length >= 40 && (t1.slice(0, 60).indexOf(head.slice(0, 40)) === 0 || head.indexOf(t1.slice(0, 40)) === 0);
+      // 13.11: один отзыв Google записался дважды (у второй записи появилось имя автора и сдвинулась дата) — длинный одинаковый текст = тот же отзыв
+      if (sameText && head.length >= 80 && t1.slice(0, 80) === head.slice(0, 80)) return true;
       if (!sameAu || Number(r.rating) !== Number(it.rating)) return false;
-      if (head.length >= 40) return t1.length >= 40 && (t1.slice(0, 60).indexOf(head.slice(0, 40)) === 0 || head.indexOf(t1.slice(0, 40)) === 0);
+      if (head.length >= 40) return sameText;
       return !head && !t1 && au && a1 === au;
     });
     return hit.length === 1 ? hit[0] : "";
@@ -1335,6 +1338,8 @@
     let row = null, lastMore = 0, pages = 0;
     for (const t0 = Date.now(); Date.now() - t0 < 170000 && !row;) {   // кабинет ДокТу грузит сценарий до 2 минут (05.11): ждём список до 3 минут
       const rows = [...document.querySelectorAll('tr.table-row')].filter(x => x.querySelector('legend a'));
+      // 13.11: кабинет открылся страницей входа (сессия ДокТу истекла) — раньше ждали 3 минуты и писали «не нашла отзыв»
+      if (!rows.length && document.querySelector('input[type=password]') && Date.now() - t0 > 5000) throw new Error('нужен вход в кабинет ДокТу: «Источники» → ДокТу → «Войти» (вход для ответов), потом «Опубликовать» ещё раз');
       const bySur = rows.filter(x => !sur || norm(x.querySelector('legend a').textContent).includes(sur));
       let m = bySur.filter(x => like(x) === 2); if (!m.length) m = bySur.filter(x => like(x) === 1);
       if (m.length > 1) { const un = m.filter(x => !SIGNED.test(x.textContent)); if (un.length === 1) m = un; else throw new Error('нашлось несколько похожих отзывов. Опубликуйте вручную'); }
@@ -1361,9 +1366,19 @@
     const send = [...scope.querySelectorAll('button')].find(b => /^Отправить$/.test((b.textContent || '').trim()) && !b.disabled);
     if (!send) throw new Error('не нашла кнопку «Отправить»');
     send.click();
-    const mark = norm(text).slice(0, 40);
-    for (let i = 0; i < 20; i++) { await sleep(800); if (SIGNED.test(row.textContent) || norm(row.innerText).includes(mark)) return { ok: true }; }
-    throw new Error('ответ отправлен, но в кабинете не появился. Проверьте');
+    const mark = lett(text).slice(0, 40);
+    // 13.11: «ответ отправлен, но в кабинете не появился» — кабинет ДокТу после отправки перерисовывает таблицу (старая строка пропадает)
+    // или ставит ответ на модерацию. Ищем строку заново; кнопка «Ответить» у отзыва исчезла и поле закрылось — ответ принят
+    for (let i = 0; i < 25; i++) {
+      await sleep(800);
+      const all = [...document.querySelectorAll('tr.table-row')].filter(x => x.querySelector('legend a') && (!sur || norm(x.querySelector('legend a').textContent).includes(sur)) && like(x));
+      const cur = all[0] || (document.contains(row) ? row : null);
+      if (cur && (SIGNED.test(cur.textContent) || lett(cur.innerText).includes(mark))) return { ok: true };
+      if (/модерац/i.test((cur || document.body).innerText) && i > 2) return { ok: true, note: 'ответ на модерации ДокТу' };
+      const open = ta && document.contains(ta) && ta.offsetParent;
+      if (i > 4 && cur && !open && ![...cur.querySelectorAll('button')].some(b => /^Ответить$/.test((b.textContent || '').trim()))) return { ok: true, note: 'кабинет принял ответ' };
+    }
+    throw new Error('ответ отправлен, но в кабинете не появился. Откройте кабинет ДокТу: если ответ там есть, нажмите «Я опубликовала»');
   }
   var PUBF = {
     "ПроДокторов": function (r) {
@@ -1413,6 +1428,30 @@
         .catch(function (e) { fin({ ok: false, error: String(e) }); });
     });
   }
+  /* 13.11: «почему он не требовал вход при сборе?» — отзывы ДокТу читаются с открытой страницы (вход не нужен), а отвечать
+     нужно из кабинета. Истёкший вход в кабинет раньше обнаруживался только при публикации. Теперь кабинеты для ответов
+     проверяются при запуске и раз в 6 часов: истёк вход — «Источники» показывают «Нужен вход (для ответов)» с кнопкой «Войти» */
+  var PROBES = [{ id: "dt", key: "chkdt", url: "https://manager.doctu.ru/network/reviews", prefix: "https://manager.doctu.ru/",
+    script: "(async () => { const t0 = Date.now(); while (Date.now() - t0 < 150000) { if (document.querySelector('tr.table-row')) return { login: false }; if (document.querySelector('input[type=password]') && Date.now() - t0 > 6000) return { login: true }; await new Promise(r => setTimeout(r, 1000)); } return { login: false, unsure: true }; })()" }];
+  function probeLogins() {
+    return PROBES.reduce(function (pr, pb) {
+      return pr.then(function () {
+        if (pubBusy) return;
+        return new Promise(function (res) {
+          var done = false, t = setTimeout(function () { fin(null); }, 180000);
+          function fin(p) { if (done) return; done = true; clearTimeout(t); delete pending[pb.key]; invoke("source_close", { label: "src-" + pb.key + "-c" }).catch(function () {}); res(p); }
+          pending[pb.key] = fin;
+          invoke("source_collect", { id: pb.key, url: pb.url, script: pb.script, prefix: pb.prefix, waitMs: 3000, show: false, reuse: false, visible: true }).catch(function () { fin(null); });
+        }).then(function (p) {
+          var st = srcState[pb.id] = srcState[pb.id] || {}, it = p && (p.items || p);
+          var need = !!(p && (p.needLogin || (it && it.login === true)));
+          if (p && !it.unsure) { if (need !== !!st.pubLogin) jlog("вход для ответов, " + pb.id + ": " + (need ? "истёк — нужен вход" : "в порядке")); st.pubLogin = need; try { render(); renderWarn(); } catch (e) {} }
+        });
+      });
+    }, Promise.resolve());
+  }
+  setTimeout(function () { probeLogins().catch(function () {}); }, 90000); setInterval(function () { probeLogins().catch(function () {}); }, 6 * 3600e3);
+  window.__otvProbeLogins = probeLogins;
   var pubBusy = false, pubAgain = false, pubTimer = null;
   function schedulePub() { clearTimeout(pubTimer); pubTimer = setTimeout(runPub, 500); }
   window.__otvPubNow = schedulePub;
@@ -1443,6 +1482,11 @@
   function runPub() {
     if (!db) return;
     if (pubBusy) { pubAgain = true; return; }
+    if (!runPub.dd) { runPub.dd = true; dedupeTwins().then(function (n) { runPub.dd = false; if (n) schedulePub(); else runPub2(); }, function () { runPub.dd = false; runPub2(); }); return; }   // дубль не публикуем дважды
+    runPub2();
+  }
+  function runPub2() {
+    if (!db || pubBusy) return;
     var all = window.__otvAll("answers") || {};
     var todo = Object.keys(all).map(function (id) { return Object.assign({ id: id }, all[id]); })
       .filter(function (r) { return r.status === "approved" && r.kind !== "appeal" && s0(r.publishRequested) && PUBF[s0(r.platform)] && s0(r.answer).trim(); })
@@ -1461,10 +1505,12 @@
           if (res.ok && res.items && (res.items.ok || res.items.already)) {
             okN++;
             var up = { status: "published", publishedAt: nowIso(), publishedBy: "app", publishRequested: "", publishError: "" };
+            if (r.platform === "ДокТу" && srcState.dt) srcState.dt.pubLogin = false;
             if (res.items.already) up.note = (s0(r.note) ? s0(r.note) + " · " : "") + "ответ уже был на площадке";
             return ref.update(up).then(function () { return db.collection("registry").doc(r.id).update({ answered: true, updatedAt: nowIso() }).catch(function () {}); });
           }
           var why = res.needLogin ? "нужен вход в кабинет. «Источники» → «Войти»" : (res.error || (res.items && res.items.error) || "не получилось");
+          if (r.platform === "ДокТу" && /нужен вход/.test(why)) { (srcState.dt = srcState.dt || {}).pubLogin = true; try { renderWarn(); render(); } catch (e) {} }
           bad.push(r.platform);
           return ref.update({ publishRequested: "", publishError: why });
         }).catch(function (e) { jlog("публикация " + r.platform + ": ошибка записи " + (e && e.message || e)); });
@@ -1486,8 +1532,32 @@
     return bad ? t.replace(m[0], "Здравствуйте" + m[2]) : t;
   }
   window.__otvTidyDrafts = function () { return tidyDrafts(); };   // для проверок
+  /* 13.11: «2 раза попал отзыв в согласованные». Уже записанные дубли (Google, 2ГИС: тот же длинный текст под двумя номерами):
+     оставляем запись, которая раньше вошла в отчёт или раньше согласована/опубликована; второй — «не отвечаем: дубль», из отчёта не считается */
+  window.__otvDedupe = function () { return dedupeTwins(); };
+  function dedupeTwins() {
+    if (!db || !window.__otvAll) return Promise.resolve(0);
+    var reg = window.__otvAll("registry") || {}, ans = window.__otvAll("answers") || {}, nt = function (x) { return String(x || "").toLowerCase().replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, " ").trim(); };
+    var groups = {};
+    Object.keys(reg).forEach(function (id) { var r = reg[id] || {}; if (!/^(Google|2ГИС)$/.test(r.platform) || r.report === "dup") return; var k = nt(r.fullText || r.text).slice(0, 80); if (k.length < 80) return; (groups[r.platform + "|" + k] = groups[r.platform + "|" + k] || []).push(id); });
+    var jobs = [];
+    Object.keys(groups).forEach(function (k) {
+      var ids = groups[k]; if (ids.length < 2) return;
+      var rank = function (id) { var a = ans[id] || {}, r = reg[id] || {}; return (a.status === "published" ? 0 : a.publishRequested ? 1 : a.status === "approved" ? 2 : 3) * 10 + (r.reportRef ? 0 : 5); };
+      ids.sort(function (x, y) { return rank(x) - rank(y) || String((reg[x] || {}).arrivedAt || "").localeCompare(String((reg[y] || {}).arrivedAt || "")); });
+      var keep = ids[0];
+      ids.slice(1).forEach(function (id) {
+        var a = ans[id];
+        jobs.push(["registry", id, { report: (reg[id] || {}).reportRef ? (reg[id] || {}).report : "dup", reason: "дубль отзыва " + keep, updatedAt: nowIso() }]);
+        if (a && a.status !== "published") jobs.push(["answers", id, { status: "skip", publishRequested: "", note: "дубль: тот же отзыв, что " + keep + " — отвечаем там" }]);
+        jlog("дубли: " + id + " — тот же отзыв, что " + keep + "; оставлен " + keep);
+      });
+    });
+    return jobs.reduce(function (p, j) { return p.then(function () { return db.collection(j[0]).doc(j[1]).update(j[2]).catch(function () {}); }); }, Promise.resolve()).then(function () { return jobs.length; });
+  }
   function tidyDrafts() {
     if (!db || !window.__otvGen) return Promise.resolve();
+    dedupeTwins().catch(function () {});   // дубли отзывов — сразу при запуске, не только перед публикацией
     var jobs = [], alertsNew = [];
     var all = window.__otvAll("answers") || {};
     Object.keys(all).forEach(function (id) {
@@ -2002,8 +2072,14 @@
     if (!w) { w = el("div", "src-warn"); w.id = "srcWarn"; last.after(w); }
     w.textContent = "";
     var badS = SOURCES.filter(function (s) { var st = srcState[s.id]; return st && !st.busy && st.at && !st.ok; });
-    if (!badS.length) { w.hidden = true; return; }
+    var pubS = SOURCES.filter(function (s) { var st = srcState[s.id]; return st && st.pubLogin && badS.indexOf(s) < 0; });
+    if (!badS.length && !pubS.length) { w.hidden = true; return; }
     w.hidden = false;
+    if (pubS.length) {   // отзывы читаются, а ответить программа не сможет — вход в кабинет истёк
+      w.append(el("span", "src-warn-t", "Нужен вход в кабинет для ответов: " + pubS.map(function (s) { return s.name; }).join(", ") + ". Без него ответы не опубликуются."));
+      pubS.forEach(function (s) { var b = el("button", "btn", "Войти: " + s.name); b.type = "button"; b.addEventListener("click", function () { if (s.slow) window.__otvBar.show(s.slow); invoke("source_open", { id: s.id, url: s.login || s.url, title: "Вход: " + s.name }).catch(function () {}); setTimeout(function () { probeLogins(); }, 120000); }); w.append(b); });
+      if (!badS.length) return;
+    }
     w.append(el("span", "src-warn-t", "Не прочитано: " + badS.map(function (s) { var st = srcState[s.id]; return s.name + (st.pwd ? " (истёк срок пароля — смените пароль)" : st.needLogin ? " (нужен вход)" : st.down ? " (сбой у самой площадки, прочитаю, когда заработает)" : ""); }).join(", ")));
     badS.forEach(function (s) {
       if (srcState[s.id].down) return;
@@ -2043,7 +2119,7 @@
       if (line) head.append(el("span", "meta", line));
       var bad = !st.busy && !st.ok && (st.needLogin || st.error);
       var stt = el("span", "status " + (st.busy ? "st-pending" : st.ok ? "st-approved" : bad ? "st-fix" : "st-pending"),
-                   st.busy ? "Читаю…" : st.ok ? "Работает" : st.pwd ? "Смените пароль" : st.needLogin ? "Нужен вход" : st.down ? "Сбой у площадки" : st.error ? "Не вышло" : "Не проверен");
+                   st.busy ? "Читаю…" : st.ok && st.pubLogin ? "Нужен вход (для ответов)" : st.ok ? "Работает" : st.pwd ? "Смените пароль" : st.needLogin ? "Нужен вход" : st.down ? "Сбой у площадки" : st.error ? "Не вышло" : "Не проверен");
       var dg = diag[s.id];
       var tip = [st.error && !st.needLogin ? st.error : "", dg ? "Окно входа: " + String(dg.url || "").slice(0, 90) + (dg.text != null && dg.text < 20 ? " (пустая страница)" : "") + (dg.errs && dg.errs.length ? " · " + dg.errs.join("; ").slice(0, 200) : "") : ""].filter(Boolean).join("\n");
       if (tip) stt.title = tip;

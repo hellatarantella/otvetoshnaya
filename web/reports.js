@@ -530,7 +530,7 @@
       // 12.11: строка стоит в отчёте, а запись программы по ней потеряла отметку «в отчёте» (старый пересмотр вида письма
       // сделал из благодарности «вопрос» и исключил её) — отчёт правильный, восстанавливаем запись по тексту, а не зовём её «лишней»
       var lostPool = Object.keys(reg).map(function (id) { var r = reg[id]; if (r) r.id = id; return r; }).filter(function (r) {
-        return r && !refOf[r.id] && r.source !== "manual" && r.report !== "unpublished" && (!r.reportWeek || r.reportWeek === st.start) && s(r.date) >= W.floor && s(r.date) <= st.end && !live.some(function (x) { return x.id === r.id; });
+        return r && !refOf[r.id] && r.source !== "manual" && r.report !== "unpublished" && r.report !== "dup" && (!r.reportWeek || r.reportWeek === st.start) && s(r.date) >= W.floor && s(r.date) <= st.end && !live.some(function (x) { return x.id === r.id; });
       });
       lostPool.forEach(function (r) {
         var f = findRef(rows, r, claimed); if (!f) return;
