@@ -51,6 +51,22 @@ async def main():
         U = await pg.evaluate("""async () => { window.__otvShowTab('sources'); await new Promise(r => setTimeout(r, 600)); const h = document.getElementById('howto');
           return { howto: !!h && /Каждый день/.test(h.textContent) && /Согласовать/.test(h.textContent), folds: [...document.querySelectorAll('#alertBox details.fold, #dutyBox details.fold')].map(d => [d.querySelector('summary').textContent, d.open]) }; }""")
         res.append((U['howto'] and len(U['folds']) == 2 and not any(f[1] for f in U['folds']), 'в программе есть короткая инструкция; уведомления и второй компьютер свёрнуты в строку с состоянием', U))
+        # программа не ругается на свой же черновик: черновик прежней версии с замечанием (и без ваших правок) переписывается
+        R = await pg.evaluate("""async () => { await window.__otvTidyDrafts(); await new Promise(r => setTimeout(r, 800));
+          const A = window.__otvAll('answers'); return Object.entries(A).filter(([id, a]) => a.status === 'pending' && !a.edited && a.kind !== 'question' && a.kind !== 'appeal' && !/-appeal$/.test(id) && window.__otvGen.toneOf({ platform: a.platform, review: a.review, text: a.review, rating: a.rating }) === 'positive' && String(a.answer || '').trim())
+            .map(([id, a]) => [id, window.__otvLint({ page: a.page, review: a.review, platform: a.platform }, a.answer)]).filter(x => x[1].length); }""")
+        res.append((not R, 'черновики программы без замечаний её же проверки (старые переписаны, ваши правки не тронуты)', R))
+        # 14.11: «зачем такие дубли и служебные подписи» — во время сбора нет строки «Сбор отзывов: Собираю…»; когда наверху спрашиваем про вход, строки «Не прочитано» нет
+        D = await pg.evaluate("""async () => { const vis = id => { const e = document.getElementById(id); return !!(e && !e.hidden && e.offsetParent); };
+          [...document.querySelectorAll('button')].find(x => /^Собрать отзывы/.test(x.textContent.trim())).click();
+          let during = []; for (let i = 0; i < 16; i++) { await new Promise(r => setTimeout(r, 500)); if (vis('stopBtn')) during.push(vis('colRun') ? document.getElementById('colRun').textContent : ''); }
+          for (let i = 0; i < 40 && vis('stopBtn'); i++) await new Promise(r => setTimeout(r, 500));
+          const warnAfter = vis('srcWarn') ? document.getElementById('srcWarn').textContent : '';
+          window.__otvBar.show('Почта сайта: нужен вход. Входим или пропускаем?', '', [['Войти', () => {}]]); await new Promise(r => setTimeout(r, 200));
+          const warnAsk = vis('srcWarn'); window.__otvBar.hide(); await new Promise(r => setTimeout(r, 200));
+          const chip = window.__otvControl.issues().map(i => i.text);
+          return { during: during.filter(Boolean), warnAfter, warnAsk, warnBack: vis('srcWarn'), chipDup: chip.filter(x => /Не прочитан/.test(x)) }; }""")
+        res.append((not D['during'] and not D['warnAsk'] and not D['chipDup'] and (not D['warnAfter'] or D['warnBack']), 'без дублей: во время сбора нет служебной строки «Сбор отзывов: …»; при вопросе «Входим или пропускаем?» нет строки «Не прочитано»; в «что сделать» «Не прочитано» не повторяется', D))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         ok = True
         for good, name, info in res: print(('OK   ' if good else 'FAIL ') + name + ('' if good else '  ' + json.dumps(info, ensure_ascii=False)[:900])); ok = ok and good

@@ -198,8 +198,9 @@
       b.addEventListener("click", a[1]); bar.append(b);
     });
     bar.hidden = false;
+    try { document.dispatchEvent(new Event("otv-bar")); } catch (e) {}
   }
-  function hideBar() { if (bar) bar.hidden = true; }
+  function hideBar() { if (bar) bar.hidden = true; try { document.dispatchEvent(new Event("otv-bar")); } catch (e) {} }
   window.__otvBar = { show: showBar, hide: hideBar };
   // 14.11: «интерфейс перегружен» — редкие настройки (уведомления, второй компьютер) свёрнуты в одну строку с состоянием; открытое остаётся открытым
   var foldOpen = {};
@@ -359,7 +360,7 @@
     invoke("app_info").then(function (i) {
       var v = document.createElement("button"); v.type = "button"; v.className = "otv-ver";
       window.__otvAppVersion = String(i.version || "");
-      verText = "Ответошная " + i.version + (i.keyError ? " · данные не открыты" : " · данные зашифрованы");
+      verText = "версия " + i.version + (i.keyError ? " · данные не открыты" : "");   // 14.11: служебное — внизу страницы, не поверх карточек
       v.textContent = verText; verBtn = v;
       if (upVer) markUpdate(upVer);
       v.addEventListener("click", function () {
@@ -371,7 +372,7 @@
                   " Окно не открывает посторонние сайты. Версия " + x.version + ".", x.encrypted && !x.keyError ? "ok" : "err", [["Проверить обновления", function () { hideBar(); checkUpdate(true, true); }], ["Закрыть", hideBar]]);
         });
       });
-      document.body.append(v);
+      var ft = document.querySelector(".foot"); if (ft && !i.keyError) { v.classList.add("otv-ver-foot"); ft.append(v); } else document.body.append(v);
     }).catch(function () {});
     setTimeout(function () { checkUpdate(true); }, 2500);
     setInterval(function () { checkUpdate(true); }, 10 * 60 * 1000);   // исправления приходят в течение 10 минут

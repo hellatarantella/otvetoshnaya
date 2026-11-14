@@ -1634,6 +1634,16 @@
         if (al0 && !al0.notNeg && !al0.notifiedAt) jobs.push(["alerts", id, { notNeg: true, status: "done", note: "не жалоба: похвала с «не» («никогда не игнорирует»)" }]);
         if (window.__otvLog) window.__otvLog("ответы: отзыв " + id + " — благодарность, а не жалоба; ответ " + (a.edited ? "(ваша правка) оставлен" : "переписан как на благодарность"));
       }
+      // 14.11: программа не должна ругаться на собственный черновик («Повтор слов…» под ответом, который она сама написала).
+      // Черновик, написанный прежней версией, который не проходит проверку и который вы не правили, переписываем
+      var LN = window.__otvLint;
+      if (LN && a.status === "pending" && !a.edited && !up.answer && ans.trim() && s0(a.tone) !== "negative" && a.kind !== "question" && s0(a.answer) === s0(a.draft || a.answer)) {
+        var lw = []; try { lw = LN({ page: a.page, kind: "", review: a.review, platform: a.platform }, ans); } catch (e) {}
+        if (lw.length) {
+          var d4 = pickDraft({ platform: a.platform, author: a.author, text: a.review, rating: a.rating }, s0(a.page)), lw4 = [];
+          if (d4 && d4.text && d4.tone !== "negative") { try { lw4 = LN({ page: a.page, kind: "", review: a.review, platform: a.platform }, d4.text); } catch (e) {} if (!lw4.length) { up.answer = d4.text; up.draft = d4.text; } }
+        }
+      }
       if (Object.keys(up).length) jobs.push(["answers", id, up]);
     });
     alertsNew.forEach(function (x) {
@@ -2116,11 +2126,16 @@
   function openSourcesTab() { var b = document.querySelector('nav#tabs [data-tab="sources"]'); if (b) b.click(); }
 
   /* под «Собрать отзывы» всегда видно, какие площадки сейчас не читаются, и кнопка входа рядом */
+  document.addEventListener("otv-bar", function () { try { renderWarn(); } catch (e) {} });
   function renderWarn() {
     var last = document.getElementById("colLast"); if (!last) return;
     var w = document.getElementById("srcWarn");
     if (!w) { w = el("div", "src-warn"); w.id = "srcWarn"; last.after(w); }
     w.textContent = "";
+    // 14.11: «зачем такие дубли — интерфейс перегружен». Пока идёт сбор или наверху уже спрашиваем «Входим или пропускаем?» —
+    // строку «Не прочитано» не показываем: одно и то же три раза (вопрос наверху, эта строка, отметка «что сделать»)
+    var bar0 = document.getElementById("otvBar"), asking = bar0 && !bar0.hidden && /Входим или пропускаем|войдите в открывшемся окне/.test(bar0.textContent);
+    if (asking || SOURCES.some(function (s) { var st = srcState[s.id]; return st && st.busy; })) { w.hidden = true; return; }
     var badS = SOURCES.filter(function (s) { var st = srcState[s.id]; return st && !st.busy && st.at && !st.ok; });
     var pubS = SOURCES.filter(function (s) { var st = srcState[s.id]; return st && st.pubLogin && badS.indexOf(s) < 0; });
     if (!badS.length && !pubS.length) { w.hidden = true; return; }

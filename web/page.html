@@ -330,6 +330,9 @@ label.btn{cursor:pointer;display:inline-flex;align-items:center}
 section.group>h2,.grp-h,.mailbox h2{display:flex;align-items:center;gap:8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin:22px 0 10px}
 section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--gc,var(--muted))}
 #bulk{display:none!important}
+/* 14.11: «зачем такие дубли и служебные подписи — интерфейс перегружен»: площадка уже названа в заголовке группы, «Новый» — во вкладке «Новые» */
+section.group .card>.head>.badge,.grp-h~.card>.head>.badge{display:none}
+[data-filter="pending"] .card>.head>.status.st-pending{display:none}
 .howto>summary{cursor:pointer;color:var(--muted);font-size:14px}
 .howto[open]>summary{margin-bottom:10px;color:var(--text)}
 .howto{font-size:14px;line-height:1.55;color:var(--text)}.howto ol{margin:6px 0 12px 20px;padding:0}.howto li{margin:4px 0}.howto p{margin:8px 0}
@@ -1195,6 +1198,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     });
     var visibleTotal = 0;
     var prevSec = null;
+    listEl.dataset.filter = filter;   // 14.11: «Новый» на карточке во вкладке «Новые» — дубль, не показываем
     pfs.forEach(function(pf){
       var g = groupFor(pf);
       var list = byPf.get(pf);
@@ -1746,6 +1750,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     shown = shown.slice().sort(function(a, b){ return pIdx(s(a.platform)) - pIdx(s(b.platform)) || s(b.date).localeCompare(s(a.date)); });
     var per = {}; shown.forEach(function(r){ per[s(r.platform)] = (per[s(r.platform)] || 0) + 1; });
     list.querySelectorAll(".grp-h").forEach(function(h){ h.remove(); });
+    list.dataset.filter = alFilter === "new" ? "pending" : alFilter;
     var seen = new Set(), lastPf = null;
     shown.forEach(function(r){
       seen.add(r.id);
@@ -3129,6 +3134,7 @@ gkb24@zdrav.mos.ru
     var colOn = activeReq(reqCollect);
     $("stopBtn").hidden = !colOn; $("pawWalk").hidden = !colOn; $("collectBtn2").hidden = colOn;
     var msg2 = runMsg || reqText(reqNew, "Новый отчёт") || reqText(reqCollect, "Сбор отзывов");
+    if (msg2 && colOn && msg2.cls !== "err") msg2 = null;   // 14.11: идёт сбор — это уже видно по лапкам и «Остановить сбор»; служебную строку не дублируем
     var st2 = $("colRun"); st2.hidden = !msg2; if (msg2) { st2.className = "ctl-st " + (msg2.cls || ""); st2.textContent = msg2.text; }
     var dl = $("ckDl"); dl.hidden = !dlMsg; if (dlMsg) { dl.className = "ctl-st " + (dlMsg.cls || ""); dl.textContent = dlMsg.text; }
   }

@@ -40,11 +40,7 @@
     // 14.11: «чтобы любой человек мог сделать эту работу» — отметка наверху говорит и про обычные шаги: что не прочитано,
     // что ждёт решения, что согласовано, но не опубликовано, что не опубликовалось
     var R0 = window.__otvReports, todo0 = R0 && R0.lastTodo ? R0.lastTodo() : [];
-    var hl = window.__otvSrcHealth ? window.__otvSrcHealth() : [], badS = hl.filter(function (h) { return !h.ok; });
-    if (badS.length && !todo0.some(function (x) { return /^Не собраны/.test(x); })) {
-      var onlyLogin = badS.every(function (h) { return h.needLogin; });
-      out.push({ text: "Не прочитаны: " + badS.map(function (h) { return h.name + (h.needLogin ? " (нужен вход)" : h.down ? " (сбой у площадки)" : ""); }).join(", ") + (onlyLogin ? " — нажмите «Войти: …» рядом с «Собрать отзывы» и соберите снова" : " — нажмите «Собрать отзывы» ещё раз"), tab: "" });
-    }
+    // «Не прочитано» и кнопка «Войти» — строкой под «Собрать отзывы»; в отметке «что сделать» не повторяем (14.11: «дубли»)
     var fresh = { pos: 0, neg: 0, qa: 0 }, agreed = 0, pubErr = 0, errTab = "pos";
     Object.keys(A).forEach(function (id) {
       var a = A[id]; if (!a || !s(a.review).trim() || a.kind === "appeal") return;
