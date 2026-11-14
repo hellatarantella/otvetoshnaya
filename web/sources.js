@@ -940,23 +940,54 @@
       return p;
     });
   }
+  // 14.11 (журнал 13.11): Google четыре раза за день «не видно отзывов» при сборе всех площадок — и через 5 секунд читался
+  // нормально. Страница отзывов Google иногда не успевает открыться: один повтор сразу, прежде чем считать площадку непрочитанной
   function collectOne(s, forceReuse) {
+    return collectOne0(s, forceReuse).then(function (p) {
+      if (p && !p.ok && !p.stopped && !stopping && /не видно отзывов|страница не ответила/.test(String(p.error || "")) && !s.reuse) {
+        jlog("сбор " + s.name + ": " + p.error.split(".")[0] + " — читаю ещё раз");
+        return collectOne0(s, forceReuse);
+      }
+      return p;
+    });
+  }
+  function collectOne0(s, forceReuse) {
     var useReuse = !!s.reuse && (!autoRun || !!forceReuse);
     if (useReuse) return reuseRead(s);
     // по расписанию почту читаем в скрытом окне, но не дольше 90 с: если там вход не подхватился или страница молчит, читаем из открытого окна почты
     return collectOnce(s, false, s.reuse ? Math.min(s.timeout || 60000, HIDDEN_MS) : 0).then(function (p) {
-      if (s.reuse && p && !p.ok && !p.stopped && (p.needLogin || p.timedOut || /нужен вход/.test(String(p.error || "")))) { jlog("сбор " + s.name + ": в скрытом окне " + (p.timedOut ? "страница не ответила" : "нужен вход") + ", читаю из окна почты"); return reuseRead(s); }
+      if (s.reuse && p && !p.ok && !p.stopped && (p.needLogin || p.timedOut || /нужен вход/.test(String(p.error || "")))) { jlog("сбор " + s.name + ": в скрытом окне " + (p.timedOut ? "страница не ответила" : "нужен вход") + ", читаю из открытого окна " + (s.kind === "mail" ? "почты" : s.name)); return reuseRead(s); }
       return p;
     });
   }
+  /* 14.11 (журнал 13.11: сбор шёл 10644 с — с 16:39 до 19:36): на сне компьютера таймеры страницы стоят, и «страница не ответила»
+     и сторож сбора срабатывали только через часы. Теперь сроки считаются по настоящим часам, а просыпание компьютера замечается:
+     начатое до сна чтение прерывается и сбор начинается заново */
+  var active = {};   // id → { deadline, fire }
+  var wakeTick = Date.now(), runGuard = null;
+  function guardTick(nowArg) {
+    var now = nowArg || Date.now(), gap = now - wakeTick; wakeTick = now;
+    if (gap > 60000) {
+      jlog("компьютер спал " + Math.round(gap / 60000) + " мин" + (running ? ": прерываю начатый до сна сбор и собираю заново" : ""));
+      if (running && runGuard) { runGuard.t0 += gap; runGuard.slept(); }   // время сна не считается временем сбора
+      Object.keys(active).forEach(function (id) { if (active[id]) active[id].deadline += gap; });
+      return;
+    }
+    Object.keys(active).forEach(function (id) { var a = active[id]; if (a && now > a.deadline) a.fire(); });
+    if (running && runGuard && now - runGuard.t0 > COLLECT_MAX_MS + 30000) runGuard.hung();
+  }
+  setInterval(function () { guardTick(); }, 10000);
+  window.__otvGuardTick = guardTick;   // для проверок: «компьютер проснулся»
   function collectOnce(s, useReuse, limit) {
     return new Promise(function (res) {
-      var done = false;
-      function fin(p) { if (done) return; done = true; clearTimeout(t); delete pending[s.id]; res(p); }
-      var t = setTimeout(function () {
+      var done = false, lim = limit || s.timeout || 60000;
+      function fin(p) { if (done) return; done = true; clearTimeout(t); delete pending[s.id]; delete active[s.id]; res(p); }
+      var fire = function () {
         invoke("source_close", { label: "src-" + s.id + "-c" }).catch(function () {});
         fin({ ok: false, timedOut: true, error: "страница не ответила" });
-      }, limit || s.timeout || 60000);
+      };
+      var t = setTimeout(fire, lim);
+      active[s.id] = { deadline: Date.now() + lim, fire: fire, stop: function (p) { invoke("source_close", { label: "src-" + s.id + "-c" }).catch(function () {}); fin(p); } };
       pending[s.id] = fin;
       invoke("source_collect", { id: s.id, url: s.url, script: s.kind === "mail" ? "(" + MAIL_ANY.toString() + ")(" + MAIL_API.toString() + "," + MAIL.toString() + "," + JSON.stringify((function () { var m = window.__otvAll("mail") || {}; return Object.keys(m).filter(function (k) { return m[k] && s0(m[k].text).trim(); }); })()) + "," + JSON.stringify(mailOpts()) + ")" : s.cfg ? "(async function(){ var r = await (" + GENERIC.toString() + ")(" + JSON.stringify(s.cfg) + "); return { items: r, seen: document.querySelectorAll(" + JSON.stringify(s.cfg.item) + ").length }; })()" : "(" + s.fn.toString() + ")()", prefix: s.prefix, waitMs: s.wait, show: !!s.show, reuse: useReuse, visible: !!s.visible })
         .catch(function (e) { fin({ ok: false, error: String(e) }); });
@@ -1997,12 +2028,21 @@
     var step = function (name) { stage = name; jlog("сбор: шаг «" + name + "» · " + Math.round((Date.now() - t0) / 1000) + " с"); };
     // сторож: сбор не может висеть бесконечно. Если шаг после чтения площадок не закончился, сбор завершается сам,
     // а в журнале остаётся, на каком шаге он встал (раньше приходилось останавливать вручную и запускать заново)
-    var dog = setTimeout(function () {
-      if (!running || collectSeq !== runId) return;
-      hung = true; jlog("сбор завис на шаге «" + stage + "» через " + Math.round((Date.now() - t0) / 1000) + " с: завершаю сам");
+    var slept = false, wasAuto = autoRun;
+    var onHung = function () {
+      if (!running || collectSeq !== runId || hung) return;
+      hung = true; runGuard = null; jlog("сбор завис на шаге «" + stage + "» через " + Math.round((Date.now() - t0) / 1000) + " с: завершаю сам");
       running = false; stopping = false; render();
       window.__otvBar.show("Сбор завис на шаге «" + stage + "» и завершён сам, журнал записан. Можно собрать ещё раз", "err", [["Собрать ещё раз", function () { window.__otvBar.hide(); collect(SOURCES); }], ["Закрыть", window.__otvBar.hide]]);
-    }, COLLECT_MAX_MS);
+    };
+    var dog = setTimeout(onHung, COLLECT_MAX_MS);
+    runGuard = { t0: t0, hung: onHung, slept: function () {
+      if (collectSeq !== runId || slept) return;
+      slept = true;
+      // всё, что читалось до сна, прерываем: результат не считается сбоем площадки, сбор сразу пойдёт заново
+      Object.keys(active).forEach(function (id) { var a = active[id]; if (a) a.stop({ ok: false, stopped: true, slept: true }); });
+      // сон пришёлся на запись — запись спокойно доделывается (данные на диске), затем сбор идёт заново
+    } };
     var req = db.collection("requests").doc("collect");
     return req.get().then(function (r) {
       var prev = r.exists ? r.data() : {};
@@ -2011,7 +2051,7 @@
       return Promise.all(list.map(function (s) {
         srcState[s.id] = Object.assign({}, srcState[s.id], { busy: true }); render();
         return collectOne(s).then(function (p) {
-          if (p.stopped) { jlog("сбор " + s.name + ": остановлен до конца чтения"); srcState[s.id] = Object.assign({}, srcState[s.id], { busy: false }); render(); return { s: s, items: [], mail: [], stopped: true }; }
+          if (p.stopped) { jlog("сбор " + s.name + ": " + (p.slept ? "прерван сном компьютера" : "остановлен до конца чтения")); srcState[s.id] = Object.assign({}, srcState[s.id], { busy: false }); render(); return { s: s, items: [], mail: [], stopped: true }; }
           var st = { at: nowIso(), busy: false, okAt: (srcState[s.id] || {}).okAt || "" };
           if (p.ok && Array.isArray(p.items)) { st.ok = true; st.okAt = st.at; st.count = p.items.length; st.seen = p.seen == null ? null : p.seen; st.error = ""; st.needLogin = false; st.pwd = false; }
           else { st.ok = false; st.count = 0; st.down = /сбой у площадки/.test(String(p.error || "")); st.needLogin = !st.down && (!!p.needLogin || /нужен вход/.test(String(p.error || ""))); st.error = st.needLogin ? "нужен вход" : (p.error || "не удалось прочитать");
@@ -2057,10 +2097,11 @@
       jlog("сбор не прошёл: " + (e && (e.message || e.code) || e));
       window.__otvBar.show("Сбор не прошёл: " + (e && (e.message || e.code) || e), "err", [["Закрыть", window.__otvBar.hide]]);
     }).then(function () {
-      clearTimeout(dog);
+      clearTimeout(dog); if (runGuard && collectSeq === runId) runGuard = null;
       if (hung) { jlog("сбор, который считался зависшим, всё же закончился за " + Math.round((Date.now() - t0) / 1000) + " с"); if (collectSeq !== runId) return; }
       running = false; stopping = false; render();
       if (window.__otvNotify) window.__otvNotify.flush();
+      if (slept && !hung) { recheck = []; jlog("сбор заново после сна компьютера"); return collect(list, { auto: wasAuto }); }
       if (recheck.length) { var again = recheck; recheck = []; return collect(again); }
     });
   }

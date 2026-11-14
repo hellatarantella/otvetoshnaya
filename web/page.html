@@ -329,7 +329,7 @@ label.btn{cursor:pointer;display:inline-flex;align-items:center}
 #sub{display:none}
 section.group>h2,.grp-h,.mailbox h2{display:flex;align-items:center;gap:8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin:22px 0 10px}
 section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--gc,var(--muted))}
-#bulk,#pubBulk{display:none!important}
+#bulk{display:none!important}
 .howto>summary{cursor:pointer;color:var(--muted);font-size:14px}
 .howto[open]>summary{margin-bottom:10px;color:var(--text)}
 .howto{font-size:14px;line-height:1.55;color:var(--text)}.howto ol{margin:6px 0 12px 20px;padding:0}.howto li{margin:4px 0}.howto p{margin:8px 0}
@@ -1023,8 +1023,10 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     if (SP && c.spEl) {
       // подписи — только когда есть что сделать: текст хорошо написан и закрывает отзыв — ничего не показываем
       var a = SP.audit(v), miss = v ? SP.covers(v, s((c.row||{}).review)) : [];
-      var show = v && (a.score < 8 || miss.length);
-      c.spEl.hidden = !show; c.spEl.textContent = show ? SP.scoreLine(v) + (miss.length ? " · " + miss.join(", ") : "") : "";
+      // 14.11: строку «Текст: 6,3 из 10 · отглагольное…» убрали (служебная оценка, новичку ничего не говорит) —
+      // остаётся только понятное: «нет ответа на жалобу», «нет ответа на вопрос»
+      var show = v && miss.length;
+      c.spEl.hidden = !show; c.spEl.textContent = show ? "⚠ В ответе " + miss.join(", ") : "";
       c.spEl.dataset.score = a.score >= 8 ? "good" : a.score >= 6 ? "mid" : "low";
       c.spEl.title = a.issues.slice(0, 8).map(function(i){ return "«" + i.word + "» — " + i.hint; }).join("\n");
       var A = SP.analyze(s((c.row||{}).review)), note = [];

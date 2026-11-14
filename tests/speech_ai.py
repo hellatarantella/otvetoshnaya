@@ -25,8 +25,9 @@ async def main():
           const r = { an: an && an.textContent, anHidden: an && an.hidden, sp: sp && sp.textContent, low: sp && sp.dataset.score };
           ta.value = 'Здравствуйте, Ирина!\\nСпасибо за отзыв. Передадим ваши слова сотрудникам.\\nС уважением, администрация 24 Московской больницы'; ta.dispatchEvent(new Event('input', { bubbles: true }));
           r.cleanHidden = sp.hidden; return r; }""")
-        ok = C and C['anHidden'] and C['cleanHidden'] and 'Текст:' in (C['sp'] or '') and 'штамп' in C['sp'] and C['low'] == 'low'
-        res.append((ok, 'карточка: подпись про текст — только когда есть замечания (штамп найден); чистый текст и обычная благодарность — без подписей', C))
+        # 14.11 (ваше решение): служебной строки «Текст: 6,3 из 10 · штамп…» на карточке нет; казённый текст по-прежнему ловит выбор вариантов
+        ok = C and C['anHidden'] and C['cleanHidden'] and 'Текст:' not in (C['sp'] or '') and 'из 10' not in (C['sp'] or '')
+        res.append((ok, 'карточка: служебной оценки «Текст: … из 10» нет; обычная благодарность — без подписей', C))
         # загрузка своих ответов: вставка
         K = await pg.evaluate("""async () => { window.__otvShowTab('kb'); await new Promise(r => setTimeout(r, 500));
           const before = Object.keys(window.__otvAll('kb') || {}).length;
