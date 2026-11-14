@@ -37,6 +37,26 @@
         if (r && s(r.reply).trim() && !sameReply(r.reply, a.answer)) diff.push(a.platform + (a.author ? ", " + a.author : ""));
       }
     });
+    // 14.11: «чтобы любой человек мог сделать эту работу» — отметка наверху говорит и про обычные шаги: что не прочитано,
+    // что ждёт решения, что согласовано, но не опубликовано, что не опубликовалось
+    var R0 = window.__otvReports, todo0 = R0 && R0.lastTodo ? R0.lastTodo() : [];
+    var hl = window.__otvSrcHealth ? window.__otvSrcHealth() : [], badS = hl.filter(function (h) { return !h.ok; });
+    if (badS.length && !todo0.some(function (x) { return /^Не собраны/.test(x); })) {
+      var onlyLogin = badS.every(function (h) { return h.needLogin; });
+      out.push({ text: "Не прочитаны: " + badS.map(function (h) { return h.name + (h.needLogin ? " (нужен вход)" : h.down ? " (сбой у площадки)" : ""); }).join(", ") + (onlyLogin ? " — нажмите «Войти: …» рядом с «Собрать отзывы» и соберите снова" : " — нажмите «Собрать отзывы» ещё раз"), tab: "" });
+    }
+    var fresh = { pos: 0, neg: 0, qa: 0 }, agreed = 0, pubErr = 0, errTab = "pos";
+    Object.keys(A).forEach(function (id) {
+      var a = A[id]; if (!a || !s(a.review).trim() || a.kind === "appeal") return;
+      if (WAIT.test(s(a.status))) { var tn = ""; try { tn = G && G.toneOf ? G.toneOf(a) : ""; } catch (e) {} fresh[a.kind === "question" ? "qa" : tn === "negative" ? "neg" : "pos"]++; }
+      var canPub = /^(ПроДокторов|Яндекс|2ГИС|ДокТу|Google|НаПоправку)$/.test(s(a.platform));   // остальное (почта, книга отзывов) программа не публикует
+      if (a.status === "approved" && canPub && s(a.publishError)) { pubErr++; try { if (G && G.toneOf && G.toneOf(a) === "negative") errTab = "neg"; } catch (e) {} } else if (a.status === "approved" && canPub) agreed++;
+    });
+    if (fresh.neg) out.push({ text: "Жалобы ждут ответа: " + fresh.neg, tab: "neg" });
+    if (fresh.pos) out.push({ text: "Отзывы ждут ответа: " + fresh.pos + " — прочитайте ответ и нажмите «Согласовать»", tab: "pos" });
+    if (fresh.qa) out.push({ text: "Вопросы ждут ответа: " + fresh.qa, tab: "qa" });
+    if (pubErr) out.push({ text: "Ответ не опубликовался: " + pubErr + " — причина написана на карточке", tab: errTab });
+    if (agreed) out.push({ text: "Согласовано, но не опубликовано: " + agreed + " — откройте «Согласовано» и нажмите «Опубликовать»", tab: "pos" });
     if (negOld) out.push({ text: "Жалобы без ответа больше суток: " + negOld, tab: "neg" });
     if (posOld) out.push({ text: "Ответы ждут согласования больше 3 дней: " + posOld, tab: "pos" });
     // список сотрудников за текущий месяц: по нему в ответах и отчётах имена и отделения

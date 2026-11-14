@@ -319,6 +319,9 @@
     y.weeks.forEach(function (w, i) {
       var m = d0(w.start).getMonth(); if (seen[m]) return; seen[m] = 1;
       var x = Math.round(i * slot + 2), last = d0(y.weeks[k - 1].start).getMonth() === m;
+      // 14.11: в первую неделю месяца подпись прошлого месяца налезала на подпись текущего (она прижата к правому краю) — сдвигаем левее
+      var lastLeft = 1760 - MON1[d0(y.weeks[k - 1].start).getMonth()].length * 16 - 20, wM = MON1[m].length * 15;
+      if (!last && x + wM > lastLeft) x = Math.max(0, lastLeft - wM);
       months += last ? '<p style="position:absolute;left:1610px;top:668px;width:150px;font-size:24px;color:' + C.blue + ';' + B + 'text-align:right">' + MON1[m] + '</p>'
         : '<p style="position:absolute;left:' + x + 'px;top:668px;width:150px;font-size:24px;color:' + C.grey + '">' + MON1[m] + '</p>';
     });

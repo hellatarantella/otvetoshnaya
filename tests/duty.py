@@ -11,7 +11,7 @@ async def main():
         H = await pg.evaluate("""() => { const h = window.__otvDuty._holder, now = 1e12, m = (a, r) => ({ at: now - a * 60e3, role: r });
           return [h({ aa: m(1, 'main'), bb: m(1, 'backup') }, now), h({ aa: m(25, 'main'), bb: m(2, 'backup') }, now), h({ zz: m(1, 'main'), aa: m(3, 'main') }, now), h({ aa: m(30, 'main'), bb: m(40, 'backup') }, now)]; }""")
         res.append(('кто дежурит: основной на связи; основной пропал 20+ минут — запасной; два основных — по номеру; никого — никто', H == ['aa', 'bb', 'aa', None], H))
-        await pg.evaluate("window.__otvShowTab('sources')"); await pg.wait_for_timeout(300)
+        await pg.evaluate("window.__otvShowTab('sources'); window.__otvFoldAll()"); await pg.wait_for_timeout(300)
         await pg.check("#dutyBox input[name=dutyRole] >> nth=1"); await pg.wait_for_timeout(200)
         D = await pg.evaluate("""async () => { const db = await window.__otvRt.use('db'); await new Promise(r => setTimeout(r, 300));
           const me = (await db.collection('settings').doc('duty').get()).data(); const now = Date.now();
@@ -27,7 +27,7 @@ async def main():
           out.singleIsDuty = window.__otvDuty.isDuty() === true;
           return out; }""")
         res.append(('дежурство: запасной ждёт, подхватывает через 20 минут, без связи не вмешивается; один компьютер дежурит всегда', D == {'dev': True, 'backupWaits': True, 'takesOver': True, 'offlineBackupQuiet': True, 'singleIsDuty': True}, D))
-        await pg.evaluate("window.__otvShowTab('sources')"); await pg.wait_for_timeout(300)
+        await pg.evaluate("window.__otvShowTab('sources'); window.__otvFoldAll()"); await pg.wait_for_timeout(300)
         txt = await pg.inner_text('#dutyBox')
         res.append(('карточка дежурства на месте и говорит, что данные читает только программа', 'Два компьютера: дежурство' in txt and 'только «Ответошная»' in txt, txt[:200]))
         code = 'OTV1.' + base64.b64encode(json.dumps({'g': {'url': 'https://script.google.com/macros/s/TEST/exec', 'token': 'a' * 64}, 'm': {'token': 'bot', 'bot': 'Тест', 'targets': [{'key': 'u1', 'user': 1, 'name': 'Я'}]}}).encode()).decode().rstrip('=')

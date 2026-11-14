@@ -17,7 +17,7 @@ async def main():
         f3 = await pg.evaluate("""async () => { const db = await window.__otvRt.use('db'); await db.collection('settings').doc('refs').set({ staff: [['Смирнов Олег Петрович', 'врач-хирург', 'Хирургия 1']] });
           return window.__otvNotifyFmt.mask('Спасибо врачу Смирнову О.П. и Олегу Петровичу! А медсестра грубила моей маме Кузнецовой Анне Сергеевне.'); }""")
         res.append(('сотрудники из справочника не скрываются, пациенты — скрываются', f3 == 'Спасибо врачу Смирнову О.П. и Олегу Петровичу! А медсестра грубила моей маме [ФИО скрыто].', f3))
-        await pg.evaluate("window.__otvShowTab('sources')"); await pg.wait_for_timeout(300)
+        await pg.evaluate("window.__otvShowTab('sources'); window.__otvFoldAll()"); await pg.wait_for_timeout(300)
         await pg.fill('#alertBox .ntf-tok', 'bad'); await pg.click("#alertBox button:has-text('Сохранить')"); await pg.wait_for_timeout(300)
         t = await pg.inner_text('#alertBox')
         res.append(('плохой токен — понятная ошибка', 'не принял токен' in t and await pg.locator('#alertBox .ntf-tok').count() == 1, t[-200:]))

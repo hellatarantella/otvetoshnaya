@@ -244,7 +244,7 @@
         '<p style="font-size:28px;line-height:1.25;color:' + C.ink + '"><b style="' + B + '">' + dk.nbName(r.short) + '</b> · <span style="color:' + C.grey + '">' + nb(r.dept).replace(/ (\d)/g, "&#160;$1") + '</span></p><p style="font-size:32px;' + B + 'color:' + C.blue + ';padding:0px 0px 0px 8px">' + r.n + '</p></div>';
     };
     var dl1 = dc.rest.slice(0, Math.ceil(dc.rest.length / 2)), dl2 = dc.rest.slice(dl1.length);
-    out.push('<section id="mdoctors" style="' + SEC + 'padding:208px 80px 104px 80px;display:flex;flex-direction:column;gap:28px">' + frame("mdoctors", "Врачи " + D.month.gen + ": топ-" + (dc.top.length + dc.rest.length) + " по благодарностям", num(), foot) +
+    out.push('<section id="mdoctors" style="' + SEC + 'padding:208px 80px 104px 80px;display:flex;flex-direction:column;gap:28px">' + frame("mdoctors", "Врачи " + D.month.gen + (dc.top.length + dc.rest.length > 1 ? ": топ-" + (dc.top.length + dc.rest.length) + " по благодарностям" : ": благодарности"), num(), foot) +
       '<div style="display:grid;grid-template-columns:repeat(' + Math.max(1, dc.top.length) + ', minmax(0px, 1fr));gap:24px">' + dc.top.map(docCard).join("") + '</div>' +
       (dc.rest.length ? '<div style="display:grid;grid-template-columns:minmax(0px, 1fr) minmax(0px, 1fr);gap:48px"><div style="display:flex;flex-direction:column">' + dl1.map(function (r, i) { return docRow(r, i === dl1.length - 1); }).join("") + '</div><div style="display:flex;flex-direction:column">' + dl2.map(function (r, i) { return docRow(r, i === dl2.length - 1); }).join("") + '</div></div>' : '') + '</section>');
     // 4. за что благодарят

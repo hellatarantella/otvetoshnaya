@@ -288,6 +288,7 @@
     }
     c.append(act);
     if (msg) { var m = el("p", "ctl-st" + (msgErr ? " err" : " ok"), msg); c.append(m); }
+    if (window.__otvFold) { var on = cfg.token && targets().length; c = window.__otvFold(c, "max", on ? "включены" + (cfg.lastErr ? " · не отправилось последнее" : "") : "не настроены"); if (msg) c.open = true; }
     box.append(c);
   }
   window.addEventListener("otv-tab", render);

@@ -518,6 +518,7 @@
       var inPer = function (r) {
         if (!/^\d{4}-\d{2}-\d{2}/.test(s(r.date))) return false;
         if (r.reportWeek && r.reportWeek !== st.start) return false;             // уже в отчёте другой недели
+        if (r.reportWeek === st.start && inRep(r)) return true;                  // 14.11: стоит в отчёте этой недели — значит, запись этой недели (иначе её «восстанавливали» при каждом обновлении)
         var a = arrivedOf(r);
         if (isNaN(a)) {                                                          // записи до правила «по поступлению» (до 20.10.2026): по дате отзыва,
           if (s(r.date) >= st.start && s(r.date) <= st.end) return true;          // а не попавшие ни в один отчёт с прошлой недели переходят в эту
@@ -556,6 +557,7 @@
       lostPool.forEach(function (r) {
         var f = findRef(rows, r, claimed); if (!f) return;
         claimed[f] = r.id; refOf[r.id] = f;
+        if (all.indexOf(r) < 0) all.push(r);   // 14.11: запись стоит в отчёте этой недели — считаем её и в «собрано», иначе «в отчёте 6 из 8» расходится с «позитив 4, негатив 3»
         regWrites.push([r.id, { report: /^Негатив/.test(f) ? "negative" : "positive", reportRef: f, reportWeek: st.start, reason: "", removedRow: false, tone: /^Негатив/.test(f) ? "negative" : "positive" }]);
         restoredLost.push(s(r.platform) + " " + dmyOf(r.date));
       });

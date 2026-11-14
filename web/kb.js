@@ -155,11 +155,12 @@
   }
   function words(q) { return s(q).toLowerCase().split(/[^a-zа-яё0-9]+/i).filter(function (w) { return w.length > 2; }); }
 
+  var addOpen = false;
   function render() {
     var box = document.getElementById("kbBox"); if (!box) return;
     box.textContent = "";
     var top = el("div", "ctl");
-    top.append(el("p", "meta", "Здесь копятся все ситуации и ответы: согласованные и опубликованные ответы на отзывы, обжалования, письма, тексты «Спасибо» и ответы на вопросы. По базе можно найти, как отвечали раньше; на шаге 5 по ней учится модель."));
+    top.append(el("p", "meta", "Здесь копятся все ситуации и ответы: согласованные и опубликованные ответы на отзывы, обжалования, письма, тексты «Спасибо» и ответы на вопросы. По базе можно найти, как отвечали раньше; на ней программа учится вашему стилю."));
     var inp = el("input"); inp.type = "search"; inp.placeholder = "Поиск: отделение, врач, тема, слово из отзыва…"; inp.value = query;
     inp.className = "kb-search";
     inp.addEventListener("input", function () { query = inp.value; list(); });
@@ -181,7 +182,10 @@
       f.text().then(function (txt) { return importTraining(JSON.parse(txt)); }).then(function (n) { trMsg.textContent = "Добавлено в базу: " + n; }, function (e) { trMsg.textContent = "Не загрузилось: " + (e && e.message || e); });
       tr.value = "";
     });
-    var ta = el("div", "actions"); ta.append(trB, tr, trMsg); top.append(ta);
+    // 14.11: «интерфейс перегружен» — загрузки нужны редко: свёрнуты в одну строку
+    var addD = el("details", "kb-add"), addS = el("summary", null, "Пополнить базу: свои ответы, архив, база обучения"); addD.append(addS); addD.open = addOpen;
+    addD.addEventListener("toggle", function () { addOpen = addD.open; });
+    var ta = el("div", "actions"); ta.append(trB, tr, trMsg);
     // свои ответы — генератор и модель учатся на них как на согласованных
     var ow = el("input"); ow.type = "file"; ow.multiple = true; ow.accept = ".txt,.docx,.csv,.json,.md"; ow.hidden = true;
     var owB = el("button", "btn", "Загрузить свои ответы (Word, текст, таблица)"); owB.type = "button";
@@ -202,12 +206,13 @@
     });
     owP.addEventListener("click", function () { owBox.hidden = !owBox.hidden; if (!owBox.hidden) owTa.focus(); });
     owGo.addEventListener("click", function () { var items = parseOwn(owTa.value); owMsg.textContent = "Добавляю…"; importOwn(items, "вставка").then(function (n) { done(n, items.length); if (items.length) owTa.value = ""; }, fail); });
-    var oa = el("div", "actions"); oa.append(owB, owP, ow, owMsg); top.append(oa, owBox);
+    var oa = el("div", "actions"); oa.append(owB, owP, ow, owMsg); addD.append(oa, owBox);
     if (window.__otvImport) {
       var imp = el("button", "btn", "Загрузить архив ответов"); imp.type = "button";
       imp.addEventListener("click", function () { window.__otvImport(); });
-      var ia = el("div", "actions"); ia.append(imp); top.append(ia);
+      var ia = el("div", "actions"); ia.append(imp); addD.append(ia);
     }
+    addD.append(ta); top.append(addD);
     box.append(top);
     box.append(learnBlock());
     if (window.__otvFacts) box.append(window.__otvFacts.block());

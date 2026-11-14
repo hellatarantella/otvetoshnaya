@@ -137,6 +137,7 @@
     if (S && S.enabled()) { var sb = el("button", "btn", "Синхронизировать сейчас"); sb.type = "button"; sb.addEventListener("click", function () { sb.disabled = true; S.run().then(render); }); act.append(sb); }
     c.append(act);
     if (msg) c.append(el("p", "ctl-st" + (msgErr ? " err" : " ok"), msg));
+    if (window.__otvFold) { var S2 = window.__otvSync, two = S2 && S2.enabled && S2.enabled(); c = window.__otvFold(c, "duty", two ? "включено" : "работает один компьютер"); if (msg || codeOpen) c.open = true; }
     box.append(c);
   }
   window.__otvDutyRender = render;

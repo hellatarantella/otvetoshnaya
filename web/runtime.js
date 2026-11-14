@@ -201,6 +201,19 @@
   }
   function hideBar() { if (bar) bar.hidden = true; }
   window.__otvBar = { show: showBar, hide: hideBar };
+  // 14.11: «интерфейс перегружен» — редкие настройки (уведомления, второй компьютер) свёрнуты в одну строку с состоянием; открытое остаётся открытым
+  var foldOpen = {};
+  window.__otvFoldAll = function () { foldOpen.__all = true; Array.prototype.forEach.call(document.querySelectorAll("details.fold"), function (d) { d.open = true; }); };   // для проверок
+  window.__otvFold = function (card, key, state) {
+    var d = document.createElement("details"); d.className = card.className + " fold";
+    var h = card.querySelector("h2"), sm = document.createElement("summary");
+    sm.textContent = h ? h.textContent : key; if (h) h.remove();
+    if (state) { var st = document.createElement("span"); st.className = "fold-st"; st.textContent = state; sm.append(st); }
+    d.append(sm); while (card.firstChild) d.append(card.firstChild);
+    d.open = !!(foldOpen[key] || foldOpen.__all);
+    d.addEventListener("toggle", function () { foldOpen[key] = d.open; });
+    return d;
+  };
 
   // Стили полосы — в runtime.css (политика безопасности окна запрещает встроенные стили из скриптов).
 

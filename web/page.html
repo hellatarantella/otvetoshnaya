@@ -117,6 +117,7 @@ textarea.comment{min-height:70px}
 .al{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin:0 0 12px}
 .al .lbl{margin-top:12px}
 .lbl .var{margin-left:auto;font-size:13px;font-weight:600}
+.lbl .var.undo+.var{margin-left:14px}.lbl .var.undo{color:var(--muted)}
 .lbl .var[disabled]{opacity:.6;cursor:default}
 .al .head{margin-bottom:6px}
 .stars{font-weight:700;color:var(--err-text);white-space:nowrap}
@@ -329,6 +330,9 @@ label.btn{cursor:pointer;display:inline-flex;align-items:center}
 section.group>h2,.grp-h,.mailbox h2{display:flex;align-items:center;gap:8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin:22px 0 10px}
 section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--gc,var(--muted))}
 #bulk,#pubBulk{display:none!important}
+.howto>summary{cursor:pointer;color:var(--muted);font-size:14px}
+.howto[open]>summary{margin-bottom:10px;color:var(--text)}
+.howto{font-size:14px;line-height:1.55;color:var(--text)}.howto ol{margin:6px 0 12px 20px;padding:0}.howto li{margin:4px 0}.howto p{margin:8px 0}
 .al .tog[aria-pressed="true"]{color:var(--ok);border-color:var(--ok);background:var(--ok-bg)}
 .al .tog[aria-pressed="true"]::before{content:"✓ "}
 .al .btn:disabled{opacity:.45;cursor:default}
@@ -538,7 +542,26 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
   <section class="tab-panel" id="tab-sources" hidden aria-label="Источники отзывов"><div id="srcBox"></div><div id="alertBox"></div><div id="dutyBox"></div></section>
   <section class="tab-panel" id="tab-kb" hidden aria-label="База ответов"><div id="kbBox"></div></section>
   <section class="tab-panel" id="tab-model" hidden aria-label="Встроенная модель"><div id="modelBox"></div></section>
-  <footer class="foot"><a href="https://claude.ai/artifact/2m37W9vmzjiDZ1y2FFx8G5" target="_blank" rel="noopener noreferrer">Инструкция</a></footer>
+  <footer class="foot">
+    <!-- 14.11: «чтобы любой человек, не знающий этой работы, мог её сделать» — короткая инструкция внутри программы (полная была только по личной ссылке) -->
+    <details class="howto" id="howto"><summary>Как работать: коротко</summary>
+      <p><b>Наверху справа — отметка.</b> «✓ Всё в порядке» — делать ничего не нужно. «⚠ … — что сделать» — нажмите: там список дел, у каждого кнопка «Открыть».</p>
+      <p><b>Каждый день</b></p>
+      <ol>
+        <li>«Собрать отзывы». Программа собирает и сама по расписанию, пока открыта. Если написано «нужен вход» — нажмите «Войти», войдите в кабинет площадки и соберите снова.</li>
+        <li>«Отзывы» → «Позитив»: прочитайте готовый ответ, при необходимости поправьте или нажмите «Ещё вариант», затем «Согласовать». Во вкладке «Согласовано» — «Опубликовать».</li>
+        <li>«Отзывы» → «Негатив»: прочитайте ответ, поправьте и нажмите «Опубликовать». «Вопросы» — как «Позитив». На письмо с сайта ответ отправляется по почте, после этого — «Ответ дан».</li>
+        <li>«Отчёты» → «Обновить отчёт». Если есть блок «Нужна проверка» — решите по каждому отзыву: «Позитив», «Негатив» или «Не вносить».</li>
+      </ol>
+      <p><b>Раз в неделю, в четверг после 15:00</b></p>
+      <ol>
+        <li>«Отчёты» → «Скачать отчёты недели», затем «Начать новый отчёт».</li>
+        <li>«Презентации» → «Неделя»: ответьте на вопросы программы («Нужно ваше решение»), затем «Скачать PDF».</li>
+      </ol>
+      <p>Имена и отделения программа берёт только из списка сотрудников. Если она в чём-то не уверена — не вписывает сама, а спрашивает.</p>
+      <p><a href="https://claude.ai/artifact/2m37W9vmzjiDZ1y2FFx8G5" target="_blank" rel="noopener noreferrer">Полная инструкция</a></p>
+    </details>
+  </footer>
 </div>
 <script>
 (function(){
@@ -703,6 +726,8 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     // имя и отчество врача — не «повтор слов из отзыва»: его и нужно назвать (06.11: «ещё вариант» не работал на таких отзывах)
     var NP = /[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]*(?:вн|вич|ичн)[а-яё]{0,3}(?![а-яё])/g;
     body = body.replace(NP, " | "); review = s(review).replace(NP, " | ");
+    // 14.11: название отделения в «передадим коллективу … отделения» — тоже не повтор: его и нужно назвать, как в справочнике
+    body = body.replace(/(сотрудникам|коллективу|команде|персоналу)\s+[^.!?|]*/gi, " | ");
     var aw = words(body), rw = " " + words(review).join(" ") + " ", hits = [];
     for (var i = 0; i + 2 < aw.length; i++) {
       var tri = aw.slice(i, i + 3);
@@ -743,9 +768,10 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     }
     if (/Московской больницы\s*\.+\s*$/.test(t)) w.push("Точка после подписи. Уберите её");
     else if (t.slice(-SIGN.length) !== SIGN) w.push("В конце нет подписи «" + SIGN + "»");
-    if (/^(Страница|Карточка) врача/i.test(s(r.page)) && /передад/i.test(t))
+    // 14.11: врачу со страницы ничего не передаём, а сотрудникам отделения (если их благодарят в отзыве) — передаём: на это не ругаемся
+    if (/^(Страница|Карточка) врача/i.test(s(r.page)) && (t.match(/[^.!?\n]*передад[^.!?\n]*/gi) || []).some(function(x){ return !/(сотрудникам|коллективу|команде|с[её]страм|персоналу)[^.!?\n]*(отделени|больниц)|медицинским с[её]страм/i.test(x); }))
       w.push("На странице врача (на любой площадке) ничего не передаём");
-    if (/^(Страница|Карточка) врача/i.test(s(r.page)) && /(нам|для нас)[^.!?\n]{0,25}(приятно|ценн|значат|важн)|(приятно|ценно|важно)[^.!?\n]{0,10}(нам|для нас)/i.test(t))
+    if (/^(Страница|Карточка) врача/i.test(s(r.page)) && /(нам|для нас)[^.!?\n]{0,25}(приятно|ценн|значат|важн)|(приятно|ценн[оы]|важн[оы])[^.!?\n]{0,10}(нам|для нас)/i.test(t))
       w.push("Отзыв адресован врачу. Не присваиваем его слова себе («нам приятно», «для нас ценно»)");
     if (/лучше|улучш|совершенств|работаем над|недочёт|недочет|недостат/i.test(t))
       w.push("Не намекаем на слабые места больницы («становиться лучше», «улучшать»)");
@@ -790,12 +816,20 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     return Promise.resolve(window.__otvVariant({kind: kind, platform: s(r.platform), page: s(r.page), review: s(r.review != null ? r.review : r.text),
       author: s(r.author), rating: ratingOf(r), tone: neg || isNegRow(r) ? "negative" : "positive", current: s(current)}));
   }
-  function varLink(onPick){
+  function varLink(onPick, getTa){
     var b = el("button","link var","↻ Ещё вариант"); b.type = "button"; b.hidden = !window.__otvVariant;
+    // 14.11: «Ещё вариант» заменял текст в поле без возврата — ваша правка пропадала. Теперь рядом «↶ Вернуть прежний»
+    var undo = el("button","link var undo","↶ Вернуть прежний"); undo.type = "button"; undo.hidden = true; var prev = null;
+    undo.addEventListener("click", function(){
+      var ta = getTa && getTa(); if (!ta || prev == null) return;
+      ta.value = prev; prev = null; undo.hidden = true; ta.dispatchEvent(new Event("input", {bubbles: true}));
+    });
+    b._undo = undo;
     b.addEventListener("click", function(){
       if (b.disabled) return;
+      var ta0 = getTa && getTa(), before = ta0 ? ta0.value : null;
       b.disabled = true; var o = b.textContent; b.textContent = "Пишу вариант…";
-      onPick().then(function(){ b.textContent = o; b.disabled = false; }, function(e){
+      onPick().then(function(){ b.textContent = o; b.disabled = false; if (ta0 && s(before).trim() && ta0.value !== before) { prev = before; undo.hidden = false; if (!undo.parentNode && b.parentNode) b.parentNode.insertBefore(undo, b); } }, function(e){
         b.textContent = /Других/.test(e && e.message) ? e.message : "Не вышло. Ещё раз"; b.disabled = false;
         setTimeout(function(){ if (!b.disabled) b.textContent = o; }, 4000);
       });
@@ -850,7 +884,7 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
         if (!text) throw new Error("пусто");
         c.ta.value = text; c.dirty = true; renderLint(c); flushAnswer(c);
       });
-    });
+    }, function(){ return c.ta; });
     lbl.append(c.varBtn);
     c.ta = el("textarea"); c.ta.setAttribute("aria-label","Текст ответа"); c.ta.spellcheck = true;
     c.lint = el("ul","lint");
@@ -938,6 +972,8 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.pubNowBtn.addEventListener("click", function(){ approveAndMaybePublish(c, c.pubNowBtn, true); });
     c.approveBtn.addEventListener("click", function(){ approveAndMaybePublish(c, c.approveBtn, false); });
     function approveAndMaybePublish(c, btn, publish){
+      // 14.11: пустой ответ нельзя согласовать и со второго нажатия («Есть замечания. Всё равно?») — публиковать нечего
+      if (!s(c.ta.value).trim()) { c.savedEl.textContent = "Текст пустой: нажмите «Ещё вариант» или напишите ответ"; return; }
       var warns = lint(c.row || {}, c.ta.value);
       var go = function(){
         var val = c.ta.value; clearTimeout(c.timer);
@@ -1438,11 +1474,11 @@ section.group>h2::before,.grp-h::before,.mailbox h2::before{content:"";width:10p
     c.lbl = el("div","lbl"); c.lbl.append(el("span",null,"Ответ")); c.saved = el("span","saved"); c.lbl.append(c.saved);
     c.lbl.append(varLink(function(){
       return askVariant("answer", c.row || {}, c.ta.value, true).then(function(text){ c.ta.value = text; c.dirty = true; alSaveAnswer(c); });
-    }));
+    }, function(){ return c.ta; }));
     c.lblAp = el("div","lbl"); c.lblAp.append(el("span",null,"Обжалование")); c.savedAp = el("span","saved"); c.lblAp.append(c.savedAp);
     c.lblAp.append(varLink(function(){
       return askVariant("appeal", c.row || {}, c.taAp.value, true).then(function(text){ c.taAp.value = text; c.taAp.hidden = false; c.dirtyAp = true; alSaveAppeal(c); });
-    }));
+    }, function(){ return c.taAp; }));
     c.taAp = el("textarea"); c.taAp.setAttribute("aria-label","Текст обжалования"); c.taAp.placeholder = "Текст обжалования";
     c.taAp.addEventListener("input", function(){ c.dirtyAp = true; c.savedAp.textContent = ""; clearTimeout(c.timerAp); c.timerAp = setTimeout(function(){ alSaveAppeal(c); }, 900); });
     c.taAp.addEventListener("blur", function(){ alSaveAppeal(c); });
@@ -2780,7 +2816,7 @@ gkb24@zdrav.mos.ru
   function s(v){ return v == null ? "" : String(v); }
   function pad(n){ return (n < 10 ? "0" : "") + n; }
 
-  var PF = [["ПроДокторов","pf-pd"],["Яндекс","pf-ya"],["2ГИС","pf-gis"],["Google","pf-go"],["ДокТу","pf-dt"],["Сайт","pf-site"],["Книга отзывов","pf-book"],["Колл-центр","pf-call"]];
+  var PF = [["ПроДокторов","pf-pd"],["Яндекс","pf-ya"],["2ГИС","pf-gis"],["Google","pf-go"],["ДокТу","pf-dt"],["НаПоправку","pf-np"],["Сайт","pf-site"],["Книга отзывов","pf-book"],["Колл-центр","pf-call"]];
   var PF_CLASS = {}; PF.forEach(function(p){ PF_CLASS[p[0]] = p[1]; });
   var REP = {
     positive:{label:"В Позитиве", cls:"rp-pos"},
@@ -2853,9 +2889,12 @@ gkb24@zdrav.mos.ru
     var thead = el("thead"), hr = el("tr"); hr.append(el("th", null, "Площадка"));
     cols.forEach(function(c){ hr.append(el("th", null, c[1])); }); thead.append(hr); t.append(thead);
     var tb = el("tbody"), tot = {};
-    PF.forEach(function(p){
+    // 14.11: «Итого» в таблице расходилось с «Всего» над ней — отзывы НаПоправку и добавленных площадок не попадали ни в одну строку
+    var rowsPf = PF.map(function(p){ return p[0]; }), known = {}; rowsPf.forEach(function(n){ known[n] = 1; });
+    wk.forEach(function(r){ var n = s(r.platform) || "Другое"; if (!known[n]) { known[n] = 1; rowsPf.push(n); } });
+    rowsPf.forEach(function(name){ var p = [name];
       var tr = el("tr"); tr.append(el("td", null, p[0]));
-      var mine = wk.filter(function(r){ return r.platform === p[0]; });
+      var mine = wk.filter(function(r){ return (s(r.platform) || "Другое") === p[0]; });
       cols.forEach(function(c){
         var n = c[0] === "all" ? mine.length : mine.filter(function(r){ return repOf(r) === c[0]; }).length;
         tot[c[0]] = (tot[c[0]] || 0) + n;

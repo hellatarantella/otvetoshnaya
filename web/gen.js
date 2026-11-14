@@ -288,7 +288,7 @@
       var Rr = window.__otvReports, dts = (Rr && Rr.textDepts ? Rr.textDepts(s(it.review)) : []).filter(function (d) { return DEPT_GEN[d]; });
       var who2 = dts.length === 1 ? "сотрудникам " + DEPT_GEN[dts[0]] : /медсестр|медсёстр/i.test(s(it.review)) ? "медицинским сёстрам и всем сотрудникам отделения" : "сотрудникам отделения";
       var line2 = "Ваши добрые слова обязательно передадим " + who2 + ".";
-      var endI = sents.length && /^Желаем/.test(sents[sents.length - 1]) ? sents.length - 1 : sents.length;
+      var endI = sents.length; while (endI > 1 && /^(Желаем|Ценим ваше доверие|Всегда готовы|Будем рады|Берегите)/.test(sents[endI - 1])) endI--;   // 14.11: завершающие фразы остаются в конце
       sents.splice(endI, 0, line2);
     }
     if (sents.join(" ").length < 45) return "";
@@ -538,6 +538,8 @@
       var CP = window.__otvCompose; if (tx && CP && CP.repeats && CP.repeats(tx.replace(/^Здравствуйте[^\n]*\n/, "").replace(SIGN, ""))) stale += 1.5;   // одно слово в двух фразах
       var rep3 = tx ? sentsOf(tx).filter(function (x) { return p3[x]; }).length : 0;
       var nS = tx ? (tx.replace(/^Здравствуйте[^\n]*\n/, "").replace(SIGN, "").match(/[^.!?]+[.!?]+/g) || []).length : 0;
+      if (tx && p.tone === "positive" && s(it.review).trim().length < 40 && nS > 3) stale += 2.5;   // 14.11: на отзыв в два слова — короткий ответ
+      if (tx && p.tone === "positive" && /лечащему врачу/.test(tx) && !/врач(?![аеи]м|и\b|ей)|доктор(?!а\b|ам|ов)/i.test(s(it.review).replace(/врачи|врачам|врачей|доктора\b|докторам|докторов/gi, ""))) stale += 3;   // «Лучшие врачи!» — «лечащего врача» в отзыве нет
       if (tx && p.tone === "positive" && s(it.review).length > 300 && nS < 4) stale += 2.5;   // 13.11: на подробный отзыв — не куцый ответ (ваше правило)
       return { rep3: rep3, lint: lintBad, key: c.key, text: tx, score: c.score + learned(c.key) + Math.random() * 0.35 - (tx && L ? L.penalty(tx, lc) : 0) - sp - stale };
     }).filter(function (c) {
