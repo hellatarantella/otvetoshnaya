@@ -1,0 +1,18 @@
+Sat Nov 14 14:27:00 UTC 2026
+Filesystem        Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk1s5s1   325Gi    10Gi   125Gi     8%    427k  1.3G    0%   /
+Mach Virtual Memory Statistics: (page size of 4096 bytes)
+Pages free:                               23494.
+Pages active:                           1080355.
+Pages inactive:                          932447.
+Pages speculative:                      1293597.
+Pages throttled:                              0.
+Pages wired down:                        339333.
+Pages purgeable:                          11424.
+"Translation faults":                  32640739.
+Pages copy-on-write:                    1416700.
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `node scripts/build-page.mjs`
+dist/index.html готов: 271440 символов
+[1m[92m    Updating[0m crates.io index
+[1m[92m   Compiling[0m otvetoshnaya v0.1.0 (/Users/runner/work/otvetoshnaya/otvetoshnaya/src-tauri)
