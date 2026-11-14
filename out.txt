@@ -1,0 +1,6 @@
+total 41536
+drwxr-xr-x   5 runner  staff       160 Nov 14 14:27 .
+drwxr-xr-x  20 runner  staff       640 Nov 14 14:28 ..
+-rw-r--r--   1 runner  staff  10702900 Nov 14 14:27 otvetoshnaya_0.2.90_mac.app.tar.gz
+-rw-r--r--   1 runner  staff       444 Nov 14 14:27 otvetoshnaya_0.2.90_mac.app.tar.gz.sig
+-rw-r--r--@  1 runner  staff  10552361 Nov 14 14:27 Otvetoshnaya.dmg
