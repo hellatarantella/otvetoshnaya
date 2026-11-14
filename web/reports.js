@@ -759,7 +759,10 @@
       setRun(warn ? "warn" : "ok", msg, { head: head, todo: todo, actions: acts });
       saveLast(msg, head, todo);
       // всё, что требует вашего действия, видно на любой вкладке
-      if (window.__otvBar && (warn || !opts.auto)) window.__otvBar.show((todo.length ? "⚠ " + todo[0] : head).slice(0, 300), warn ? "warn" : "ok", [["Закрыть", window.__otvBar.hide]]);
+      // 14.11: итог и что сделать — в блоке под кнопками; плашка наверху повторяла то же («Не собраны Яндекс…» трижды). Наверху — только
+      // когда вы на другой вкладке и нажатие было ваше
+      var onTab = !!document.querySelector('#tab-check:not([hidden])');
+      if (window.__otvBar && !opts.auto && !onTab) window.__otvBar.show(("Отчёт обновлён: " + shortHead(head) + (warn ? " · есть что сделать, откройте «Отчёты»" : "")).slice(0, 300), warn ? "warn" : "ok", [["Закрыть", window.__otvBar.hide]]);
       render();
     }).catch(function (e) {
       if (e && e.pilot) return;   // пробный сбор: показали, что запишется, ждём «Записать»
@@ -929,6 +932,11 @@
   var runMsg = null, dlMsg = null, last = null;
   function setRun(cls, text, short) { runMsg = text ? { cls: cls, text: text, head: short && short.head, todo: short && short.todo, actions: short && short.actions } : null; paintMsgs(); }
   // итог отчёта: строка + что сделать; полный текст спрятан в «Подробнее»
+  function shortHead(h) {
+    h = s(h).replace(/^Отчёт [^:]+:\s*/, "").replace(/\s*·\s*в отчёте \d+ из \d+ собранных/, "")
+      .replace(/(^|,\s*)\+0 в «(Позитив|Негатив)»/g, "").replace(/^,\s*/, "").trim();
+    return h || "новых нет";
+  }
   function paintShort(node, m) {
     node.textContent = "";
     node.append(el("div", "rep-head", m.head));
@@ -940,7 +948,8 @@
   var runEl = null, dlEl = null;
   function paintMsgs() {
     var a = runEl, b = dlEl;
-    if (a) { a.hidden = !runMsg; if (runMsg) { a.className = "ctl-st " + runMsg.cls; if (runMsg.head) paintShort(a, runMsg); else a.textContent = runMsg.text; } }
+    var inRecon = runMsg && runMsg.head && lastRecon && runMsg.cls !== "err";
+    if (a) { a.hidden = !runMsg || inRecon; if (runMsg && !inRecon) { a.className = "ctl-st " + runMsg.cls; if (runMsg.head) paintShort(a, runMsg); else a.textContent = runMsg.text; } }
     if (b) { b.hidden = !dlMsg; if (dlMsg) { b.className = "ctl-st " + dlMsg.cls; b.textContent = dlMsg.text; } }
   }
   function saveLast(msg, head, todo) { last = { at: nowIso(), msg: msg, head: head || "", todo: todo || [] }; if (db) db.collection("settings").doc("report").set(last).catch(function () {}); }
@@ -987,22 +996,31 @@
     }
     line.textContent = "";
     renderPast(); renderRecon();
-    if (st && st.period) $("ckPeriod").textContent = "Текущий отчёт: " + st.period;
+    if (st && st.period) $("ckPeriod").textContent = "Отчёт " + st.period;
+    // 14.11: «что за пиздец с интерфейсом — оптимизируй». Наверху — только кнопки и один итог (блок сверки);
+    // подключение к Google и список сотрудников — служебное: свёрнуто внизу одной строкой
+    var setEl = $("ckSet");
+    if (!setEl) { setEl = el("details", "ck-set fold"); setEl.id = "ckSet"; }
+    ctl.append(setEl);   // всегда последним — под «Отчётами прошлых недель»
+    var setOpen = setEl.open; setEl.textContent = ""; setEl.open = setOpen; setEl.hidden = !ready();
     if (ready()) {
+      var S0 = staffStatus();
+      setEl.append(el("summary", null, "Подключение и список сотрудников"));
       var p = el("p", "gs-ok");
-      p.append("Google подключён" + (st ? " · «" + st.posTitle + "» · «" + st.negTitle + "»" : ""));
+      p.append("Google подключён. ");
       var off = el("button", "link gs-off", "Отключить"); off.type = "button";
       off.addEventListener("click", function () {
         if (off.dataset.armed !== "1") { off.dataset.armed = "1"; off.textContent = "Точно отключить?"; setTimeout(function () { off.dataset.armed = ""; off.textContent = "Отключить"; }, 4000); return; }
         cfg = null; st = null; refs = null; if (db) db.collection("settings").doc("google").delete().catch(function () {}); render();
       });
-      p.append(" ", off); line.append(p);
+      p.append(off); setEl.append(p);
       if (oldScript()) line.append(updateBox());
-      line.append(staffBox());
-      if (last && last.msg && !runMsg) {
+      setEl.append(staffBox());
+      if (S0 && S0.empty) line.append(staffBox());   // пустой список — это уже не служебное: видно сразу
+      if (last && last.msg && !runMsg && !lastRecon) {
         var when = new Date(last.at).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
         var l = el("div", "ctl-last");
-        if (last.head) paintShort(l, { head: "Обновлён " + when + " · " + last.head.replace(/^Отчёт [^:]+:\s*/, ""), todo: last.todo, text: last.msg });
+        if (last.head) paintShort(l, { head: "Обновлён " + when + " · " + shortHead(last.head), todo: last.todo, text: last.msg });
         else l.textContent = "Последнее обновление отчёта: " + when + "\n" + last.msg;
         line.append(l);
       }
@@ -1172,7 +1190,7 @@
     var line = function (ok, title, text, btn) { rows.push({ ok: ok, title: title, text: text, btn: btn }); };
     // 1. площадки → программа
     var hl = window.__otvSrcHealth ? window.__otvSrcHealth() : [], bad = hl.filter(function (h) { return !h.ok || !h.okAt || Date.now() - Date.parse(h.okAt) > 12 * 3600e3; });
-    line(!bad.length, "Площадки и почта → программа", bad.length ? "не прочитаны: " + bad.map(function (h) { return h.name + (h.needLogin ? " (нужен вход)" : ""); }).join(", ") : "все прочитаны" + (R.site ? ", собрано за неделю " + R.site.total : ""),
+    line(!bad.length, "Сбор отзывов", bad.length ? "не прочитано " + bad.map(function (h) { return h.name + (h.needLogin ? " (нужен вход)" : ""); }).join(", ") : "все прочитаны" + (R.site ? ", собрано за неделю " + R.site.total : ""),
       bad.length ? ["Перейти к сбору", function () { var b = document.querySelector('nav#tabs [data-tab="sources"]'); if (b) b.click(); }] : null);
     // 2. программа → отчёт
     var probs = [];
@@ -1180,31 +1198,47 @@
     if (R.orphans.length) probs.push("в отчёте есть, в программе нет " + R.orphans.length);
     if (R.dup.length) probs.push("один отзыв дважды " + R.dup.length);
     if (R.removed) probs.push("строки удалены из таблицы " + R.removed);
-    if (R.checks) probs.push("ждут решения в «Нужна проверка» " + R.checks);
+    if (R.checks) probs.push("ждут решения в «Нужна проверка» (ниже): " + R.checks);
     var inR = R.site ? R.site.inRep : 0;
-    line(!probs.length, "Программа → отчёт (таблица «Позитив» и документ «Негатив»)", (probs.length ? probs.join("; ") + ". " : "сходится. ") + "В отчёте: позитив " + (st.positive || []).length + ", негатив " + (st.negative || []).length + (R.site ? "; из собранного за неделю в отчёте " + inR + " из " + R.site.total : "") + (R.ads.length ? "; реклама убрана: " + R.ads.length : ""),
+    line(!probs.length, "Отчёт в Google", probs.length ? probs.join("; ") : "сходится. В отчёте: позитив " + (st.positive || []).length + ", негатив " + (st.negative || []).length + (R.site ? "; из собранного за неделю в отчёте " + inR + " из " + R.site.total : "") + (R.ads.length ? "; реклама убрана: " + R.ads.length : ""),
       R.orphans.length ? ["Добавить в программу: " + R.orphanData.length, function () { importOrphans(R.orphanData.slice()); }] : (R.adding || R.dup.length) ? ["Обновить отчёт", function () { updateReport(); }] : null);
     // 3. отчёт → презентация
     var D = reconDeck();
-    line(!D.built || D.same, "Отчёт → презентация недели", !D.built ? "презентация строится из этого же отчёта: позитив " + D.pos + ", негатив " + D.neg : D.same ? "сходится: позитив " + D.pos + ", негатив " + D.neg : "в презентации позитив " + D.dpos + " и негатив " + D.dneg + ", а в отчёте " + D.pos + " и " + D.neg + " — пересоберите",
+    line(!D.built || D.same, "Презентация недели", !D.built ? "презентация строится из этого же отчёта: позитив " + D.pos + ", негатив " + D.neg : D.same ? "сходится: позитив " + D.pos + ", негатив " + D.neg : "в презентации позитив " + D.dpos + " и негатив " + D.dneg + ", а в отчёте " + D.pos + " и " + D.neg + " — пересоберите",
       D.built && !D.same ? ["Пересобрать презентацию", function () { if (window.__otvDeckUi) window.__otvDeckUi.rebuild(); setTimeout(renderRecon, 1500); }] : null);
     // 4. ответы
     var A = reconAnswers(), aw = [];
-    if (A.mailTodo.length) aw.push("письма без отметки «Ответ дан»: " + A.mailTodo.length + " (" + A.mailTodo.slice(0, 4).join(", ") + ")");
-    if (A.pending.length) aw.push("ждут вашего согласования: " + A.pending.length);
+    if (A.pending.length) aw.push("ждут согласования " + A.pending.length);
+    if (A.mailTodo.length) aw.push("писем без отметки «Ответ дан» " + A.mailTodo.length);
     if (A.queued.length) aw.push("публикуются: " + A.queued.length);
     if (A.failed.length) aw.push("не опубликовались: " + A.failed.length + " (" + A.failed.slice(0, 4).join(", ") + ")");
     if (A.noReply.length) aw.push("опубликованы в программе, а на площадке ответа нет: " + A.noReply.length + " (" + A.noReply.slice(0, 4).join(", ") + ")");
-    line(!A.mailTodo.length && !A.pending.length && !A.failed.length && !A.noReply.length, "Ответы на отзывы отчёта", "отвечено " + A.done + " из " + A.total + (aw.length ? ". " + aw.join("; ") : ""),
+    var aOk = !A.mailTodo.length && !A.pending.length && !A.failed.length && !A.noReply.length;
+    line(aOk, "Ответы", aOk ? "отвечено " + A.done + " из " + A.total : aw.join("; "),
       (A.pending.length || A.failed.length || A.mailTodo.length) ? ["К ответам", function () { var b = document.querySelector('nav#tabs [data-tab="answers"]'); if (b) b.click(); }] : null);
-    box.append(el("h3", null, "Сверка всех данных · " + new Date(R.at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })));
-    rows.forEach(function (x) {
+    // 14.11: один итог вместо четырёх строк сверки, плашки «+1 в Позитив, +0 в Негатив · в отчёте 7 из 8» и «Подробнее».
+    // Всё сошлось — одна строка «✓ Всё сходится». Есть что делать — только эти пункты, с кнопкой. Остальное — под «Подробнее»
+    var warnRows = rows.filter(function (x) { return !x.ok; }), okRows = rows.filter(function (x) { return x.ok; });
+    var src = runMsg && runMsg.head ? { at: Date.now(), head: runMsg.head, text: runMsg.text } : last && last.head ? { at: Date.parse(last.at), head: last.head, text: last.msg } : null;
+    var hm = function (ms) { return new Date(ms).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }); };
+    var hd = el("div", "rc-head " + (warnRows.length ? "warn" : "ok"));
+    hd.append(el("b", null, warnRows.length ? "⚠ Нужно сделать: " + warnRows.length : "✓ Всё сходится"));
+    hd.append(el("span", "rc-when", "обновлён в " + hm(src ? src.at : R.at) + (src ? " · " + shortHead(src.head) : "")));
+    box.append(hd);
+    var row = function (x, into) {
       var r = el("div", "rc-row " + (x.ok ? "ok" : "warn"));
       r.append(el("span", "rc-ic", x.ok ? "✓" : "⚠"));
-      var tx = el("div", "rc-tx"); tx.append(el("b", null, x.title), el("span", null, " — " + x.text)); r.append(tx);
+      var tx = el("div", "rc-tx"); tx.append(el("b", null, x.title + ": "), el("span", null, x.text)); r.append(tx);
       if (x.btn) { var b = el("button", "btn", x.btn[0]); b.type = "button"; b.addEventListener("click", x.btn[1]); r.append(b); }
-      box.append(r);
-    });
+      into.append(r);
+    };
+    warnRows.forEach(function (x) { row(x, box); });
+    var more = el("details", "rc-more"); more.open = !!renderRecon.moreOpen;
+    more.addEventListener("toggle", function () { renderRecon.moreOpen = more.open; });
+    more.append(el("summary", null, "Подробнее"));
+    okRows.forEach(function (x) { row(x, more); });
+    if (src && src.text) more.append(el("p", "rc-msg", src.text));
+    box.append(more);
     if (window.__otvLog) { var sig = rows.map(function (x) { return x.ok ? "1" : "0"; }).join(""); if (sig !== renderRecon.sig) { renderRecon.sig = sig; window.__otvLog("сверка всех данных: " + rows.map(function (x) { return (x.ok ? "✓ " : "⚠ ") + x.title; }).join("; ")); } }
   }
   window.__otvRecon = { render: renderRecon, answers: reconAnswers, deck: reconDeck, last: function () { return lastRecon; } };

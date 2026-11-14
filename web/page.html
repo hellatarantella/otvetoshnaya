@@ -487,14 +487,6 @@ section.group .card>.head>.badge,.grp-h~.card>.head>.badge{display:none}
     </div>
   </section>
 
-  <section class="tab-panel gen" id="tab-ethics" hidden>
-    <div class="form">
-      <div class="wide" data-list="reviews"></div>
-      <div class="wide"><button class="btn" type="button" data-add="reviews">+ Добавить отзыв</button></div>
-      <label class="f wide"><span>Что важно учесть (необязательно)</span><textarea data-k="facts" rows="2" placeholder="Например: период пандемии COVID-19; сотрудники действуют по регламентам"></textarea></label>
-    </div>
-  </section>
-
   <section class="tab-panel gen" id="tab-thanks" hidden>
     <div class="form">
       <label class="f wide"><span>Текст отзыва</span><textarea data-k="review" rows="7"></textarea></label>
@@ -548,7 +540,7 @@ section.group .card>.head>.badge,.grp-h~.card>.head>.badge{display:none}
   <footer class="foot">
     <!-- 14.11: «чтобы любой человек, не знающий этой работы, мог её сделать» — короткая инструкция внутри программы (полная была только по личной ссылке) -->
     <details class="howto" id="howto"><summary>Как работать: коротко</summary>
-      <p><b>Наверху справа — отметка.</b> «✓ Всё в порядке» — делать ничего не нужно. «⚠ … — что сделать» — нажмите: там список дел, у каждого кнопка «Открыть».</p>
+      <p><b>Наверху справа — отметка.</b> «✓ Всё в порядке» — делать ничего не нужно. «⚠ Что сделать: …» — нажмите: там список дел, у каждого кнопка «Открыть».</p>
       <p><b>Каждый день</b></p>
       <ol>
         <li>«Собрать отзывы». Программа собирает и сама по расписанию, пока открыта. Если написано «нужен вход» — нажмите «Войти», войдите в кабинет площадки и соберите снова.</li>
@@ -2487,7 +2479,7 @@ gkb24@zdrav.mos.ru
     ["decks","Презентации",[["deckw","Неделя"],["deckm","Месяц"]]],
     ["analytics","Аналитика"],
     ["replies","Ответы",[["thanks","Написать спасибо"],["question","Ответить на вопрос"]]],
-    ["appeals","Обжалование",[["appeal","Обжалование отзыва"],["ethics","Этический комитет"]]]
+    ["appeal","Обжалование"]   // 14.11: «этический комитет убирай»
   ];
   if (window.__OTV_APP) { /* только в программе «Ответошная» */
     TABS.push(["sources","Источники"]);
@@ -2698,7 +2690,7 @@ gkb24@zdrav.mos.ru
     function renderResult(res){
       out.textContent = "";
       var texts = (cfg.multi || Array.isArray(res.variants)) ? (Array.isArray(res.variants) ? res.variants : []) : [s(res.text)];
-      texts = texts.map(s).filter(function(t){ return t.trim(); });
+      texts = texts.map(s).map(function(t){ return window.__otvUndash ? window.__otvUndash(t) : t; }).filter(function(t){ return t.trim(); });
       if (!texts.length) { showStatus("Ответ пришёл пустым. Нажмите «Ещё вариант».", true); return; }
       texts.forEach(function(t, i){
         var card = el("div","res");
@@ -2750,7 +2742,7 @@ gkb24@zdrav.mos.ru
     go.addEventListener("click", function(){
       var v = readValues(panel), msg = cfg.valid(v);
       if (msg) { showStatus(msg, true); return; }
-      st.values = v;
+      st.values = v; histCur = null;
       run([{role:"user", content: cfg.prompt(v)}], false);
     });
     again.addEventListener("click", function(){
@@ -2771,14 +2763,35 @@ gkb24@zdrav.mos.ru
 
     /* история в базе страницы */
     var histColl = null, histRows = [];
+    // 14.11: «че за пиздец» — история «Обжалования» копила одинаковые пустые записи: результат там — варианты, а сохранялся
+    // пустой res.text; и каждое «Ещё вариант» добавляло новую запись. Теперь сохраняется текст вариантов, а по тому же отзыву
+    // запись одна (последний вариант заменяет прежний)
+    var histCur = null;
     function saveHistory(res){
       if (!histColl) return;
-      var text = cfg.multi ? (res.variants || []).join("\n\n* * *\n\n") : s(res.text);
-      histColl.add({tab: id, label: cfg.label(st.values || {}).slice(0, 140), text: text, note: s(res.note), createdAt: new Date().toISOString()}).catch(function(){});
+      var vs = Array.isArray(res.variants) ? res.variants.map(s).filter(function(x){ return x.trim(); }) : [];
+      var text = vs.length ? vs.join("\n\n* * *\n\n") : s(res.text);
+      if (!text.trim()) return;
+      var label = cfg.label(st.values || {}).slice(0, 140), rec = {tab: id, label: label, text: text, note: s(res.note), createdAt: new Date().toISOString()};
+      var same = histRows.filter(function(r){ return r.tab === id && s(r.label) === label; });
+      if (histCur && histCur.label === label) { histColl.doc(histCur.id).set(rec).catch(function(){}); return; }
+      if (same.length) { histCur = {id: same[0].id, label: label}; histColl.doc(same[0].id).set(rec).catch(function(){}); return; }
+      histColl.add(rec).then(function(ref){ histCur = {id: ref && ref.id, label: label}; }).catch(function(){});
     }
+    var histCleaned = false;
     function renderHist(){
       histList.textContent = "";
-      var rows = histRows.filter(function(r){ return r.tab === id; }).sort(function(a, b){ return s(b.createdAt).localeCompare(s(a.createdAt)); }).slice(0, 15);
+      // старые пустые записи и повторы одного и того же отзыва — убираем из базы один раз
+      if (!histCleaned && histColl && histRows.length) {
+        histCleaned = true; var seenL = {};
+        histRows.filter(function(r){ return r.tab === id; }).sort(function(a, b){ return s(b.createdAt).localeCompare(s(a.createdAt)); }).forEach(function(r){
+          var k = s(r.label);
+          if (!s(r.text).trim() || seenL[k]) histColl.doc(r.id).delete().catch(function(){}); else seenL[k] = 1;
+        });
+      }
+      var seen2 = {};
+      var rows = histRows.filter(function(r){ if (r.tab !== id || !s(r.text).trim() || seen2[s(r.label)]) return false; seen2[s(r.label)] = 1; return true; })
+        .sort(function(a, b){ return s(b.createdAt).localeCompare(s(a.createdAt)); }).slice(0, 15);
       histWrap.hidden = !rows.length;
       histSum.textContent = "История (" + rows.length + ")";
       rows.forEach(function(r){
@@ -2810,7 +2823,7 @@ gkb24@zdrav.mos.ru
     });
   }
 
-  ["appeal","ethics","thanks","question"].forEach(setupGen);
+  ["appeal","thanks","question"].forEach(setupGen);
 })();
 
 </script>
@@ -2875,19 +2888,20 @@ gkb24@zdrav.mos.ru
     if (!loaded) { sum.className = "sum idle"; sum.textContent = "Загрузка…"; return; }
     var c = {positive:0, negative:0, excluded:0, pending:0, unpublished:0};
     wk.forEach(function(r){ c[repOf(r)]++; });
-    sum.textContent = "";
+    sum.textContent = ""; sum.hidden = false;
     if (!wk.length) { sum.className = "sum idle"; sum.textContent = "За эту неделю в реестре пока ничего нет."; return; }
     var main = el("span");
     if (c.pending) {
       sum.className = "sum warn";
       main.append("Не в отчёте: ", el("b", null, String(c.pending)), ": их нужно внести в отчёт или исключить с причиной.");
     } else {
-      sum.className = "sum ok";
-      main.append(el("b", null, "✓ Все опубликованные отзывы недели учтены."));
+      // 14.11: «что за пиздец с интерфейсом» — «✓ всё учтено» и «Всего 7 · в Позитиве 7…» повторяли таблицу ниже и итог наверху
+      sum.className = "sum ok"; sum.hidden = true; sum.dataset.all = String(wk.length);
+      sum.textContent = "Всего " + wk.length;   // для проверок; не показывается
+      return;
     }
+    sum.hidden = false; sum.dataset.all = String(wk.length);
     sum.append(main);
-    var parts = ["Всего " + wk.length, "в Позитиве " + c.positive, "в Негативе " + c.negative, "исключено " + c.excluded];
-    sum.append(el("span", "sub2", parts.join(" · ")));
   }
 
   function renderTable(wk){

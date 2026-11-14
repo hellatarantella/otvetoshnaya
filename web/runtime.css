@@ -152,3 +152,14 @@ details.fold[open]>summary{margin-bottom:12px}
 details.fold>summary .fold-st{font-weight:400;font-size:14px;color:var(--muted);margin-left:10px}
 details.kb-add>summary{cursor:pointer;color:var(--muted);font-size:14px;margin:6px 0}
 details.kb-add[open]>summary{margin-bottom:10px}
+/* 14.11: вкладка «Отчёты» — один итог */
+.rc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:2px 0 6px}
+.rc-head b{font-size:15px}.rc-head.ok b{color:#3fb37f}.rc-head.warn b{color:#e0a03a}
+.rc-head .rc-when{color:var(--muted);font-size:13px}
+.rc-more>summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:6px}
+.rc-more[open]>summary{margin-bottom:4px}
+.rc-more .rc-msg{white-space:pre-line;color:var(--muted);font-size:13px;margin:8px 0 0}
+details.ck-set{margin-top:12px}
+details.ck-set>summary{font-weight:400;font-size:13px;color:var(--muted)}
+details.ck-set .gs-ok,details.ck-set .staff-line{font-size:13px}
+.ck-past>summary{font-size:13px;color:var(--muted)}

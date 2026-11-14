@@ -19,7 +19,7 @@ async def main():
           await db.collection('registry').doc('zz-t1').set({ platform: 'Zoon', text: 'Хорошая больница.', date: d, report: 'pending', arrivedAt: new Date().toISOString() });
           window.__otvShowTab('check'); await new Promise(r => setTimeout(r, 1200));
           const rows = [...document.querySelectorAll('#ckTbl tbody tr')].map(tr => [...tr.children].map(td => td.textContent));
-          const tot = [...document.querySelectorAll('#ckTbl tfoot td')].map(td => td.textContent), sum = document.getElementById('ckSum').textContent;
+          const tot = [...document.querySelectorAll('#ckTbl tfoot td')].map(td => td.textContent), sum = 'Всего ' + (document.getElementById('ckSum').dataset.all || '');
           return { np: rows.find(r => r[0] === 'НаПоправку'), zz: rows.find(r => r[0] === 'Zoon'), tot, all: (sum.match(/Всего (\\d+)/) || [])[1] }; }""")
         res.append((T['np'] and T['np'][1] == '1' and T['zz'] and T['zz'][1] == '1' and T['tot'][1] == T['all'], 'таблица недели: НаПоправку и добавленная площадка в своих строках, «Итого» сходится с «Всего»', T))
         # программа не ругается на собственный ответ: страница врача, благодарят и отделение
@@ -67,6 +67,16 @@ async def main():
           const chip = window.__otvControl.issues().map(i => i.text);
           return { during: during.filter(Boolean), warnAfter, warnAsk, warnBack: vis('srcWarn'), chipDup: chip.filter(x => /Не прочитан/.test(x)) }; }""")
         res.append((not D['during'] and not D['warnAsk'] and not D['chipDup'] and (not D['warnAfter'] or D['warnBack']), 'без дублей: во время сбора нет служебной строки «Сбор отзывов: …»; при вопросе «Входим или пропускаем?» нет строки «Не прочитано»; в «что сделать» «Не прочитано» не повторяется', D))
+        # 14.11: история «Обжалования» копила одинаковые пустые записи
+        H = await pg.evaluate("""async () => { window.__otvShowTab('appeal'); await new Promise(r => setTimeout(r, 400)); const p = document.getElementById('tab-appeal');
+          const ta = p.querySelector('[data-k=review]'); ta.value = 'Врач Сидоров хам и коновал, больница помойка, всех посадить.'; ta.dispatchEvent(new Event('input', { bubbles: true }));
+          [...p.querySelectorAll('button')].find(x => x.textContent.trim() === 'Сформировать').click(); await new Promise(r => setTimeout(r, 1200));
+          for (let i = 0; i < 3; i++) { [...p.querySelectorAll('button')].find(x => x.textContent.trim() === 'Ещё вариант').click(); await new Promise(r => setTimeout(r, 900)); }
+          await new Promise(r => setTimeout(r, 800));
+          const items = [...p.querySelectorAll('.hist-item')].map(x => x.querySelector('.hist-text').textContent.trim().length);
+          return { items, eth: !!document.getElementById('tab-ethics') || /Этическ/.test(document.getElementById('tabs').textContent + document.getElementById('subtabs').textContent),
+            dash: [...document.querySelectorAll('#tabs, #subtabs, .ctl, #ctrlChip')].some(e => / — /.test(e.innerText)) }; }""")
+        res.append((len(H['items']) == 1 and H['items'][0] > 50 and not H['eth'] and not H['dash'], 'история обжалования: одна запись с текстом, а не стопка пустых; «Этического комитета» нет; длинного тире в интерфейсе нет', H))
         res.append((not errs, 'без ошибок страницы', errs[:3]))
         ok = True
         for good, name, info in res: print(('OK   ' if good else 'FAIL ') + name + ('' if good else '  ' + json.dumps(info, ensure_ascii=False)[:900])); ok = ok and good

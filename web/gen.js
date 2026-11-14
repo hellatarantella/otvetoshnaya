@@ -634,6 +634,11 @@
     return { tone: p.tone, type: p.type, list: out };
   }
   function polish(text, it) { return shape(text, it, toneOf(it), typeOf(it)); }
+  // 14.11: «убирай все длинные тире везде» — в готовом ответе и письме длинного тире нет (цитаты в «ёлочках» не трогаем)
+  var U = function (x) { return window.__otvUndash ? window.__otvUndash(x) : x; };
+  var answer0 = answer, appeal0 = appeal;
+  answer = function (it, o) { var v = answer0(it, o); if (v && v.text) v.text = U(v.text); return v; };
+  appeal = function (it, o) { var v = appeal0(it, o); if (v && v.text) v.text = U(v.text); return v; };
   window.__otvGen = { learnedOf: function (k) { loadStats(); return learned1(k); }, check: check, answer: answer, appeal: appeal, noteSkip: noteSkip, notePick: notePick, toneOf: toneOf, typeOf: typeOf,
     examples: examples, polish: polish, NEG_ANS: NEG_ANS, nameOf: nameOf, isGeneric: isGeneric, thanksLine: thanksLine };
 
@@ -666,7 +671,7 @@
     var seen = shownFor[rk] || (shownFor[rk] = []);
     if (seen.length) noteSkip(seen[seen.length - 1]);           // пролистали — этот вариант не подошёл
     var ready = modelReady[rk] || [];
-    if (ready.length && seen.length % 3 === 2) { var mt = ready.shift(); keyOfText[bodyKey(mt)] = "model"; seen.push("model:" + seen.length); prefetch(req, rk, it, ""); return Promise.resolve(mt); }
+    if (ready.length && seen.length % 3 === 2) { var mt = U(ready.shift()); keyOfText[bodyKey(mt)] = "model"; seen.push("model:" + seen.length); prefetch(req, rk, it, ""); return Promise.resolve(mt); }
     var v = req.kind === "appeal" ? appeal(it, { exclude: seen }) : answer(it, { exclude: seen, current: req.current });
     if (!v) { seen.length = 0; v = req.kind === "appeal" ? appeal(it, {}) : answer(it, { current: req.current }); }
     if (!v) return Promise.reject(new Error("Других вариантов пока нет"));

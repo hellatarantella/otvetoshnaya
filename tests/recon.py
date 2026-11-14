@@ -20,10 +20,12 @@ async def main():
           const b2 = rows();
           return { a, b: b2 }; }""")
         A, B = R['a'], R['b']
-        ans_a = [x for x in A if 'Ответы на отзывы отчёта' in x]; ans_b = [x for x in B if 'Ответы на отзывы отчёта' in x]
-        res = [('сверка показывает 4 связки: площадки, отчёт, презентация, ответы', len(A) == 4 and any('Площадки' in x for x in A) and any('Программа → отчёт' in x for x in A) and any('презентация' in x for x in A), A),
+        ans_a = [x for x in A if 'Ответы:' in x]; ans_b = [x for x in B if 'Ответы:' in x]
+        import re as _re
+        cnt = lambda s: int((_re.search(r'без отметки «Ответ дан» (\d+)', s) or [0, 0])[1])
+        res = [('сверка показывает 4 связки: площадки, отчёт, презентация, ответы', len(A) == 4 and any('Сбор отзывов' in x for x in A) and any('Отчёт в Google' in x for x in A) and any('Презентация' in x for x in A), A),
                ('письмо в отчёте без отметки «Ответ дан» — ⚠ в ответах', ans_a and ans_a[0].startswith('warn') and 'без отметки «Ответ дан»' in ans_a[0], ans_a),
-               ('отметили «Ответ дан» — строка ответов пересчиталась', ans_b and int(ans_b[0].split('«Ответ дан»: ')[1].split(' ')[0] if '«Ответ дан»: ' in ans_b[0] else 0) == int(ans_a[0].split('«Ответ дан»: ')[1].split(' ')[0]) - 1, (ans_a, ans_b)),
+               ('отметили «Ответ дан» — строка ответов пересчиталась', ans_a and ans_b and cnt(ans_b[0]) == cnt(ans_a[0]) - 1, (ans_a, ans_b)),
                ('без ошибок страницы', not errs, errs[:3])]
         for name, ok, info in res: print(('OK  ' if ok else 'FAIL') + ' ' + name, '' if ok else json.dumps(info, ensure_ascii=False)[:1500])
         await b.close(); print('ALL OK' if all(r[1] for r in res) else 'SOME FAILED')

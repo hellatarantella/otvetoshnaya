@@ -202,6 +202,78 @@
   }
   function hideBar() { if (bar) bar.hidden = true; try { document.dispatchEvent(new Event("otv-bar")); } catch (e) {} }
   window.__otvBar = { show: showBar, hide: hideBar };
+  /* 14.11: «убирай все длинные тире везде». В текстах программы (интерфейс, ответы, письма) длинного тире нет:
+     « — » становится запятой. Цитаты в «ёлочках» и тексты отзывов (слова пациентов) не трогаем; одиночное «—» в таблице
+     (значит «нет») остаётся */
+  // prev — последний символ текста перед строкой (для «<b>Заголовок</b> — текст»)
+  function undash(str, prev) {
+    str = String(str == null ? "" : str);
+    if (str.indexOf("—") < 0) return str;
+    var out = "", depth = 0, i0 = 0;
+    for (var i = 0; i < str.length; i++) {
+      var ch = str[i];
+      if (ch === "«" || ch === "»") {
+        var seg = str.slice(i0, i); out += depth ? seg : fix(seg, i0 ? str[i0 - 1] : prev); out += ch; i0 = i + 1;
+        depth += ch === "«" ? 1 : -1; if (depth < 0) depth = 0;
+      }
+    }
+    var tail = str.slice(i0); out += depth ? tail : fix(tail, i0 ? str[i0 - 1] : prev);
+    return out;
+    function fix(x, before) {
+      x = x.replace(/([^\s,:;(—])\s+—\s+(?=\d)/g, "$1: ").replace(/([^\s,:;(—])\s+—\s+/g, "$1, ");   // «Итого — 5» → «Итого: 5»
+      var m = /^(\s*)—\s+/.exec(x);
+      if (m) {
+        // в начале куска: после слова или «» — запятая; после точки, двоеточия или в самом начале — просто убираем
+        var b0 = String(before == null ? "" : before);
+        var rest = x.slice(m[0].length);
+        if (b0 && !/[.!?:;\n]/.test(b0)) x = (/^\d/.test(rest) ? ": " : ", ") + rest;
+        else x = (/[.!?]/.test(b0) ? " " + rest.charAt(0).toUpperCase() : rest.charAt(0)) + rest.slice(1);
+      }
+      return x.replace(/\s+—\s*$/g, "").replace(/,\s*,/g, ",");
+    }
+  }
+  function prevChar(n) {
+    for (var p = n; p; ) {
+      var q = p.previousSibling;
+      while (!q && p.parentNode && p.parentNode !== document.body) { p = p.parentNode; q = p.previousSibling; }
+      if (!q) return "";
+      var tx = q.textContent || ""; tx = tx.replace(/\s+$/, "");
+      if (tx) return tx[tx.length - 1];
+      p = q;
+    }
+    return "";
+  }
+  window.__otvUndash = undash;
+  var SKIP = /^(SCRIPT|STYLE|TEXTAREA|INPUT|BLOCKQUOTE|CODE|PRE)$/;
+  function skipNode(n) {
+    for (var e = n.parentNode; e && e !== document.body; e = e.parentNode) {
+      if (e.nodeType === 1 && (SKIP.test(e.nodeName) || e.isContentEditable || (e.classList && (e.classList.contains("deck-slide") || e.classList.contains("raw") || e.classList.contains("hist-text"))))) return true;
+    }
+    return false;
+  }
+  function undashTree(root) {
+    if (!root || !document.body) return;
+    if (root.nodeType === 3) { if (root.nodeValue.indexOf("—") >= 0 && !skipNode(root)) { var v = undash(root.nodeValue, prevChar(root)); if (v !== root.nodeValue) root.nodeValue = v; } return; }
+    if (root.nodeType !== 1 || SKIP.test(root.nodeName)) return;
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n, list = [];
+    while ((n = w.nextNode())) if (n.nodeValue.indexOf("—") >= 0) list.push(n);
+    list.forEach(function (x) { if (!skipNode(x)) { var v = undash(x.nodeValue, prevChar(x)); if (v !== x.nodeValue) x.nodeValue = v; } });
+    if (root.querySelectorAll) Array.prototype.forEach.call(root.querySelectorAll("[placeholder],[title]"), function (e) {
+      ["placeholder", "title"].forEach(function (k) { var a = e.getAttribute(k); if (a && a.indexOf("—") >= 0) e.setAttribute(k, undash(a)); });
+    });
+  }
+  function startUndash() {
+    undashTree(document.body);
+    try {
+      new MutationObserver(function (ms) {
+        ms.forEach(function (m) {
+          if (m.type === "characterData") undashTree(m.target);
+          else Array.prototype.forEach.call(m.addedNodes, undashTree);
+        });
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    } catch (e) {}
+  }
+  if (document.body) startUndash(); else document.addEventListener("DOMContentLoaded", startUndash);
   // 14.11: «интерфейс перегружен» — редкие настройки (уведомления, второй компьютер) свёрнуты в одну строку с состоянием; открытое остаётся открытым
   var foldOpen = {};
   window.__otvFoldAll = function () { foldOpen.__all = true; Array.prototype.forEach.call(document.querySelectorAll("details.fold"), function (d) { d.open = true; }); };   // для проверок

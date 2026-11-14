@@ -10,7 +10,7 @@ async def main():
         r = await pg.evaluate("""async () => {
           const db = await window.__otvRt.use('db');
           window.__otvShowTab('check'); await new Promise(r => setTimeout(r, 600));
-          const before = document.getElementById('ckSum').textContent;
+          const tot = () => 'Всего ' + (([...document.querySelectorAll('#ckTbl tfoot td')][1] || {}).textContent || '0'); const before = tot();
           const pad = n => String(n).padStart(2, '0'), iso = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
           const t = new Date(); const fri = new Date(t.getFullYear(), t.getMonth(), t.getDate() - ((t.getDay() - 5 + 7) % 7));
           const day = n => { const d = new Date(fri); d.setDate(d.getDate() + n); return d; };
@@ -23,7 +23,7 @@ async def main():
           await new Promise(r => setTimeout(r, 600));
           window.__otvShowTab('check'); await new Promise(r => setTimeout(r, 600));
           const wk = [...document.querySelectorAll('#tab-check tr, #tab-check .ck-row, #tab-check [data-id]')].map(x => x.textContent).join(' | ');
-          return { before, sum: document.getElementById('ckSum').textContent, rows: wk };
+          return { before, sum: tot(), rows: wk };
         }""")
         n = None
         import re

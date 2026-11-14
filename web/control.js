@@ -99,7 +99,7 @@
     if (!chip) return;
     last = issues();
     chip.className = "ctrl-chip " + (last.length ? "warn" : "ok");
-    chip.textContent = last.length ? "⚠ " + last.length + " — что сделать" : "✓ Всё в порядке";
+    chip.textContent = last.length ? "⚠ Что сделать: " + last.length : "✓ Всё в порядке";
     chip.title = last.length ? last.map(function (i) { return i.text; }).join("\n") : "Программа проверила ответы, отчёт, презентацию и сохранение данных";
     if (pop && !pop.hidden) fill();
   }

@@ -33,11 +33,11 @@ async def main():
         O = await pg.evaluate("""async () => { const st = window.__otvReports.state(); const d = st.start.split('-').reverse().join('.');
           window.__gsExtraPos = [{ platform: 'Сайт больницы', num: 3, date: d, dept: 'Хирургия', doctor: 'Соколова', text: 'Тестовое письмо Ж9: благодарю хирургию за внимательное отношение.', full: 'Тестовое письмо Ж9: благодарю хирургию за внимательное отношение.' }];
           await window.__otvReports.update(); await new Promise(r => setTimeout(r, 800));
-          const todo = [...document.querySelectorAll('#ckCtl .rep-todo li')].map(x => x.textContent).join(' | ');
-          const btn = [...document.querySelectorAll('#ckCtl .ctl-st button')].find(b => /Добавить в программу/.test(b.textContent));
+          const todo = [...document.querySelectorAll('#ckRecon .rc-row.warn')].map(x => x.textContent).join(' | ');
+          const btn = [...document.querySelectorAll('#ckRecon button')].find(b => /Добавить в программу/.test(b.textContent));
           if (btn) { btn.click(); await new Promise(r => setTimeout(r, 3500)); }
           const reg = window.__otvAll('registry') || {}; const got = Object.keys(reg).filter(k => reg[k].fromReport && /Ж9/.test(reg[k].fullText));
-          const todo2 = [...document.querySelectorAll('#ckCtl .rep-todo li')].map(x => x.textContent).join(' | ');
+          const todo2 = [...document.querySelectorAll('#ckRecon .rc-row.warn')].map(x => x.textContent).join(' | ');
           return { todo, btn: !!btn, got: got.length, plat: got.length ? reg[got[0]].platform : '', after: /в программе нет/.test(todo2) }; }""")
         res.append(('сверка: строка отчёта без записи в программе найдена и одной кнопкой добавлена; потом расхождения нет', 'в программе нет' in O['todo'] and O['btn'] and O['got'] == 1 and O['plat'] == 'Сайт' and not O['after'], O))
         # прошлые недели: список и скачивание

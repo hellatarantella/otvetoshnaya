@@ -35,12 +35,8 @@ async def main():
         ad = await gen(pg, "appeal", [("[data-k=review]", AD)])
         ok2 = ad['texts'] and "реклама сторонних услуг" in ad['texts'][0] and "Спам, реклама" in ad['note']
         print(('OK  ' if ok2 else 'FAIL') + ' реклама: обжалование как спам, без личного опыта', ad if not ok2 else '')
-        await pg.evaluate("window.__otvShowTab('ethics')"); await pg.wait_for_timeout(200)
-        await pg.fill("#tab-ethics [data-list=reviews] .rev textarea", REV)
-        await pg.click("#tab-ethics button:has-text('Сформировать')"); await pg.wait_for_timeout(500)
-        e = await pg.evaluate("() => (document.querySelector('#tab-ethics .res-ta') || {}).value || ''")
-        ok3 = e.startswith("Здравствуйте, уважаемые члены этического комитета!") and "Основания обжалования:" in e and "gb24-press2@zdrav.mos.ru" in e and "сожалеем" not in e
-        print(('OK  ' if ok3 else 'FAIL') + ' письмо в этический комитет по образцу', e[:300] if not ok3 else '')
+        ok3 = not await pg.evaluate("() => !!document.getElementById('tab-ethics') || [...document.querySelectorAll('nav#tabs button, #subtabs button')].some(b => /Этическ/.test(b.textContent))")   # 14.11: окно убрано
+        print(('OK  ' if ok3 else 'FAIL') + ' окна «Этический комитет» больше нет')
         t = await gen(pg, "thanks", [("[data-k=review]", "Огромное спасибо врачам хирургического отделения за операцию и заботу!")])
         ok4 = len(t['texts']) >= 2 and all(x.startswith("Здравствуйте") and "С уважением, администрация 24 Московской больницы" in x for x in t['texts'])
         print(('OK  ' if ok4 else 'FAIL') + ' «Спасибо»: несколько вариантов из шаблонов', t if not ok4 else '')

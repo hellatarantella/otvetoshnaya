@@ -17,8 +17,8 @@ async def main():
           window.__gsExtraPos = [{ platform: 'Сайт больницы', num: 1, date: dd.split('-').reverse().join('.'), dept: 'ГКБ 24', doctor: '—', text: T, full: T }];
           await window.__otvReports.update(); await new Promise(r => setTimeout(r, 1200));
           const r = (await db.collection('registry').doc('site-lost1').get()).data();
-          const todo = [...document.querySelectorAll('#ckCtl .rep-todo li')].map(x => x.textContent).join(' | ');
-          const m = /Ждут решения в «Нужна проверка»: (\\d+)/.exec(todo); const cnt = m ? +m[1] : 0;
+          const todo = [...document.querySelectorAll('#ckRecon .rc-row.warn')].map(x => x.textContent).join(' | ');
+          const m = /ждут решения в «Нужна проверка» \\(ниже\\): (\\d+)/.exec(todo); const cnt = m ? +m[1] : 0;
           const cards = document.querySelectorAll('#ckCheck .ck-card').length;
           return { rep: r.report, ref: r.reportRef, orphan: /Ж61|в программе нет/.test(todo) && /Сайт больницы №1/.test(todo), cnt, cards }; }""")
         res = [('запись восстановлена по строке отчёта (Позитив), а не названа лишней', R['rep'] == 'positive' and 'Позитив' in R['ref'] and not R['orphan'], R),
